@@ -125,46 +125,54 @@ export default function ProfilePage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="mb-6">
-              <FormLabel>Profile Picture</FormLabel>
-              <div className="mt-2 flex items-center gap-4">
-                {previewUrl ? (
-                  <img
-                    src={previewUrl}
-                    alt="Profile"
-                    className="h-20 w-20 rounded-full object-cover border"
-                  />
-                ) : (
-                  <div className="h-20 w-20 rounded-full bg-muted flex items-center justify-center">
-                    <Upload className="h-8 w-8 text-muted-foreground" />
-                  </div>
-                )}
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploadAvatarMutation.isPending}
-                >
-                  {uploadAvatarMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  ) : null}
-                  Change Picture
-                </Button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleFileChange}
-                />
-              </div>
-            </div>
-
             <Form {...form}>
               <form
                 onSubmit={form.handleSubmit((data) => updateProfileMutation.mutate(data))}
                 className="space-y-6"
               >
+                <div className="mb-6">
+                  <FormField
+                    control={form.control}
+                    name="avatarUrl"
+                    render={() => (
+                      <FormItem>
+                        <FormLabel>Profile Picture</FormLabel>
+                        <div className="mt-2 flex items-center gap-4">
+                          {previewUrl ? (
+                            <img
+                              src={previewUrl}
+                              alt="Profile"
+                              className="h-20 w-20 rounded-full object-cover border"
+                            />
+                          ) : (
+                            <div className="h-20 w-20 rounded-full bg-muted flex items-center justify-center">
+                              <Upload className="h-8 w-8 text-muted-foreground" />
+                            </div>
+                          )}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={uploadAvatarMutation.isPending}
+                          >
+                            {uploadAvatarMutation.isPending ? (
+                              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            ) : null}
+                            Change Picture
+                          </Button>
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={handleFileChange}
+                          />
+                        </div>
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
                 <FormField
                   control={form.control}
                   name="fullName"
