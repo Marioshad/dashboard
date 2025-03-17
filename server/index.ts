@@ -7,6 +7,10 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
+// Log environment and port at startup
+log(`Starting server in ${process.env.NODE_ENV || 'development'} mode`);
+log('Using port: 5000');
+
 // Middleware to log API requests
 app.use((req, res, next) => {
   const start = Date.now();
@@ -21,7 +25,7 @@ app.use((req, res, next) => {
 
   res.on("finish", () => {
     const duration = Date.now() - start;
-    if (path.startsWith("/api")) {
+    if (path.startsWith("/api") || path === '/ping') {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
       if (capturedJsonResponse) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
@@ -56,7 +60,7 @@ app.use((req, res, next) => {
       serveStatic(app);
     }
 
-    const port = process.env.PORT || 8080;
+    const port = 5000;
     log(`Attempting to start server on port ${port}...`);
 
     server.listen({
