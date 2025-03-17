@@ -57,7 +57,7 @@ export function Navbar() {
       <div className="flex h-16 items-center px-4">
         <nav className="flex-1">
           <Link href="/">
-            <a className="text-2xl font-bold">App</a>
+            <span className="text-2xl font-bold cursor-pointer">App</span>
           </Link>
         </nav>
         <div className="flex items-center gap-4">
