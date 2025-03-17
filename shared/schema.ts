@@ -21,6 +21,7 @@ export const notifications = pgTable("notifications", {
   actorId: integer("actor_id").references(() => users.id), // User who triggered the notification
 });
 
+// Add new types to the user table
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
@@ -32,6 +33,10 @@ export const users = pgTable("users", {
   roleId: integer("role_id"),
   twoFactorEnabled: boolean("two_factor_enabled").default(false),
   twoFactorSecret: text("two_factor_secret"),
+  emailNotifications: boolean("email_notifications").default(true),
+  webNotifications: boolean("web_notifications").default(true),
+  mentionNotifications: boolean("mention_notifications").default(true),
+  followNotifications: boolean("follow_notifications").default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   deletedAt: timestamp("deleted_at")
@@ -121,16 +126,25 @@ export const insertUserSchema = createInsertSchema(users).pick({
   fullName: z.string().min(2, "Full name must be at least 2 characters")
 });
 
+// Update the profile schema to include notification settings
 export const updateProfileSchema = createInsertSchema(users).pick({
   fullName: true,
   email: true,
   bio: true,
   avatarUrl: true,
+  emailNotifications: true,
+  webNotifications: true,
+  mentionNotifications: true,
+  followNotifications: true,
 }).extend({
   email: z.string().email("Invalid email format"),
   fullName: z.string().min(2, "Full name must be at least 2 characters"),
   bio: z.string().max(500, "Bio must be less than 500 characters").optional(),
   avatarUrl: z.string().url("Invalid URL format").optional(),
+  emailNotifications: z.boolean().optional(),
+  webNotifications: z.boolean().optional(),
+  mentionNotifications: z.boolean().optional(),
+  followNotifications: z.boolean().optional(),
 });
 
 // Role and Permission schemas
