@@ -225,11 +225,14 @@ export default function RolesPage() {
                         <FormLabel>Permissions</FormLabel>
                         <FormControl>
                           <Select
-                            onValueChange={(values) => {
-                              field.onChange(Array.isArray(values) ? values.map(Number) : [Number(values)]);
+                            onValueChange={(value) => {
+                              const currentValue = Array.isArray(field.value) ? field.value : [];
+                              const numValue = Number(value);
+                              const newValue = currentValue.includes(numValue)
+                                ? currentValue.filter(v => v !== numValue)
+                                : [...currentValue, numValue];
+                              field.onChange(newValue);
                             }}
-                            defaultValue={field.value?.map(String)}
-                            {...field}
                           >
                             <SelectTrigger>
                               <SelectValue placeholder="Select permissions" />
@@ -256,9 +259,13 @@ export default function RolesPage() {
                                 <Badge
                                   key={permission.id}
                                   variant="secondary"
-                                  className="text-xs"
+                                  className="text-xs cursor-pointer"
+                                  onClick={() => {
+                                    const newValue = field.value.filter(id => id !== permission.id);
+                                    field.onChange(newValue);
+                                  }}
                                 >
-                                  {permission.name}
+                                  {permission.name} ×
                                 </Badge>
                               )
                             );
@@ -317,9 +324,12 @@ export default function RolesPage() {
                       </div>
                     </div>
                     <div className="flex gap-2">
-                      <Dialog open={selectedRole?.id === role.id} onOpenChange={(open) => {
-                        if (!open) setSelectedRole(null);
-                      }}>
+                      <Dialog
+                        open={selectedRole?.id === role.id}
+                        onOpenChange={(open) => {
+                          if (!open) setSelectedRole(null);
+                        }}
+                      >
                         <DialogTrigger asChild>
                           <Button
                             variant="outline"
@@ -377,12 +387,14 @@ export default function RolesPage() {
                                     <FormLabel>Permissions</FormLabel>
                                     <FormControl>
                                       <Select
-                                        onValueChange={(values) => {
-                                          field.onChange(Array.isArray(values) ? values.map(Number) : [Number(values)]);
+                                        onValueChange={(value) => {
+                                          const currentValue = Array.isArray(field.value) ? field.value : [];
+                                          const numValue = Number(value);
+                                          const newValue = currentValue.includes(numValue)
+                                            ? currentValue.filter(v => v !== numValue)
+                                            : [...currentValue, numValue];
+                                          field.onChange(newValue);
                                         }}
-                                        defaultValue={field.value?.map(String)}
-                                        {...field}
-                                        multiple
                                       >
                                         <SelectTrigger>
                                           <SelectValue placeholder="Select permissions" />
@@ -409,9 +421,13 @@ export default function RolesPage() {
                                             <Badge
                                               key={permission.id}
                                               variant="secondary"
-                                              className="text-xs"
+                                              className="text-xs cursor-pointer"
+                                              onClick={() => {
+                                                const newValue = field.value.filter(id => id !== permission.id);
+                                                field.onChange(newValue);
+                                              }}
                                             >
-                                              {permission.name}
+                                              {permission.name} ×
                                             </Badge>
                                           )
                                         );
