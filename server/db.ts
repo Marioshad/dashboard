@@ -9,7 +9,10 @@ if (!process.env.DATABASE_URL) {
 
 // Create a PostgreSQL connection pool
 export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === "production" ? {
+    rejectUnauthorized: false
+  } : undefined
 });
 
 // Test the database connection
@@ -23,7 +26,9 @@ export const db = drizzle(pool, { schema });
 
 // Function to test database connection
 export async function testConnection() {
-  let retries = 5;
+  let retries = 10; // Increased retries for production
+  const retryDelay = 5000; // 5 seconds between retries
+
   while (retries) {
     try {
       const client = await pool.connect();
@@ -37,8 +42,8 @@ export async function testConnection() {
       if (!retries) {
         throw err;
       }
-      // Wait 2 seconds before retrying
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      console.log(`Retrying connection in ${retryDelay/1000} seconds... (${retries} attempts remaining)`);
+      await new Promise(resolve => setTimeout(resolve, retryDelay));
     }
   }
   return false;
