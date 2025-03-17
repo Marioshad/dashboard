@@ -41,6 +41,14 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useState, useEffect } from "react";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 interface RoleWithPermissions extends Role {
   permissions: Permission[];
@@ -288,6 +296,54 @@ export default function RolesPage() {
                   </Button>
                 </form>
               </Form>
+            </CardContent>
+          </Card>
+
+          {/* Roles Table */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Roles and Permissions Overview</CardTitle>
+              <CardDescription>
+                Detailed view of all roles and their assigned permissions
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Role Name</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead className="text-center">Permissions Count</TableHead>
+                    <TableHead>Assigned Permissions</TableHead>
+                    <TableHead>Last Updated</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {roles?.map((role) => (
+                    <TableRow key={role.id}>
+                      <TableCell className="font-medium">{role.name}</TableCell>
+                      <TableCell>{role.description}</TableCell>
+                      <TableCell className="text-center">{role.permissions.length}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-1">
+                          {role.permissions.map((permission) => (
+                            <Badge
+                              key={permission.id}
+                              variant="outline"
+                              className="text-xs"
+                            >
+                              {permission.name}
+                            </Badge>
+                          ))}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {new Date(role.updatedAt || role.createdAt).toLocaleDateString()}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </CardContent>
           </Card>
 
