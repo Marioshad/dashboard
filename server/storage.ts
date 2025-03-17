@@ -1,9 +1,8 @@
 import { users, type User, type InsertUser } from "@shared/schema";
-import { drizzle } from "drizzle-orm/neon-serverless";
-import { Pool } from "@neondatabase/serverless";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
-import ws from "ws";
 
 const PostgresSessionStore = connectPg(session);
 
@@ -11,11 +10,19 @@ if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL is required");
 }
 
-// Configure WebSocket for Neon's serverless driver
+// Standard PostgreSQL connection pool
 const pool = new Pool({ 
   connectionString: process.env.DATABASE_URL,
-  webSocketConstructor: process.env.NODE_ENV === "production" ? undefined : ws
+  // Enable SSL in production
+  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : undefined
 });
+
+// Test database connection
+pool.on('error', (err) => {
+  console.error('Unexpected error on idle client', err);
+  process.exit(-1);
+});
+
 const db = drizzle(pool);
 
 export interface IStorage {
@@ -37,7 +44,7 @@ export class DatabaseStorage implements IStorage {
 
   async getUser(id: number): Promise<User | undefined> {
     try {
-      const result = await db.select().from(users).where((u) => u.id.equals(id)).limit(1);
+      const result = await db.select().from(users).where(u => u.id.equals(id)).limit(1);
       return result[0];
     } catch (error) {
       console.error('Error getting user by ID:', error);
@@ -47,7 +54,7 @@ export class DatabaseStorage implements IStorage {
 
   async getUserByUsername(username: string): Promise<User | undefined> {
     try {
-      const result = await db.select().from(users).where((u) => u.username.equals(username)).limit(1);
+      const result = await db.select().from(users).where(u => u.username.equals(username)).limit(1);
       return result[0];
     } catch (error) {
       console.error('Error getting user by username:', error);
