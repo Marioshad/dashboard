@@ -8,7 +8,7 @@ import path from "path";
 import fs from "fs";
 import express from 'express';
 import { db } from "./db";
-import { roles, permissions, rolePermissions } from "@shared/schema";
+import { roles, permissions, rolePermissions, users, appSettings } from "@shared/schema";
 import { eq, and, isNull, sql } from "drizzle-orm";
 
 // Ensure uploads directory exists
@@ -270,7 +270,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Add these routes inside the registerRoutes function, before return httpServer
+  // Add this route inside registerRoutes function
+  app.get('/api/users', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      // Check if user is admin or superadmin
+      const userRole = await db.query.roles.findFirst({
+        where: eq(roles.id, req.user.roleId as number),
+      });
+
+      if (!userRole || !['Superadmin', 'Admin'].includes(userRole.name)) {
+        return res.sendStatus(403);
+      }
+
+      const usersList = await db.query.users.findMany({
+        where: isNull(users.deletedAt),
+        with: {
+          role: true
+        }
+      });
+
+      res.json(usersList);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   // Admin Settings endpoints
   app.get('/api/settings/admin', async (req, res, next) => {
     try {

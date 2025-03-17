@@ -99,6 +99,15 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                     </Button>
                   </CollapsibleTrigger>
                   <CollapsibleContent className="pl-6 space-y-1">
+                    <Link href="/users">
+                      <Button
+                        variant={location === "/users" ? "secondary" : "ghost"}
+                        className="w-full justify-start"
+                      >
+                        <Users className="mr-2 h-4 w-4" />
+                        Users
+                      </Button>
+                    </Link>
                     <Link href="/roles">
                       <Button
                         variant={location === "/roles" ? "secondary" : "ghost"}
