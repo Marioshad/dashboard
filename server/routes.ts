@@ -270,6 +270,105 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Add these routes inside the registerRoutes function, before return httpServer
+  // Admin Settings endpoints
+  app.get('/api/settings/admin', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      // Check if user is admin or superadmin
+      const userRole = await db.query.roles.findFirst({
+        where: eq(roles.id, req.user.roleId as number),
+      });
+
+      if (!userRole || !['Superadmin', 'Admin'].includes(userRole.name)) {
+        return res.sendStatus(403);
+      }
+
+      const [settings] = await db.select().from(appSettings).limit(1);
+      res.json(settings || { require2FA: false });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch('/api/settings/admin', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      // Check if user is admin or superadmin
+      const userRole = await db.query.roles.findFirst({
+        where: eq(roles.id, req.user.roleId as number),
+      });
+
+      if (!userRole || !['Superadmin', 'Admin'].includes(userRole.name)) {
+        return res.sendStatus(403);
+      }
+
+      const [settings] = await db.select().from(appSettings).limit(1);
+
+      if (settings) {
+        const [updated] = await db
+          .update(appSettings)
+          .set({
+            ...req.body,
+            updatedBy: req.user.id,
+            updatedAt: sql`CURRENT_TIMESTAMP`,
+          })
+          .where(eq(appSettings.id, settings.id))
+          .returning();
+        res.json(updated);
+      } else {
+        const [created] = await db
+          .insert(appSettings)
+          .values({
+            ...req.body,
+            updatedBy: req.user.id,
+          })
+          .returning();
+        res.json(created);
+      }
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // User 2FA endpoints
+  app.post('/api/user/2fa', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      const [settings] = await db.select().from(appSettings).limit(1);
+      const userRole = await db.query.roles.findFirst({
+        where: eq(roles.id, req.user.roleId as number),
+      });
+
+      // Only allow enabling 2FA if it's required by admin or user is admin/superadmin
+      if (!req.body.enabled && settings?.require2FA && !['Superadmin', 'Admin'].includes(userRole?.name)) {
+        return res.status(403).json({ message: "2FA is required by administrator" });
+      }
+
+      const [updated] = await db
+        .update(users)
+        .set({
+          twoFactorEnabled: req.body.enabled,
+          updatedAt: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(users.id, req.user.id))
+        .returning();
+
+      res.json(updated);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
