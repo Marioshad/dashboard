@@ -81,6 +81,17 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                   </CollapsibleContent>
                 </Collapsible>
 
+                {/* Subscription Section */}
+                <Link href="/subscribe">
+                  <Button
+                    variant={location === "/subscribe" ? "secondary" : "ghost"}
+                    className="w-full justify-start"
+                  >
+                    <Shield className="mr-2 h-4 w-4" />
+                    Premium Subscription
+                  </Button>
+                </Link>
+
                 {/* Users Section - Only visible to admins */}
                 {isAdmin && (
                   <Collapsible
