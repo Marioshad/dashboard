@@ -96,10 +96,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.sendStatus(401);
       }
 
-      const rolesData = await db.query.roles.findMany({
+      const rolesWithPermissions = await db.query.roles.findMany({
         where: isNull(roles.deletedAt),
         with: {
-          permissions: {
+          rolePermissions: {
             with: {
               permission: true
             }
@@ -107,12 +107,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       });
 
-      const rolesWithPermissions = rolesData.map(role => ({
+      // Transform the response to match the expected format
+      const transformedRoles = rolesWithPermissions.map(role => ({
         ...role,
-        permissions: role.permissions.map(rp => rp.permission)
+        permissions: role.rolePermissions.map(rp => rp.permission)
       }));
 
-      res.json(rolesWithPermissions);
+      res.json(transformedRoles);
     } catch (error) {
       next(error);
     }
@@ -190,7 +191,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Soft delete
       await db.update(roles)
-        .set({ 
+        .set({
           deletedAt: sql`CURRENT_TIMESTAMP`,
           updatedAt: sql`CURRENT_TIMESTAMP`
         })
