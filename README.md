@@ -60,6 +60,7 @@ Add the following environment variables in Railway dashboard:
 - `DATABASE_URL` (automatically added by Railway)
 - `SESSION_SECRET` (add a secure random string)
 - `NODE_ENV=production`
+- `PORT` (automatically added by Railway)
 
 ### 4. Deployment Settings
 
