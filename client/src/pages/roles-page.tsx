@@ -42,11 +42,15 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
 
+interface RoleWithPermissions extends Role {
+  permissions: Permission[];
+}
+
 export default function RolesPage() {
   const { toast } = useToast();
   const [selectedRole, setSelectedRole] = useState<Role | null>(null);
 
-  const { data: roles, isLoading: rolesLoading } = useQuery<Role[]>({
+  const { data: roles, isLoading: rolesLoading } = useQuery<RoleWithPermissions[]>({
     queryKey: ["/api/roles"],
   });
 
@@ -202,31 +206,35 @@ export default function RolesPage() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Permissions</FormLabel>
-                        <Select
-                          multiple
-                          value={field.value.map(String)}
-                          onValueChange={(values) => {
-                            field.onChange(values.map(Number));
-                          }}
-                        >
-                          <FormControl>
+                        <FormControl>
+                          <Select
+                            onValueChange={(values) => {
+                              if (Array.isArray(values)) {
+                                field.onChange(values.map(Number));
+                              } else if (typeof values === 'string') {
+                                field.onChange([Number(values)]);
+                              }
+                            }}
+                            value={field.value?.map(String)}
+                            multiple
+                          >
                             <SelectTrigger>
                               <SelectValue placeholder="Select permissions" />
                             </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {permissions?.map((permission) => (
-                              <SelectItem
-                                key={permission.id}
-                                value={permission.id.toString()}
-                              >
-                                {permission.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                            <SelectContent>
+                              {permissions?.map((permission) => (
+                                <SelectItem
+                                  key={permission.id}
+                                  value={permission.id.toString()}
+                                >
+                                  {permission.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </FormControl>
                         <div className="mt-2 flex flex-wrap gap-2">
-                          {field.value.map((permissionId) => {
+                          {field.value?.map((permissionId) => {
                             const permission = permissions?.find(
                               (p) => p.id === permissionId
                             );
@@ -358,34 +366,38 @@ export default function RolesPage() {
                                 render={({ field }) => (
                                   <FormItem>
                                     <FormLabel>Permissions</FormLabel>
-                                    <Select
-                                      multiple
-                                      value={field.value.map(String)}
-                                      onValueChange={(values) => {
-                                        field.onChange(values.map(Number));
-                                      }}
-                                      defaultValue={role.permissions?.map(p => 
-                                        p.id.toString()
-                                      )}
-                                    >
-                                      <FormControl>
+                                    <FormControl>
+                                      <Select
+                                        onValueChange={(values) => {
+                                          if (Array.isArray(values)) {
+                                            field.onChange(values.map(Number));
+                                          } else if (typeof values === 'string') {
+                                            field.onChange([Number(values)]);
+                                          }
+                                        }}
+                                        value={field.value?.map(String)}
+                                        multiple
+                                        defaultValue={role.permissions?.map(p => 
+                                          p.id.toString()
+                                        )}
+                                      >
                                         <SelectTrigger>
                                           <SelectValue placeholder="Select permissions" />
                                         </SelectTrigger>
-                                      </FormControl>
-                                      <SelectContent>
-                                        {permissions?.map((permission) => (
-                                          <SelectItem
-                                            key={permission.id}
-                                            value={permission.id.toString()}
-                                          >
-                                            {permission.name}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
+                                        <SelectContent>
+                                          {permissions?.map((permission) => (
+                                            <SelectItem
+                                              key={permission.id}
+                                              value={permission.id.toString()}
+                                            >
+                                              {permission.name}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </FormControl>
                                     <div className="mt-2 flex flex-wrap gap-2">
-                                      {field.value.map((permissionId) => {
+                                      {field.value?.map((permissionId) => {
                                         const permission = permissions?.find(
                                           (p) => p.id === permissionId
                                         );
