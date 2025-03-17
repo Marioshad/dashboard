@@ -7,6 +7,7 @@ import {
   Users,
   Shield,
   Key,
+  BarChart3, // Changed from Chart to BarChart3 which exists in lucide-react
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import {
@@ -24,8 +25,8 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
 
   const isMenuOpen = (menu: string) => openMenus.includes(menu);
   const toggleMenu = (menu: string) => {
-    setOpenMenus(prev => 
-      prev.includes(menu) 
+    setOpenMenus(prev =>
+      prev.includes(menu)
         ? prev.filter(m => m !== menu)
         : [...prev, menu]
     );
@@ -41,8 +42,8 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               <h2 className="text-lg font-semibold mb-4">Dashboard</h2>
               <nav className="space-y-2">
                 <Link href="/">
-                  <Button 
-                    variant={location === "/" ? "secondary" : "ghost"} 
+                  <Button
+                    variant={location === "/" ? "secondary" : "ghost"}
                     className="w-full justify-start"
                   >
                     <Home className="mr-2 h-4 w-4" />
@@ -53,8 +54,8 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                 {/* Users Section */}
                 <Collapsible open={isMenuOpen('users')} onOpenChange={() => toggleMenu('users')}>
                   <CollapsibleTrigger asChild>
-                    <Button 
-                      variant="ghost" 
+                    <Button
+                      variant="ghost"
                       className={cn(
                         "w-full justify-between",
                         isMenuOpen('users') && "bg-accent"
@@ -72,17 +73,26 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                   </CollapsibleTrigger>
                   <CollapsibleContent className="pl-6 space-y-1">
                     <Link href="/roles">
-                      <Button 
-                        variant={location === "/roles" ? "secondary" : "ghost"} 
+                      <Button
+                        variant={location === "/roles" ? "secondary" : "ghost"}
                         className="w-full justify-start"
                       >
                         <Shield className="mr-2 h-4 w-4" />
                         Roles
                       </Button>
                     </Link>
+                    <Link href="/roles/map">
+                      <Button
+                        variant={location === "/roles/map" ? "secondary" : "ghost"}
+                        className="w-full justify-start"
+                      >
+                        <BarChart3 className="mr-2 h-4 w-4" />
+                        Roles Map
+                      </Button>
+                    </Link>
                     <Link href="/permissions">
-                      <Button 
-                        variant={location === "/permissions" ? "secondary" : "ghost"} 
+                      <Button
+                        variant={location === "/permissions" ? "secondary" : "ghost"}
                         className="w-full justify-start"
                       >
                         <Key className="mr-2 h-4 w-4" />
@@ -93,8 +103,8 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                 </Collapsible>
 
                 <Link href="/profile">
-                  <Button 
-                    variant={location === "/profile" ? "secondary" : "ghost"} 
+                  <Button
+                    variant={location === "/profile" ? "secondary" : "ghost"}
                     className="w-full justify-start"
                   >
                     <Settings className="mr-2 h-4 w-4" />
