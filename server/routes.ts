@@ -42,7 +42,7 @@ const upload = multer({
   }
 });
 
-// Helper function to send notification - moved outside
+// Helper function to send notification
 async function sendNotification(clients: Map<number, WebSocket>, userId: number, type: string, message: string, actorId?: number) {
   try {
     const [notification] = await db
@@ -471,38 +471,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
 
   // WebSocket setup
-  const wss = new WebSocketServer({ noServer: true, path: '/ws' });
+  const wss = new WebSocketServer({ noServer: true });
   const clients = new Map<number, WebSocket>();
-
-  wss.on('connection', (ws, req: any) => {
-    if (!req.user?.id) {
-      ws.close();
-      return;
-    }
-
-    clients.set(req.user.id, ws);
-
-    ws.on('close', () => {
-      clients.delete(req.user.id);
-    });
-  });
 
   const httpServer = createServer(app);
 
-  // Upgrade HTTP connection to WebSocket
+  // Handle WebSocket upgrade
   httpServer.on('upgrade', (request, socket, head) => {
-    if (!request.url?.startsWith('/ws')) {
+    if (!request.url?.startsWith('/notifications')) {
       socket.destroy();
       return;
     }
 
-    app(request as any, {} as any, () => {
-      if (!(request as any).user) {
+    // Add session handling to WebSocket upgrade
+    const expressRequest = request as any;
+    app(expressRequest, {} as any, async () => {
+      if (!expressRequest.user?.id) {
         socket.destroy();
         return;
       }
 
       wss.handleUpgrade(request, socket, head, (ws) => {
+        const userId = expressRequest.user.id;
+        clients.set(userId, ws);
+
+        ws.on('close', () => {
+          clients.delete(userId);
+        });
+
         wss.emit('connection', ws, request);
       });
     });
@@ -515,5 +511,4 @@ export async function registerRoutes(app: Express): Promise<Server> {
   return httpServer;
 }
 
-// Export the function type for use in other files
 export type SendNotificationFn = (userId: number, type: string, message: string, actorId?: number) => Promise<any>;

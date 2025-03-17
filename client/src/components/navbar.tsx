@@ -27,9 +27,13 @@ export function Navbar() {
 
   useEffect(() => {
     // Connect to WebSocket
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
+    const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const wsUrl = `${wsProtocol}//${window.location.host}/notifications`;
     const ws = new WebSocket(wsUrl);
+
+    ws.onopen = () => {
+      console.log('WebSocket connected');
+    };
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
@@ -37,6 +41,10 @@ export function Navbar() {
         // Refresh notifications
         queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
       }
+    };
+
+    ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
     };
 
     setSocket(ws);
