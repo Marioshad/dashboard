@@ -99,7 +99,8 @@ export default function RolesDashboard() {
                     ratio={4/3}
                     stroke="#fff"
                     fill="#8884d8"
-                    content={({ root, depth, x, y, width, height, index, payload, colors, rank, name }) => {
+                    content={({ x, y, width, height, index, name }) => {
+                      const fill = COLORS[index % COLORS.length];
                       return (
                         <motion.g
                           initial={{ opacity: 0, scale: 0.9 }}
@@ -111,10 +112,9 @@ export default function RolesDashboard() {
                             y={y}
                             width={width}
                             height={height}
-                            fill={payload.fill}
+                            fill={fill}
                             stroke="#fff"
                             strokeWidth={2}
-                            style={{ opacity: depth === 1 ? 0.7 : 1 }}
                           />
                           <text
                             x={x + width / 2}
