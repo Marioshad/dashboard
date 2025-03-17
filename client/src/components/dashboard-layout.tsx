@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/collapsible";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { Navbar } from "@/components/navbar"; // Assuming Navbar component exists
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, logoutMutation } = useAuth();
@@ -37,15 +38,16 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background">
+      <Navbar />
       <div className="flex">
-        <aside className="w-64 bg-card border-r min-h-screen p-4">
+        <aside className="w-64 bg-card border-r min-h-[calc(100vh-4rem)] p-4">
           <div className="flex flex-col h-full">
             <div className="space-y-2">
               <h2 className="text-lg font-semibold mb-4">Dashboard</h2>
               <nav className="space-y-2">
                 {/* Home Section */}
-                <Collapsible 
-                  open={isMenuOpen('home')} 
+                <Collapsible
+                  open={isMenuOpen('home')}
                   onOpenChange={() => toggleMenu('home')}
                 >
                   <CollapsibleTrigger asChild>
@@ -81,8 +83,8 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
 
                 {/* Users Section - Only visible to admins */}
                 {isAdmin && (
-                  <Collapsible 
-                    open={isMenuOpen('users')} 
+                  <Collapsible
+                    open={isMenuOpen('users')}
                     onOpenChange={() => toggleMenu('users')}
                   >
                     <CollapsibleTrigger asChild>

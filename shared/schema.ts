@@ -11,6 +11,16 @@ export const appSettings = pgTable("app_settings", {
   updatedBy: integer("updated_by").references(() => users.id),
 });
 
+export const notifications = pgTable("notifications", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  type: text("type").notNull(), // e.g., 'follow', 'mention', etc.
+  message: text("message").notNull(),
+  read: boolean("read").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  actorId: integer("actor_id").references(() => users.id), // User who triggered the notification
+});
+
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
@@ -50,11 +60,13 @@ export const rolePermissions = pgTable("role_permissions", {
 });
 
 // Relations
-export const usersRelations = relations(users, ({ one }) => ({
+export const usersRelations = relations(users, ({ one, many }) => ({
   role: one(roles, {
     fields: [users.roleId],
     references: [roles.id],
   }),
+  notifications: many(notifications),
+  actedNotifications: many(notifications, { relationName: "actor" }),
 }));
 
 export const rolesRelations = relations(roles, ({ many }) => ({
@@ -81,6 +93,18 @@ export const appSettingsRelations = relations(appSettings, ({ one }) => ({
   updatedByUser: one(users, {
     fields: [appSettings.updatedBy],
     references: [users.id],
+  }),
+}));
+
+export const notificationsRelations = relations(notifications, ({ one }) => ({
+  user: one(users, {
+    fields: [notifications.userId],
+    references: [users.id],
+  }),
+  actor: one(users, {
+    fields: [notifications.actorId],
+    references: [users.id],
+    relationName: "actor",
   }),
 }));
 
@@ -142,3 +166,4 @@ export type User = typeof users.$inferSelect;
 export type Role = typeof roles.$inferSelect;
 export type Permission = typeof permissions.$inferSelect;
 export type AppSettings = typeof appSettings.$inferSelect;
+export type Notification = typeof notifications.$inferSelect;
