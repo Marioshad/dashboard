@@ -32,7 +32,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { 
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -226,14 +226,10 @@ export default function RolesPage() {
                         <FormControl>
                           <Select
                             onValueChange={(values) => {
-                              if (Array.isArray(values)) {
-                                field.onChange(values.map(Number));
-                              } else if (typeof values === 'string') {
-                                field.onChange([Number(values)]);
-                              }
+                              field.onChange(Array.isArray(values) ? values.map(Number) : [Number(values)]);
                             }}
                             defaultValue={field.value?.map(String)}
-                            multiple
+                            {...field}
                           >
                             <SelectTrigger>
                               <SelectValue placeholder="Select permissions" />
@@ -382,13 +378,10 @@ export default function RolesPage() {
                                     <FormControl>
                                       <Select
                                         onValueChange={(values) => {
-                                          if (Array.isArray(values)) {
-                                            field.onChange(values.map(Number));
-                                          } else if (typeof values === 'string') {
-                                            field.onChange([Number(values)]);
-                                          }
+                                          field.onChange(Array.isArray(values) ? values.map(Number) : [Number(values)]);
                                         }}
                                         defaultValue={field.value?.map(String)}
+                                        {...field}
                                         multiple
                                       >
                                         <SelectTrigger>
