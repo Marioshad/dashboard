@@ -7,11 +7,19 @@ import { ProtectedRoute } from "./lib/protected-route";
 import NotFound from "@/pages/not-found";
 import HomePage from "@/pages/home-page";
 import AuthPage from "@/pages/auth-page";
+import ProfilePage from "@/pages/profile-page";
+import RolesPage from "@/pages/roles-page";
+import RolesMap from "@/pages/roles-map";
+import PermissionsPage from "@/pages/permissions-page";
 
 function Router() {
   return (
     <Switch>
       <ProtectedRoute path="/" component={HomePage} />
+      <ProtectedRoute path="/profile" component={ProfilePage} />
+      <ProtectedRoute path="/roles" component={RolesPage} />
+      <ProtectedRoute path="/roles/map" component={RolesMap} />
+      <ProtectedRoute path="/permissions" component={PermissionsPage} />
       <Route path="/auth" component={AuthPage} />
       <Route component={NotFound} />
     </Switch>
