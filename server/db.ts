@@ -20,3 +20,26 @@ pool.on('error', (err) => {
 
 // Create a Drizzle instance
 export const db = drizzle(pool, { schema });
+
+// Function to test database connection
+export async function testConnection() {
+  let retries = 5;
+  while (retries) {
+    try {
+      const client = await pool.connect();
+      const result = await client.query('SELECT NOW()');
+      client.release();
+      console.log('Database connection successful:', result.rows[0].now);
+      return true;
+    } catch (err) {
+      console.error('Database connection attempt failed:', err);
+      retries -= 1;
+      if (!retries) {
+        throw err;
+      }
+      // Wait 2 seconds before retrying
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+  }
+  return false;
+}

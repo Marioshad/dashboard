@@ -1,7 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
-import { pool } from "./db";
+import { pool, testConnection } from "./db";
 
 const app = express();
 app.use(express.json());
@@ -36,10 +36,7 @@ app.use((req, res, next) => {
 (async () => {
   try {
     log("Testing database connection...");
-    const client = await pool.connect();
-    const result = await client.query('SELECT NOW()');
-    client.release();
-    log("Database connection successful:", result.rows[0].now);
+    await testConnection();
 
     log("Setting up routes...");
     const server = await registerRoutes(app);
@@ -59,7 +56,7 @@ app.use((req, res, next) => {
       serveStatic(app);
     }
 
-    const port = process.env.PORT || 5000;
+    const port = process.env.PORT || 8080;
     log(`Attempting to start server on port ${port}...`);
 
     server.listen({
