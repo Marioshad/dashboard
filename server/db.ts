@@ -47,8 +47,30 @@ export async function testConnection() {
           email TEXT,
           bio TEXT,
           avatar_url TEXT,
+          role_id INTEGER,
           created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
           updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS roles (
+          id SERIAL PRIMARY KEY,
+          name TEXT NOT NULL UNIQUE,
+          description TEXT,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS permissions (
+          id SERIAL PRIMARY KEY,
+          name TEXT NOT NULL UNIQUE,
+          description TEXT,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS role_permissions (
+          role_id INTEGER NOT NULL REFERENCES roles(id),
+          permission_id INTEGER NOT NULL REFERENCES permissions(id),
+          PRIMARY KEY (role_id, permission_id)
         );
 
         CREATE TABLE IF NOT EXISTS session (
@@ -66,12 +88,28 @@ export async function testConnection() {
             ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT;
             ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT;
             ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS role_id INTEGER;
             ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL;
             ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL;
           EXCEPTION WHEN others THEN
             -- Log any errors but don't fail
             RAISE NOTICE 'Error adding columns: %', SQLERRM;
           END;
+        END $$;
+
+        -- Create foreign key constraint if it doesn't exist
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE conname = 'users_role_id_fkey'
+          ) THEN
+            ALTER TABLE users
+            ADD CONSTRAINT users_role_id_fkey
+            FOREIGN KEY (role_id)
+            REFERENCES roles(id);
+          END IF;
+        EXCEPTION WHEN others THEN
+          RAISE NOTICE 'Error adding foreign key: %', SQLERRM;
         END $$;
       `);
       console.log('Database tables verified');

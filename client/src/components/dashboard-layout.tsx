@@ -5,6 +5,7 @@ import {
   Settings,
   Home,
   User,
+  Shield,
 } from "lucide-react";
 import { Link } from "wouter";
 
@@ -24,6 +25,12 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                   <Button variant="ghost" className="w-full justify-start">
                     <Home className="mr-2 h-4 w-4" />
                     Home
+                  </Button>
+                </Link>
+                <Link href="/roles">
+                  <Button variant="ghost" className="w-full justify-start">
+                    <Shield className="mr-2 h-4 w-4" />
+                    Roles & Permissions
                   </Button>
                 </Link>
                 <Link href="/profile">
