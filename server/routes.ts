@@ -478,7 +478,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Handle WebSocket upgrade
   httpServer.on('upgrade', (request, socket, head) => {
-    if (!request.url?.startsWith('/notifications')) {
+    if (!request.url?.startsWith('/ws-notifications')) {
       socket.destroy();
       return;
     }
