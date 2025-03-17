@@ -9,7 +9,7 @@ import fs from "fs";
 import express from 'express';
 import { db } from "./db";
 import { roles, permissions, rolePermissions } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { eq, and, isNull, sql } from "drizzle-orm";
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(process.cwd(), "uploads");
@@ -23,7 +23,6 @@ const multerStorage = multer.diskStorage({
     cb(null, uploadsDir);
   },
   filename: function (req, file, cb) {
-    // Generate unique filename with timestamp
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     cb(null, uniqueSuffix + path.extname(file.originalname));
   }
@@ -35,7 +34,6 @@ const upload = multer({
     fileSize: 5 * 1024 * 1024 // 5MB limit
   },
   fileFilter: function (req, file, cb) {
-    // Accept only images
     if (!file.mimetype.startsWith('image/')) {
       return cb(new Error('Only image files are allowed!'));
     }
@@ -44,7 +42,6 @@ const upload = multer({
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Add ping endpoint for health check
   app.get('/ping', (_req, res) => {
     res.status(200).send('pong');
   });
@@ -92,7 +89,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Roles and permissions endpoints
+  // Roles endpoints
   app.get('/api/roles', async (req, res, next) => {
     try {
       if (!req.isAuthenticated()) {
@@ -100,6 +97,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const rolesData = await db.query.roles.findMany({
+        where: isNull(roles.deletedAt),
         with: {
           permissions: {
             with: {
@@ -109,13 +107,163 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       });
 
-      // Transform the data to include permissions directly in the role object
       const rolesWithPermissions = rolesData.map(role => ({
         ...role,
         permissions: role.permissions.map(rp => rp.permission)
       }));
 
       res.json(rolesWithPermissions);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/roles', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      const { permissions: permissionIds, ...roleData } = req.body;
+
+      // Start a transaction
+      const [role] = await db.insert(roles)
+        .values(roleData)
+        .returning();
+
+      // Add permissions
+      if (permissionIds?.length) {
+        await db.insert(rolePermissions)
+          .values(permissionIds.map((id: number) => ({
+            roleId: role.id,
+            permissionId: id
+          })));
+      }
+
+      res.status(201).json(role);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch('/api/roles/:id', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      const { permissions: permissionIds, ...roleData } = req.body;
+
+      // Update role
+      const [role] = await db.update(roles)
+        .set({ ...roleData, updatedAt: sql`CURRENT_TIMESTAMP` })
+        .where(eq(roles.id, parseInt(req.params.id)))
+        .returning();
+
+      // Update permissions
+      if (permissionIds) {
+        // Remove existing permissions
+        await db.delete(rolePermissions)
+          .where(eq(rolePermissions.roleId, role.id));
+
+        // Add new permissions
+        if (permissionIds.length) {
+          await db.insert(rolePermissions)
+            .values(permissionIds.map((id: number) => ({
+              roleId: role.id,
+              permissionId: id
+            })));
+        }
+      }
+
+      res.json(role);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete('/api/roles/:id', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      // Soft delete
+      await db.update(roles)
+        .set({ 
+          deletedAt: sql`CURRENT_TIMESTAMP`,
+          updatedAt: sql`CURRENT_TIMESTAMP`
+        })
+        .where(eq(roles.id, parseInt(req.params.id)));
+
+      res.sendStatus(204);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Permissions endpoints
+  app.get('/api/permissions', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      const permissionsList = await db.select()
+        .from(permissions)
+        .where(isNull(permissions.deletedAt));
+
+      res.json(permissionsList);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/permissions', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      const [permission] = await db.insert(permissions)
+        .values(req.body)
+        .returning();
+
+      res.status(201).json(permission);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch('/api/permissions/:id', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      const [permission] = await db.update(permissions)
+        .set(req.body)
+        .where(eq(permissions.id, parseInt(req.params.id)))
+        .returning();
+
+      res.json(permission);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete('/api/permissions/:id', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      // Soft delete
+      await db.update(permissions)
+        .set({ deletedAt: sql`CURRENT_TIMESTAMP` })
+        .where(eq(permissions.id, parseInt(req.params.id)));
+
+      res.sendStatus(204);
     } catch (error) {
       next(error);
     }

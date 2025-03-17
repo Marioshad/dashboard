@@ -13,7 +13,8 @@ export const users = pgTable("users", {
   avatarUrl: text("avatar_url"),
   roleId: integer("role_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull()
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  deletedAt: timestamp("deleted_at")
 });
 
 export const roles = pgTable("roles", {
@@ -21,14 +22,16 @@ export const roles = pgTable("roles", {
   name: text("name").notNull().unique(),
   description: text("description"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull()
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  deletedAt: timestamp("deleted_at")
 });
 
 export const permissions = pgTable("permissions", {
   id: serial("id").primaryKey(),
   name: text("name").notNull().unique(),
   description: text("description"),
-  createdAt: timestamp("created_at").defaultNow().notNull()
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  deletedAt: timestamp("deleted_at")
 });
 
 export const rolePermissions = pgTable("role_permissions", {
@@ -53,7 +56,7 @@ export const permissionsRelations = relations(permissions, ({ many }) => ({
   roles: many(rolePermissions),
 }));
 
-// Existing schemas
+// Schemas
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
@@ -78,12 +81,34 @@ export const updateProfileSchema = createInsertSchema(users).pick({
   avatarUrl: z.string().url("Invalid URL format").optional(),
 });
 
-// New schemas for roles and permissions
-export const insertRoleSchema = createInsertSchema(roles);
-export const insertPermissionSchema = createInsertSchema(permissions);
+// Role and Permission schemas
+export const insertRoleSchema = createInsertSchema(roles).pick({
+  name: true,
+  description: true,
+}).extend({
+  name: z.string().min(2, "Role name must be at least 2 characters"),
+  description: z.string().min(10, "Description must be at least 10 characters"),
+  permissions: z.array(z.number()).min(1, "Role must have at least one permission"),
+});
+
+export const updateRoleSchema = insertRoleSchema;
+
+export const insertPermissionSchema = createInsertSchema(permissions).pick({
+  name: true,
+  description: true,
+}).extend({
+  name: z.string().min(2, "Permission name must be at least 2 characters"),
+  description: z.string().min(10, "Description must be at least 10 characters"),
+});
+
+export const updatePermissionSchema = insertPermissionSchema;
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type UpdateProfile = z.infer<typeof updateProfileSchema>;
+export type InsertRole = z.infer<typeof insertRoleSchema>;
+export type UpdateRole = z.infer<typeof updateRoleSchema>;
+export type InsertPermission = z.infer<typeof insertPermissionSchema>;
+export type UpdatePermission = z.infer<typeof updatePermissionSchema>;
 export type User = typeof users.$inferSelect;
 export type Role = typeof roles.$inferSelect;
 export type Permission = typeof permissions.$inferSelect;
