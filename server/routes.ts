@@ -7,6 +7,9 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import express from 'express';
+import { db } from "./db";
+import { roles, permissions, rolePermissions } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(process.cwd(), "uploads");
@@ -84,6 +87,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const updatedUser = await storage.updateProfile(req.user.id, result.data);
       res.json(updatedUser);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Roles and permissions endpoints
+  app.get('/api/roles', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      const rolesData = await db.query.roles.findMany({
+        with: {
+          permissions: {
+            with: {
+              permission: true
+            }
+          }
+        }
+      });
+
+      // Transform the data to include permissions directly in the role object
+      const rolesWithPermissions = rolesData.map(role => ({
+        ...role,
+        permissions: role.permissions.map(rp => rp.permission)
+      }));
+
+      res.json(rolesWithPermissions);
     } catch (error) {
       next(error);
     }

@@ -1,6 +1,7 @@
 import { pgTable, text, serial, integer, boolean, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import { relations } from "drizzle-orm";
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -10,11 +11,49 @@ export const users = pgTable("users", {
   email: text("email"),
   bio: text("bio"),
   avatarUrl: text("avatar_url"),
+  roleId: integer("role_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull()
 });
 
-// Schema for user registration - only include fields needed for registration
+export const roles = pgTable("roles", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+});
+
+export const permissions = pgTable("permissions", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow().notNull()
+});
+
+export const rolePermissions = pgTable("role_permissions", {
+  roleId: integer("role_id").notNull().references(() => roles.id),
+  permissionId: integer("permission_id").notNull().references(() => permissions.id)
+});
+
+// Relations
+export const usersRelations = relations(users, ({ one }) => ({
+  role: one(roles, {
+    fields: [users.roleId],
+    references: [roles.id],
+  }),
+}));
+
+export const rolesRelations = relations(roles, ({ many }) => ({
+  users: many(users),
+  permissions: many(rolePermissions),
+}));
+
+export const permissionsRelations = relations(permissions, ({ many }) => ({
+  roles: many(rolePermissions),
+}));
+
+// Existing schemas
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
@@ -27,7 +66,6 @@ export const insertUserSchema = createInsertSchema(users).pick({
   fullName: z.string().min(2, "Full name must be at least 2 characters")
 });
 
-// Schema for profile updates - exclude sensitive fields
 export const updateProfileSchema = createInsertSchema(users).pick({
   fullName: true,
   email: true,
@@ -40,6 +78,12 @@ export const updateProfileSchema = createInsertSchema(users).pick({
   avatarUrl: z.string().url("Invalid URL format").optional(),
 });
 
+// New schemas for roles and permissions
+export const insertRoleSchema = createInsertSchema(roles);
+export const insertPermissionSchema = createInsertSchema(permissions);
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type UpdateProfile = z.infer<typeof updateProfileSchema>;
 export type User = typeof users.$inferSelect;
+export type Role = typeof roles.$inferSelect;
+export type Permission = typeof permissions.$inferSelect;
