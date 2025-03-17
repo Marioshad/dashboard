@@ -1,0 +1,75 @@
+ 
+
+11:46:31 AM [express] serving on port 8080
+
+Error: All attempts to open a WebSocket to connect to the database failed. Please refer to https://github.com/neondatabase/serverless/blob/main/CONFIG.md#websocketconstructor-typeof-websocket--undefined. Details: fetch failed
+
+    at file:///app/node_modules/@neondatabase/serverless/index.mjs:1345:74
+
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+
+    at async PGStore._asyncQuery (/app/node_modules/connect-pg-simple/index.js:322:21)
+
+    at async PGStore._rawEnsureSessionStoreTable (/app/node_modules/connect-pg-simple/index.js:177:19)
+
+    at async PGStore._asyncQuery (/app/node_modules/connect-pg-simple/index.js:315:7)
+
+Error: All attempts to open a WebSocket to connect to the database failed. Please refer to https://github.com/neondatabase/serverless/blob/main/CONFIG.md#websocketconstructor-typeof-websocket--undefined. Details: fetch failed
+
+    at file:///app/node_modules/@neondatabase/serverless/index.mjs:1345:74
+
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+
+    at async PGStore._asyncQuery (/app/node_modules/connect-pg-simple/index.js:322:21)
+
+    at async PGStore._rawEnsureSessionStoreTable (/app/node_modules/connect-pg-simple/index.js:177:19)
+
+    at async PGStore._asyncQuery (/app/node_modules/connect-pg-simple/index.js:315:7)
+
+Error: All attempts to open a WebSocket to connect to the database failed. Please refer to https://github.com/neondatabase/serverless/blob/main/CONFIG.md#websocketconstructor-typeof-websocket--undefined. Details: fetch failed
+
+    at file:///app/node_modules/@neondatabase/serverless/index.mjs:1345:74
+
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+
+    at async PGStore._asyncQuery (/app/node_modules/connect-pg-simple/index.js:322:21)
+
+    at async PGStore._rawEnsureSessionStoreTable (/app/node_modules/connect-pg-simple/index.js:177:19)
+
+    at async PGStore._asyncQuery (/app/node_modules/connect-pg-simple/index.js:315:7)
+
+Error: All attempts to open a WebSocket to connect to the database failed. Please refer to https://github.com/neondatabase/serverless/blob/main/CONFIG.md#websocketconstructor-typeof-websocket--undefined. Details: fetch failed
+
+    at file:///app/node_modules/@neondatabase/serverless/index.mjs:1345:74
+
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+
+    at async PGStore._asyncQuery (/app/node_modules/connect-pg-simple/index.js:322:21)
+
+    at async PGStore._rawEnsureSessionStoreTable (/app/node_modules/connect-pg-simple/index.js:177:19)
+
+    at async PGStore._asyncQuery (/app/node_modules/connect-pg-simple/index.js:315:7)
+
+Error: All attempts to open a WebSocket to connect to the database failed. Please refer to https://github.com/neondatabase/serverless/blob/main/CONFIG.md#websocketconstructor-typeof-websocket--undefined. Details: fetch failed
+
+    at file:///app/node_modules/@neondatabase/serverless/index.mjs:1345:74
+
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+
+    at async PGStore._asyncQuery (/app/node_modules/connect-pg-simple/index.js:322:21)
+
+    at async PGStore._rawEnsureSessionStoreTable (/app/node_modules/connect-pg-simple/index.js:177:19)
+
+    at async PGStore._asyncQuery (/app/node_modules/connect-pg-simple/index.js:315:7)
+
+Error: All attempts to open a WebSocket to connect to the database failed. Please refer to https://github.com/neondatabase/serverless/blob/main/CONFIG.md#websocketconstructor-typeof-websocket--undefined. Details: fetch failed
+
+    at file:///app/node_modules/@neondatabase/serverless/index.mjs:1345:74
+
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+
+    at async PGStore._asyncQuery (/app/node_modules/connect-pg-simple/index.js:322:21)
+
+    at async PGStore._rawEnsureSessionStoreTable (/app/node_modules/connect-pg-simple/index.js:177:19)
+
+    at async PGStore._asyncQuery (/app/node_modules/connect-pg-simple/index.js:315:7)

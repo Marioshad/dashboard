@@ -14,7 +14,7 @@ if (!process.env.DATABASE_URL) {
 // Configure WebSocket for Neon's serverless driver
 const pool = new Pool({ 
   connectionString: process.env.DATABASE_URL,
-  webSocketConstructor: ws 
+  webSocketConstructor: process.env.NODE_ENV === "production" ? undefined : ws
 });
 const db = drizzle(pool);
 
@@ -36,18 +36,33 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUser(id: number): Promise<User | undefined> {
-    const result = await db.select().from(users).where(({ id: id_ }) => id_ === id).limit(1);
-    return result[0];
+    try {
+      const result = await db.select().from(users).where((u) => u.id.equals(id)).limit(1);
+      return result[0];
+    } catch (error) {
+      console.error('Error getting user by ID:', error);
+      throw error;
+    }
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    const result = await db.select().from(users).where(({ username: username_ }) => username_ === username).limit(1);
-    return result[0];
+    try {
+      const result = await db.select().from(users).where((u) => u.username.equals(username)).limit(1);
+      return result[0];
+    } catch (error) {
+      console.error('Error getting user by username:', error);
+      throw error;
+    }
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const [user] = await db.insert(users).values(insertUser).returning();
-    return user;
+    try {
+      const [user] = await db.insert(users).values(insertUser).returning();
+      return user;
+    } catch (error) {
+      console.error('Error creating user:', error);
+      throw error;
+    }
   }
 }
 
