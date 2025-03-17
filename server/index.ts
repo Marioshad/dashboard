@@ -1,11 +1,13 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { pool } from "./db";
 
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
+// Middleware to log API requests
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
@@ -24,11 +26,6 @@ app.use((req, res, next) => {
       if (capturedJsonResponse) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
-
-      if (logLine.length > 80) {
-        logLine = logLine.slice(0, 79) + "…";
-      }
-
       log(logLine);
     }
   });
@@ -37,27 +34,42 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  const server = await registerRoutes(app);
+  try {
+    log("Testing database connection...");
+    const client = await pool.connect();
+    const result = await client.query('SELECT NOW()');
+    client.release();
+    log("Database connection successful:", result.rows[0].now);
 
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
+    log("Setting up routes...");
+    const server = await registerRoutes(app);
 
-    res.status(status).json({ message });
-    throw err;
-  });
+    app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+      const status = err.status || err.statusCode || 500;
+      const message = err.message || "Internal Server Error";
+      log(`Error: ${message}`);
+      res.status(status).json({ message });
+    });
 
-  if (app.get("env") === "development") {
-    await setupVite(app, server);
-  } else {
-    serveStatic(app);
+    if (app.get("env") === "development") {
+      log("Starting in development mode...");
+      await setupVite(app, server);
+    } else {
+      log("Starting in production mode...");
+      serveStatic(app);
+    }
+
+    const port = process.env.PORT || 5000;
+    log(`Attempting to start server on port ${port}...`);
+
+    server.listen({
+      port,
+      host: "0.0.0.0",
+    }, () => {
+      log(`Server is running on port ${port}`);
+    });
+  } catch (error) {
+    log("Startup error:", error);
+    process.exit(1);
   }
-
-  const port = process.env.PORT || 5000;
-  server.listen({
-    port,
-    host: "0.0.0.0",
-  }, () => {
-    log(`serving on port ${port}`);
-  });
 })();
