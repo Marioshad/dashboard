@@ -28,30 +28,36 @@ export function Navbar() {
   useEffect(() => {
     // Connect to WebSocket
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${wsProtocol}//${window.location.host}/notifications`;
-    const ws = new WebSocket(wsUrl);
+    const wsHost = window.location.host;
+    const wsUrl = `${wsProtocol}//${wsHost}/ws-notifications`;
 
-    ws.onopen = () => {
-      console.log('WebSocket connected');
-    };
+    try {
+      const ws = new WebSocket(wsUrl);
 
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.type === "notification") {
-        // Refresh notifications
-        queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
-      }
-    };
+      ws.onopen = () => {
+        console.log('WebSocket connected');
+      };
 
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-    };
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.type === "notification") {
+          // Refresh notifications
+          queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+        }
+      };
 
-    setSocket(ws);
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+      };
 
-    return () => {
-      ws.close();
-    };
+      setSocket(ws);
+
+      return () => {
+        ws.close();
+      };
+    } catch (error) {
+      console.error('Failed to create WebSocket connection:', error);
+    }
   }, []);
 
   useEffect(() => {
