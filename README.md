@@ -56,7 +56,7 @@ Make sure your code is in a Git repository and pushed to GitHub.
 
 ### 3. Environment Variables
 
-Add the following environment variables in Railway dashboard:
+Set the following environment variables in Railway dashboard:
 - `DATABASE_URL` (automatically added by Railway)
 - `SESSION_SECRET` (add a secure random string)
 - `NODE_ENV=production`
@@ -68,11 +68,19 @@ Configure your deployment settings in Railway:
 - Build Command: `npm install && npm run build`
 - Start Command: `npm start`
 
-### 5. Domain Setup
+### 5. Database Setup
 
-1. Go to your project settings in Railway
-2. Navigate to the "Domains" section
-3. Click "Generate Domain" or add your custom domain
+The application uses Drizzle ORM for database management. After deployment:
+
+1. Railway will automatically provision a PostgreSQL database
+2. The application will automatically create necessary tables on first run
+3. No manual database setup is required
+
+### 6. Important Notes
+
+- The application uses secure session cookies in production
+- WebSocket connections are handled automatically in the production environment
+- All database operations are logged for debugging purposes
 
 ## Database Schema
 
@@ -85,7 +93,7 @@ CREATE TABLE users (
 );
 ```
 
-The schema is automatically managed through the application.
+The schema is automatically managed through Drizzle ORM.
 
 ## Support
 
