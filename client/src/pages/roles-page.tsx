@@ -49,21 +49,27 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useAuth } from "@/hooks/use-auth";
 
 interface RoleWithPermissions extends Role {
   permissions: Permission[];
 }
 
 export default function RolesPage() {
+  const { user } = useAuth();
   const { toast } = useToast();
   const [selectedRole, setSelectedRole] = useState<RoleWithPermissions | null>(null);
 
+  const isAdmin = user?.roleId === 1 || user?.roleId === 2; // Superadmin or Admin
+
   const { data: roles, isLoading: rolesLoading } = useQuery<RoleWithPermissions[]>({
     queryKey: ["/api/roles"],
+    enabled: isAdmin,
   });
 
   const { data: permissions, isLoading: permissionsLoading } = useQuery<Permission[]>({
     queryKey: ["/api/permissions"],
+    enabled: isAdmin,
   });
 
   const form = useForm<z.infer<typeof insertRoleSchema>>({
@@ -87,7 +93,7 @@ export default function RolesPage() {
       form.reset({
         name: selectedRole.name,
         description: selectedRole.description || "",
-        permissions: selectedRole.permissions.map(p => p.id),
+        permissions: selectedRole.permissions.map((p) => p.id),
       });
     }
   }, [selectedRole, form]);
@@ -156,6 +162,18 @@ export default function RolesPage() {
       });
     },
   });
+
+  if (!isAdmin) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
+          <p className="text-muted-foreground">
+            You don't have permission to view this page.
+          </p>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   if (rolesLoading || permissionsLoading) {
     return (
@@ -234,10 +252,12 @@ export default function RolesPage() {
                         <FormControl>
                           <Select
                             onValueChange={(value) => {
-                              const currentValue = Array.isArray(field.value) ? field.value : [];
+                              const currentValue = Array.isArray(field.value)
+                                ? field.value
+                                : [];
                               const numValue = Number(value);
                               const newValue = currentValue.includes(numValue)
-                                ? currentValue.filter(v => v !== numValue)
+                                ? currentValue.filter((v) => v !== numValue)
                                 : [...currentValue, numValue];
                               field.onChange(newValue);
                             }}
@@ -269,7 +289,9 @@ export default function RolesPage() {
                                   variant="secondary"
                                   className="text-xs cursor-pointer"
                                   onClick={() => {
-                                    const newValue = field.value.filter(id => id !== permission.id);
+                                    const newValue = field.value.filter(
+                                      (id) => id !== permission.id
+                                    );
                                     field.onChange(newValue);
                                   }}
                                 >
@@ -323,7 +345,9 @@ export default function RolesPage() {
                     <TableRow key={role.id}>
                       <TableCell className="font-medium">{role.name}</TableCell>
                       <TableCell>{role.description}</TableCell>
-                      <TableCell className="text-center">{role.permissions.length}</TableCell>
+                      <TableCell className="text-center">
+                        {role.permissions.length}
+                      </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
                           {role.permissions.map((permission) => (
@@ -338,7 +362,9 @@ export default function RolesPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        {new Date(role.updatedAt || role.createdAt).toLocaleDateString()}
+                        {new Date(
+                          role.updatedAt || role.createdAt
+                        ).toLocaleDateString()}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -444,10 +470,18 @@ export default function RolesPage() {
                                     <FormControl>
                                       <Select
                                         onValueChange={(value) => {
-                                          const currentValue = Array.isArray(field.value) ? field.value : [];
+                                          const currentValue = Array.isArray(
+                                            field.value
+                                          )
+                                            ? field.value
+                                            : [];
                                           const numValue = Number(value);
-                                          const newValue = currentValue.includes(numValue)
-                                            ? currentValue.filter(v => v !== numValue)
+                                          const newValue = currentValue.includes(
+                                            numValue
+                                          )
+                                            ? currentValue.filter(
+                                                (v) => v !== numValue
+                                              )
                                             : [...currentValue, numValue];
                                           field.onChange(newValue);
                                         }}
@@ -479,7 +513,10 @@ export default function RolesPage() {
                                               variant="secondary"
                                               className="text-xs cursor-pointer"
                                               onClick={() => {
-                                                const newValue = field.value.filter(id => id !== permission.id);
+                                                const newValue = field.value.filter(
+                                                  (id) =>
+                                                    id !== permission.id
+                                                );
                                                 field.onChange(newValue);
                                               }}
                                             >
