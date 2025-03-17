@@ -2,6 +2,7 @@ import { users, type User, type InsertUser } from "@shared/schema";
 import { db, pool } from "./db";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
+import { eq } from "drizzle-orm";
 
 const PostgresSessionStore = connectPg(session);
 
@@ -26,7 +27,7 @@ export class DatabaseStorage implements IStorage {
 
   async getUser(id: number): Promise<User | undefined> {
     try {
-      const result = await db.select().from(users).where(u => u.id.equals(id)).limit(1);
+      const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
       return result[0];
     } catch (error) {
       console.error('Error getting user by ID:', error);
@@ -36,7 +37,7 @@ export class DatabaseStorage implements IStorage {
 
   async getUserByUsername(username: string): Promise<User | undefined> {
     try {
-      const result = await db.select().from(users).where(u => u.username.equals(username)).limit(1);
+      const result = await db.select().from(users).where(eq(users.username, username)).limit(1);
       return result[0];
     } catch (error) {
       console.error('Error getting user by username:', error);
