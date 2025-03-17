@@ -8,8 +8,9 @@ import path from "path";
 import fs from "fs";
 import express from 'express';
 import { db } from "./db";
-import { roles, permissions, rolePermissions, users, appSettings } from "@shared/schema";
-import { eq, and, isNull, sql } from "drizzle-orm";
+import { roles, permissions, rolePermissions, users, appSettings, notifications } from "@shared/schema";
+import { eq, and, isNull, sql, desc } from "drizzle-orm";
+import { WebSocketServer, WebSocket } from 'ws';
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(process.cwd(), "uploads");
@@ -40,6 +41,34 @@ const upload = multer({
     cb(null, true);
   }
 });
+
+// Helper function to send notification - moved outside
+async function sendNotification(clients: Map<number, WebSocket>, userId: number, type: string, message: string, actorId?: number) {
+  try {
+    const [notification] = await db
+      .insert(notifications)
+      .values({
+        userId,
+        type,
+        message,
+        actorId
+      })
+      .returning();
+
+    const ws = clients.get(userId);
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        type: 'notification',
+        data: notification
+      }));
+    }
+
+    return notification;
+  } catch (error) {
+    console.error('Error sending notification:', error);
+    throw error;
+  }
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/ping', (_req, res) => {
@@ -397,6 +426,94 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Notifications endpoints
+  app.get('/api/notifications', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      const userNotifications = await db.query.notifications.findMany({
+        where: eq(notifications.userId, req.user.id),
+        orderBy: desc(notifications.createdAt),
+        with: {
+          actor: true
+        }
+      });
+
+      res.json(userNotifications);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/notifications/read', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      await db
+        .update(notifications)
+        .set({ read: true })
+        .where(
+          and(
+            eq(notifications.userId, req.user.id),
+            eq(notifications.read, false)
+          )
+        );
+
+      res.sendStatus(200);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+
+  // WebSocket setup
+  const wss = new WebSocketServer({ noServer: true, path: '/ws' });
+  const clients = new Map<number, WebSocket>();
+
+  wss.on('connection', (ws, req: any) => {
+    if (!req.user?.id) {
+      ws.close();
+      return;
+    }
+
+    clients.set(req.user.id, ws);
+
+    ws.on('close', () => {
+      clients.delete(req.user.id);
+    });
+  });
+
   const httpServer = createServer(app);
+
+  // Upgrade HTTP connection to WebSocket
+  httpServer.on('upgrade', (request, socket, head) => {
+    if (!request.url?.startsWith('/ws')) {
+      socket.destroy();
+      return;
+    }
+
+    app(request as any, {} as any, () => {
+      if (!(request as any).user) {
+        socket.destroy();
+        return;
+      }
+
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        wss.emit('connection', ws, request);
+      });
+    });
+  });
+
+  // Expose the sendNotification function through the app locals
+  app.locals.sendNotification = (userId: number, type: string, message: string, actorId?: number) =>
+    sendNotification(clients, userId, type, message, actorId);
+
   return httpServer;
 }
+
+// Export the function type for use in other files
+export type SendNotificationFn = (userId: number, type: string, message: string, actorId?: number) => Promise<any>;
