@@ -8,12 +8,38 @@ import {
 } from "@/components/ui/card";
 import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { Treemap, ResponsiveContainer } from "recharts";
+import { Treemap, ResponsiveContainer, Tooltip } from "recharts";
 import { Role, Permission } from "@shared/schema";
 import { Loader2 } from "lucide-react";
 
 interface RoleWithPermissions extends Role {
   permissions: Permission[];
+}
+
+const COLORS = [
+  '#8884d8', // Primary color
+  '#82ca9d', // Success color
+  '#ffc658', // Warning color
+  '#ff8042', // Danger color
+];
+
+function CustomTooltip({ active, payload }: any) {
+  if (!active || !payload?.[0]) return null;
+
+  const data = payload[0].payload;
+  return (
+    <div className="bg-white p-4 rounded-lg shadow-lg border">
+      <p className="font-semibold">{data.name}</p>
+      {data.description && (
+        <p className="text-sm text-muted-foreground">{data.description}</p>
+      )}
+      {data.permissionCount && (
+        <p className="text-sm mt-2">
+          {data.permissionCount} permission{data.permissionCount !== 1 ? 's' : ''}
+        </p>
+      )}
+    </div>
+  );
 }
 
 export default function RolesDashboard() {
@@ -31,12 +57,17 @@ export default function RolesDashboard() {
     );
   }
 
-  const treeMapData = roles?.map(role => ({
+  const treeMapData = roles?.map((role, index) => ({
     name: role.name,
     size: role.permissions.length,
+    permissionCount: role.permissions.length,
+    description: role.description,
+    fill: COLORS[index % COLORS.length],
     children: role.permissions.map(perm => ({
       name: perm.name,
       size: 1,
+      description: perm.description,
+      fill: COLORS[index % COLORS.length],
     })),
   }));
 
@@ -65,9 +96,45 @@ export default function RolesDashboard() {
                   <Treemap
                     data={treeMapData}
                     dataKey="size"
-                    nameKey="name"
+                    ratio={4/3}
+                    stroke="#fff"
                     fill="#8884d8"
-                  />
+                    content={({ root, depth, x, y, width, height, index, payload, colors, rank, name }) => {
+                      return (
+                        <motion.g
+                          initial={{ opacity: 0, scale: 0.9 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          transition={{ duration: 0.3, delay: index * 0.1 }}
+                        >
+                          <rect
+                            x={x}
+                            y={y}
+                            width={width}
+                            height={height}
+                            fill={payload.fill}
+                            stroke="#fff"
+                            strokeWidth={2}
+                            style={{ opacity: depth === 1 ? 0.7 : 1 }}
+                          />
+                          <text
+                            x={x + width / 2}
+                            y={y + height / 2}
+                            textAnchor="middle"
+                            fill="#fff"
+                            fontSize={12}
+                            style={{
+                              pointerEvents: 'none',
+                              textShadow: '1px 1px 2px rgba(0,0,0,0.5)'
+                            }}
+                          >
+                            {name}
+                          </text>
+                        </motion.g>
+                      );
+                    }}
+                  >
+                    <Tooltip content={<CustomTooltip />} />
+                  </Treemap>
                 </ResponsiveContainer>
               </div>
             </CardContent>
@@ -82,7 +149,7 @@ export default function RolesDashboard() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -20 }}
-                  transition={{ delay: index * 0.1 }}
+                  transition={{ duration: 0.3, delay: index * 0.1 }}
                 >
                   <Card>
                     <CardHeader>
