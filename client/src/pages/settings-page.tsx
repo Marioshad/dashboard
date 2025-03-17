@@ -14,6 +14,7 @@ import { useState } from "react";
 import { Shield } from "lucide-react";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { NotificationSettings } from "@/components/notification-settings";
 
 interface AdminSettings {
   require2FA: boolean;
@@ -163,6 +164,9 @@ export default function SettingsPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* Add the NotificationSettings component */}
+        <NotificationSettings />
       </div>
     </DashboardLayout>
   );
