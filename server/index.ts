@@ -7,9 +7,11 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
+// Set trust proxy for Railway's proxy
+app.set('trust proxy', 1);
+
 // Log environment and port at startup
 log(`Starting server in ${process.env.NODE_ENV || 'development'} mode`);
-log('Using port: 5000');
 
 // Middleware to log API requests
 app.use((req, res, next) => {
@@ -49,6 +51,9 @@ app.use((req, res, next) => {
       const status = err.status || err.statusCode || 500;
       const message = err.message || "Internal Server Error";
       log(`Error: ${message}`);
+      if (err.stack) {
+        log(`Stack trace: ${err.stack}`);
+      }
       res.status(status).json({ message });
     });
 
@@ -57,10 +62,16 @@ app.use((req, res, next) => {
       await setupVite(app, server);
     } else {
       log("Starting in production mode...");
-      serveStatic(app);
+      try {
+        serveStatic(app);
+      } catch (error) {
+        log("Error setting up static file serving:", error);
+        throw error;
+      }
     }
 
-    const port = 5000;
+    // Use PORT from environment variable (required for Railway) or fallback to 5000
+    const port = process.env.PORT || 5000;
     log(`Attempting to start server on port ${port}...`);
 
     server.listen({
