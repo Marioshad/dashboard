@@ -3,6 +3,7 @@ import { drizzle } from "drizzle-orm/neon-serverless";
 import { Pool } from "@neondatabase/serverless";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
+import ws from "ws";
 
 const PostgresSessionStore = connectPg(session);
 
@@ -10,7 +11,11 @@ if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL is required");
 }
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+// Configure WebSocket for Neon's serverless driver
+const pool = new Pool({ 
+  connectionString: process.env.DATABASE_URL,
+  webSocketConstructor: ws 
+});
 const db = drizzle(pool);
 
 export interface IStorage {
@@ -31,12 +36,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUser(id: number): Promise<User | undefined> {
-    const result = await db.select().from(users).where({ id }).limit(1);
+    const result = await db.select().from(users).where(({ id: id_ }) => id_ === id).limit(1);
     return result[0];
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    const result = await db.select().from(users).where({ username }).limit(1);
+    const result = await db.select().from(users).where(({ username: username_ }) => username_ === username).limit(1);
     return result[0];
   }
 
