@@ -11,6 +11,7 @@ import ProfilePage from "@/pages/profile-page";
 import RolesPage from "@/pages/roles-page";
 import RolesMap from "@/pages/roles-map";
 import PermissionsPage from "@/pages/permissions-page";
+import SettingsPage from "@/pages/settings-page";
 
 function Router() {
   return (
@@ -20,6 +21,7 @@ function Router() {
       <ProtectedRoute path="/roles" component={RolesPage} />
       <ProtectedRoute path="/roles/map" component={RolesMap} />
       <ProtectedRoute path="/permissions" component={PermissionsPage} />
+      <ProtectedRoute path="/settings" component={SettingsPage} />
       <Route path="/auth" component={AuthPage} />
       <Route component={NotFound} />
     </Switch>

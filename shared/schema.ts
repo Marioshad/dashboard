@@ -3,6 +3,14 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
 
+// Add new table for global settings
+export const appSettings = pgTable("app_settings", {
+  id: serial("id").primaryKey(),
+  require2FA: boolean("require_2fa").default(false).notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  updatedBy: integer("updated_by").references(() => users.id),
+});
+
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
@@ -12,6 +20,8 @@ export const users = pgTable("users", {
   bio: text("bio"),
   avatarUrl: text("avatar_url"),
   roleId: integer("role_id"),
+  twoFactorEnabled: boolean("two_factor_enabled").default(false),
+  twoFactorSecret: text("two_factor_secret"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   deletedAt: timestamp("deleted_at")
@@ -67,6 +77,13 @@ export const rolePermissionsRelations = relations(rolePermissions, ({ one }) => 
   }),
 }));
 
+export const appSettingsRelations = relations(appSettings, ({ one }) => ({
+  updatedByUser: one(users, {
+    fields: [appSettings.updatedBy],
+    references: [users.id],
+  }),
+}));
+
 // Schemas
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
@@ -114,6 +131,7 @@ export const insertPermissionSchema = createInsertSchema(permissions).pick({
 
 export const updatePermissionSchema = insertPermissionSchema;
 
+// Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type UpdateProfile = z.infer<typeof updateProfileSchema>;
 export type InsertRole = z.infer<typeof insertRoleSchema>;
@@ -123,3 +141,4 @@ export type UpdatePermission = z.infer<typeof updatePermissionSchema>;
 export type User = typeof users.$inferSelect;
 export type Role = typeof roles.$inferSelect;
 export type Permission = typeof permissions.$inferSelect;
+export type AppSettings = typeof appSettings.$inferSelect;

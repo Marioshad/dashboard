@@ -7,7 +7,8 @@ import {
   Users,
   Shield,
   Key,
-  BarChart3, // Changed from Chart to BarChart3 which exists in lucide-react
+  BarChart3,
+  UserCircle,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import {
@@ -21,7 +22,7 @@ import { cn } from "@/lib/utils";
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, logoutMutation } = useAuth();
   const [location] = useLocation();
-  const [openMenus, setOpenMenus] = useState<string[]>(['users']);
+  const [openMenus, setOpenMenus] = useState<string[]>(['users', 'home']);
 
   const isMenuOpen = (menu: string) => openMenus.includes(menu);
   const toggleMenu = (menu: string) => {
@@ -41,15 +42,41 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             <div className="space-y-2">
               <h2 className="text-lg font-semibold mb-4">Dashboard</h2>
               <nav className="space-y-2">
-                <Link href="/">
-                  <Button
-                    variant={location === "/" ? "secondary" : "ghost"}
-                    className="w-full justify-start"
-                  >
-                    <Home className="mr-2 h-4 w-4" />
-                    Home
-                  </Button>
-                </Link>
+                {/* Home Section */}
+                <Collapsible 
+                  open={isMenuOpen('home')} 
+                  onOpenChange={() => toggleMenu('home')}
+                >
+                  <CollapsibleTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      className={cn(
+                        "w-full justify-between",
+                        isMenuOpen('home') && "bg-accent"
+                      )}
+                    >
+                      <span className="flex items-center">
+                        <Home className="mr-2 h-4 w-4" />
+                        Home
+                      </span>
+                      <span className={cn(
+                        "transition-transform",
+                        isMenuOpen('home') && "rotate-90"
+                      )}>›</span>
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="pl-6 space-y-1">
+                    <Link href="/profile">
+                      <Button
+                        variant={location === "/profile" ? "secondary" : "ghost"}
+                        className="w-full justify-start"
+                      >
+                        <UserCircle className="mr-2 h-4 w-4" />
+                        Profile
+                      </Button>
+                    </Link>
+                  </CollapsibleContent>
+                </Collapsible>
 
                 {/* Users Section */}
                 <Collapsible open={isMenuOpen('users')} onOpenChange={() => toggleMenu('users')}>
@@ -101,23 +128,28 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                     </Link>
                   </CollapsibleContent>
                 </Collapsible>
-
-                <Link href="/profile">
-                  <Button
-                    variant={location === "/profile" ? "secondary" : "ghost"}
-                    className="w-full justify-start"
-                  >
-                    <Settings className="mr-2 h-4 w-4" />
-                    Settings
-                  </Button>
-                </Link>
               </nav>
             </div>
-            <div className="mt-auto">
+
+            <div className="mt-auto space-y-4">
+              {/* Settings */}
+              <Link href="/settings">
+                <Button
+                  variant={location === "/settings" ? "secondary" : "ghost"}
+                  className="w-full justify-start"
+                >
+                  <Settings className="mr-2 h-4 w-4" />
+                  Settings
+                </Button>
+              </Link>
+
+              {/* User Profile */}
               <div className="flex items-center gap-2 mb-4 p-2 rounded-lg bg-secondary">
-                <Users className="h-4 w-4" />
+                <UserCircle className="h-4 w-4" />
                 <span className="font-medium">{user?.username}</span>
               </div>
+
+              {/* Logout */}
               <Button
                 variant="destructive"
                 className="w-full"
