@@ -39,6 +39,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
 
 export default function RolesPage() {
@@ -203,8 +204,10 @@ export default function RolesPage() {
                         <FormLabel>Permissions</FormLabel>
                         <Select
                           multiple
-                          value={field.value}
-                          onValueChange={field.onChange}
+                          value={field.value.map(String)}
+                          onValueChange={(values) => {
+                            field.onChange(values.map(Number));
+                          }}
                         >
                           <FormControl>
                             <SelectTrigger>
@@ -222,6 +225,24 @@ export default function RolesPage() {
                             ))}
                           </SelectContent>
                         </Select>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {field.value.map((permissionId) => {
+                            const permission = permissions?.find(
+                              (p) => p.id === permissionId
+                            );
+                            return (
+                              permission && (
+                                <Badge
+                                  key={permission.id}
+                                  variant="secondary"
+                                  className="text-xs"
+                                >
+                                  {permission.name}
+                                </Badge>
+                              )
+                            );
+                          })}
+                        </div>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -262,6 +283,17 @@ export default function RolesPage() {
                       <p className="text-sm text-muted-foreground">
                         {role.description}
                       </p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {role.permissions?.map((permission) => (
+                          <Badge
+                            key={permission.id}
+                            variant="outline"
+                            className="text-xs"
+                          >
+                            {permission.name}
+                          </Badge>
+                        ))}
+                      </div>
                     </div>
                     <div className="flex gap-2">
                       <Dialog>
@@ -316,6 +348,60 @@ export default function RolesPage() {
                                         defaultValue={role.description || ""}
                                       />
                                     </FormControl>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+                              <FormField
+                                control={form.control}
+                                name="permissions"
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>Permissions</FormLabel>
+                                    <Select
+                                      multiple
+                                      value={field.value.map(String)}
+                                      onValueChange={(values) => {
+                                        field.onChange(values.map(Number));
+                                      }}
+                                      defaultValue={role.permissions?.map(p => 
+                                        p.id.toString()
+                                      )}
+                                    >
+                                      <FormControl>
+                                        <SelectTrigger>
+                                          <SelectValue placeholder="Select permissions" />
+                                        </SelectTrigger>
+                                      </FormControl>
+                                      <SelectContent>
+                                        {permissions?.map((permission) => (
+                                          <SelectItem
+                                            key={permission.id}
+                                            value={permission.id.toString()}
+                                          >
+                                            {permission.name}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                      {field.value.map((permissionId) => {
+                                        const permission = permissions?.find(
+                                          (p) => p.id === permissionId
+                                        );
+                                        return (
+                                          permission && (
+                                            <Badge
+                                              key={permission.id}
+                                              variant="secondary"
+                                              className="text-xs"
+                                            >
+                                              {permission.name}
+                                            </Badge>
+                                          )
+                                        );
+                                      })}
+                                    </div>
                                     <FormMessage />
                                   </FormItem>
                                 )}
