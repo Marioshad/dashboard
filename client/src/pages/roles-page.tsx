@@ -40,7 +40,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 interface RoleWithPermissions extends Role {
   permissions: Permission[];
@@ -48,7 +48,7 @@ interface RoleWithPermissions extends Role {
 
 export default function RolesPage() {
   const { toast } = useToast();
-  const [selectedRole, setSelectedRole] = useState<Role | null>(null);
+  const [selectedRole, setSelectedRole] = useState<RoleWithPermissions | null>(null);
 
   const { data: roles, isLoading: rolesLoading } = useQuery<RoleWithPermissions[]>({
     queryKey: ["/api/roles"],
@@ -66,6 +66,23 @@ export default function RolesPage() {
       permissions: [],
     },
   });
+
+  // Reset form when dialog closes
+  useEffect(() => {
+    if (!selectedRole) {
+      form.reset({
+        name: "",
+        description: "",
+        permissions: [],
+      });
+    } else {
+      form.reset({
+        name: selectedRole.name,
+        description: selectedRole.description || "",
+        permissions: selectedRole.permissions.map(p => p.id),
+      });
+    }
+  }, [selectedRole, form]);
 
   const createRoleMutation = useMutation({
     mutationFn: async (data: z.infer<typeof insertRoleSchema>) => {
@@ -215,7 +232,7 @@ export default function RolesPage() {
                                 field.onChange([Number(values)]);
                               }
                             }}
-                            value={field.value?.map(String)}
+                            defaultValue={field.value?.map(String)}
                             multiple
                           >
                             <SelectTrigger>
@@ -304,7 +321,9 @@ export default function RolesPage() {
                       </div>
                     </div>
                     <div className="flex gap-2">
-                      <Dialog>
+                      <Dialog open={selectedRole?.id === role.id} onOpenChange={(open) => {
+                        if (!open) setSelectedRole(null);
+                      }}>
                         <DialogTrigger asChild>
                           <Button
                             variant="outline"
@@ -335,10 +354,7 @@ export default function RolesPage() {
                                   <FormItem>
                                     <FormLabel>Name</FormLabel>
                                     <FormControl>
-                                      <Input
-                                        {...field}
-                                        defaultValue={role.name}
-                                      />
+                                      <Input {...field} />
                                     </FormControl>
                                     <FormMessage />
                                   </FormItem>
@@ -351,10 +367,7 @@ export default function RolesPage() {
                                   <FormItem>
                                     <FormLabel>Description</FormLabel>
                                     <FormControl>
-                                      <Textarea
-                                        {...field}
-                                        defaultValue={role.description || ""}
-                                      />
+                                      <Textarea {...field} />
                                     </FormControl>
                                     <FormMessage />
                                   </FormItem>
@@ -375,11 +388,8 @@ export default function RolesPage() {
                                             field.onChange([Number(values)]);
                                           }
                                         }}
-                                        value={field.value?.map(String)}
+                                        defaultValue={field.value?.map(String)}
                                         multiple
-                                        defaultValue={role.permissions?.map(p => 
-                                          p.id.toString()
-                                        )}
                                       >
                                         <SelectTrigger>
                                           <SelectValue placeholder="Select permissions" />
