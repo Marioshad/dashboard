@@ -24,7 +24,7 @@ pool.on('error', (err) => {
 // Create a Drizzle instance
 export const db = drizzle(pool, { schema });
 
-// Function to test database connection
+// Function to test database connection and ensure tables exist
 export async function testConnection() {
   let retries = 10; // Increased retries for production
   const retryDelay = 5000; // 5 seconds between retries
@@ -32,9 +32,29 @@ export async function testConnection() {
   while (retries) {
     try {
       const client = await pool.connect();
+
+      // Test basic connectivity
       const result = await client.query('SELECT NOW()');
-      client.release();
       console.log('Database connection successful:', result.rows[0].now);
+
+      // Create tables if they don't exist
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS users (
+          id SERIAL PRIMARY KEY,
+          username TEXT NOT NULL UNIQUE,
+          password TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS session (
+          sid varchar NOT NULL COLLATE "default",
+          sess json NOT NULL,
+          expire timestamp(6) NOT NULL,
+          CONSTRAINT "session_pkey" PRIMARY KEY ("sid")
+        );
+      `);
+      console.log('Database tables verified');
+
+      client.release();
       return true;
     } catch (err) {
       console.error('Database connection attempt failed:', err);
