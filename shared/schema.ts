@@ -21,7 +21,7 @@ export const notifications = pgTable("notifications", {
   actorId: integer("actor_id").references(() => users.id), // User who triggered the notification
 });
 
-// Add new types to the user table
+// Add subscription fields to the user table
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
@@ -37,6 +37,9 @@ export const users = pgTable("users", {
   webNotifications: boolean("web_notifications").default(true),
   mentionNotifications: boolean("mention_notifications").default(true),
   followNotifications: boolean("follow_notifications").default(true),
+  stripeCustomerId: text("stripe_customer_id"),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+  subscriptionStatus: text("subscription_status").default("inactive"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   deletedAt: timestamp("deleted_at")

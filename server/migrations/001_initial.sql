@@ -14,6 +14,9 @@ CREATE TABLE IF NOT EXISTS users (
     web_notifications BOOLEAN DEFAULT TRUE,
     mention_notifications BOOLEAN DEFAULT TRUE,
     follow_notifications BOOLEAN DEFAULT TRUE,
+    stripe_customer_id TEXT,
+    stripe_subscription_id TEXT,
+    subscription_status TEXT DEFAULT 'inactive',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     deleted_at TIMESTAMP
@@ -62,3 +65,8 @@ CREATE TABLE IF NOT EXISTS app_settings (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_by INTEGER REFERENCES users(id)
 );
+
+-- Insert default app settings if table is empty
+INSERT INTO app_settings (require_2fa)
+SELECT FALSE
+WHERE NOT EXISTS (SELECT 1 FROM app_settings);
