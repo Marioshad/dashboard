@@ -5,6 +5,8 @@ import * as schema from "@shared/schema";
 import { QueryResult } from 'pg';
 import { InferModel } from 'drizzle-orm';
 import { permissions, roles, rolePermissions } from '@shared/schema';
+import path from 'path';
+import fs from 'fs';
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL is required");
@@ -35,90 +37,13 @@ async function testConnection() {
   while (retries) {
     try {
       const client = await pool.connect();
+      console.log('Database connection successful:', (await client.query('SELECT NOW()')).rows[0].now);
 
-      const result = await client.query('SELECT NOW()');
-      console.log('Database connection successful:', result.rows[0].now);
+      // Execute initial migration
+      const migrationPath = path.join(process.cwd(), 'server', 'migrations', '001_initial.sql');
+      const migrationSQL = fs.readFileSync(migrationPath, 'utf8');
 
-      await client.query(`
-        CREATE TABLE IF NOT EXISTS users (
-          id SERIAL PRIMARY KEY,
-          username TEXT NOT NULL UNIQUE,
-          password TEXT NOT NULL,
-          full_name TEXT,
-          email TEXT,
-          bio TEXT,
-          avatar_url TEXT,
-          role_id INTEGER,
-          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-          updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-          deleted_at TIMESTAMP WITH TIME ZONE
-        );
-
-        CREATE TABLE IF NOT EXISTS roles (
-          id SERIAL PRIMARY KEY,
-          name TEXT NOT NULL UNIQUE,
-          description TEXT,
-          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-          updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-          deleted_at TIMESTAMP WITH TIME ZONE
-        );
-
-        CREATE TABLE IF NOT EXISTS permissions (
-          id SERIAL PRIMARY KEY,
-          name TEXT NOT NULL UNIQUE,
-          description TEXT,
-          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-          deleted_at TIMESTAMP WITH TIME ZONE
-        );
-
-        CREATE TABLE IF NOT EXISTS role_permissions (
-          role_id INTEGER NOT NULL REFERENCES roles(id),
-          permission_id INTEGER NOT NULL REFERENCES permissions(id),
-          PRIMARY KEY (role_id, permission_id)
-        );
-
-        CREATE TABLE IF NOT EXISTS session (
-          sid varchar NOT NULL COLLATE "default",
-          sess json NOT NULL,
-          expire timestamp(6) NOT NULL,
-          CONSTRAINT "session_pkey" PRIMARY KEY ("sid")
-        );
-
-        -- Add new columns if they don't exist
-        DO $$ 
-        BEGIN 
-          BEGIN
-            ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name TEXT;
-            ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT;
-            ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT;
-            ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;
-            ALTER TABLE users ADD COLUMN IF NOT EXISTS role_id INTEGER;
-            ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL;
-            ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL;
-            ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITH TIME ZONE;
-
-            ALTER TABLE roles ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITH TIME ZONE;
-            ALTER TABLE permissions ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITH TIME ZONE;
-          EXCEPTION WHEN others THEN
-            RAISE NOTICE 'Error adding columns: %', SQLERRM;
-          END;
-        END $$;
-
-        -- Create foreign key constraint if it doesn't exist
-        DO $$
-        BEGIN
-          IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint WHERE conname = 'users_role_id_fkey'
-          ) THEN
-            ALTER TABLE users
-            ADD CONSTRAINT users_role_id_fkey
-            FOREIGN KEY (role_id)
-            REFERENCES roles(id);
-          END IF;
-        EXCEPTION WHEN others THEN
-          RAISE NOTICE 'Error adding foreign key: %', SQLERRM;
-        END $$;
-      `);
+      await client.query(migrationSQL);
       console.log('Database tables verified');
 
       await seedRolesAndPermissions();
@@ -126,7 +51,7 @@ async function testConnection() {
       client.release();
       return true;
     } catch (err) {
-      console.error('Database connection attempt failed:', err);
+      console.error('Database connection/migration attempt failed:', err);
       retries -= 1;
       if (!retries) {
         throw err;
