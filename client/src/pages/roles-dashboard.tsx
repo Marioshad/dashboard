@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/card";
 import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { TreeMap, ResponsiveContainer } from "recharts";
+import { Treemap, ResponsiveContainer } from "recharts";
 import { Role, Permission } from "@shared/schema";
 import { Loader2 } from "lucide-react";
 
@@ -62,7 +62,7 @@ export default function RolesDashboard() {
             <CardContent>
               <div className="h-[400px]">
                 <ResponsiveContainer width="100%" height="100%">
-                  <TreeMap
+                  <Treemap
                     data={treeMapData}
                     dataKey="size"
                     nameKey="name"
