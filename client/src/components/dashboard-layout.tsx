@@ -7,7 +7,8 @@ import {
   Users,
   Shield,
   Key,
-  BarChart3, // Changed from Chart to BarChart3 which exists in lucide-react
+  BarChart3,
+  UserCircle,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import {
@@ -17,11 +18,14 @@ import {
 } from "@/components/ui/collapsible";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { Navbar } from "@/components/navbar"; // Assuming Navbar component exists
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, logoutMutation } = useAuth();
   const [location] = useLocation();
-  const [openMenus, setOpenMenus] = useState<string[]>(['users']);
+  const [openMenus, setOpenMenus] = useState<string[]>(['users', 'home']);
+
+  const isAdmin = user?.roleId === 1 || user?.roleId === 2; // Superadmin or Admin
 
   const isMenuOpen = (menu: string) => openMenus.includes(menu);
   const toggleMenu = (menu: string) => {
@@ -34,90 +38,135 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background">
+      <Navbar />
       <div className="flex">
-        {/* Sidebar */}
-        <aside className="w-64 bg-card border-r min-h-screen p-4">
+        <aside className="w-64 bg-card border-r min-h-[calc(100vh-4rem)] p-4">
           <div className="flex flex-col h-full">
             <div className="space-y-2">
               <h2 className="text-lg font-semibold mb-4">Dashboard</h2>
               <nav className="space-y-2">
-                <Link href="/">
-                  <Button
-                    variant={location === "/" ? "secondary" : "ghost"}
-                    className="w-full justify-start"
-                  >
-                    <Home className="mr-2 h-4 w-4" />
-                    Home
-                  </Button>
-                </Link>
-
-                {/* Users Section */}
-                <Collapsible open={isMenuOpen('users')} onOpenChange={() => toggleMenu('users')}>
+                {/* Home Section */}
+                <Collapsible
+                  open={isMenuOpen('home')}
+                  onOpenChange={() => toggleMenu('home')}
+                >
                   <CollapsibleTrigger asChild>
                     <Button
                       variant="ghost"
                       className={cn(
                         "w-full justify-between",
-                        isMenuOpen('users') && "bg-accent"
+                        isMenuOpen('home') && "bg-accent"
                       )}
                     >
                       <span className="flex items-center">
-                        <Users className="mr-2 h-4 w-4" />
-                        Users
+                        <Home className="mr-2 h-4 w-4" />
+                        Home
                       </span>
                       <span className={cn(
                         "transition-transform",
-                        isMenuOpen('users') && "rotate-90"
+                        isMenuOpen('home') && "rotate-90"
                       )}>›</span>
                     </Button>
                   </CollapsibleTrigger>
                   <CollapsibleContent className="pl-6 space-y-1">
-                    <Link href="/roles">
+                    <Link href="/profile">
                       <Button
-                        variant={location === "/roles" ? "secondary" : "ghost"}
+                        variant={location === "/profile" ? "secondary" : "ghost"}
                         className="w-full justify-start"
                       >
-                        <Shield className="mr-2 h-4 w-4" />
-                        Roles
-                      </Button>
-                    </Link>
-                    <Link href="/roles/map">
-                      <Button
-                        variant={location === "/roles/map" ? "secondary" : "ghost"}
-                        className="w-full justify-start"
-                      >
-                        <BarChart3 className="mr-2 h-4 w-4" />
-                        Roles Map
-                      </Button>
-                    </Link>
-                    <Link href="/permissions">
-                      <Button
-                        variant={location === "/permissions" ? "secondary" : "ghost"}
-                        className="w-full justify-start"
-                      >
-                        <Key className="mr-2 h-4 w-4" />
-                        Permissions
+                        <UserCircle className="mr-2 h-4 w-4" />
+                        Profile
                       </Button>
                     </Link>
                   </CollapsibleContent>
                 </Collapsible>
 
-                <Link href="/profile">
-                  <Button
-                    variant={location === "/profile" ? "secondary" : "ghost"}
-                    className="w-full justify-start"
+                {/* Users Section - Only visible to admins */}
+                {isAdmin && (
+                  <Collapsible
+                    open={isMenuOpen('users')}
+                    onOpenChange={() => toggleMenu('users')}
                   >
-                    <Settings className="mr-2 h-4 w-4" />
-                    Settings
-                  </Button>
-                </Link>
+                    <CollapsibleTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        className={cn(
+                          "w-full justify-between",
+                          isMenuOpen('users') && "bg-accent"
+                        )}
+                      >
+                        <span className="flex items-center">
+                          <Users className="mr-2 h-4 w-4" />
+                          Users
+                        </span>
+                        <span className={cn(
+                          "transition-transform",
+                          isMenuOpen('users') && "rotate-90"
+                        )}>›</span>
+                      </Button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="pl-6 space-y-1">
+                      <Link href="/users">
+                        <Button
+                          variant={location === "/users" ? "secondary" : "ghost"}
+                          className="w-full justify-start"
+                        >
+                          <Users className="mr-2 h-4 w-4" />
+                          Users List
+                        </Button>
+                      </Link>
+                      <Link href="/roles">
+                        <Button
+                          variant={location === "/roles" ? "secondary" : "ghost"}
+                          className="w-full justify-start"
+                        >
+                          <Shield className="mr-2 h-4 w-4" />
+                          Roles
+                        </Button>
+                      </Link>
+                      <Link href="/roles/map">
+                        <Button
+                          variant={location === "/roles/map" ? "secondary" : "ghost"}
+                          className="w-full justify-start"
+                        >
+                          <BarChart3 className="mr-2 h-4 w-4" />
+                          Roles Map
+                        </Button>
+                      </Link>
+                      <Link href="/permissions">
+                        <Button
+                          variant={location === "/permissions" ? "secondary" : "ghost"}
+                          className="w-full justify-start"
+                        >
+                          <Key className="mr-2 h-4 w-4" />
+                          Permissions
+                        </Button>
+                      </Link>
+                    </CollapsibleContent>
+                  </Collapsible>
+                )}
               </nav>
             </div>
-            <div className="mt-auto">
+
+            <div className="mt-auto space-y-4">
+              {/* Settings */}
+              <Link href="/settings">
+                <Button
+                  variant={location === "/settings" ? "secondary" : "ghost"}
+                  className="w-full justify-start"
+                >
+                  <Settings className="mr-2 h-4 w-4" />
+                  Settings
+                </Button>
+              </Link>
+
+              {/* User Profile */}
               <div className="flex items-center gap-2 mb-4 p-2 rounded-lg bg-secondary">
-                <Users className="h-4 w-4" />
+                <UserCircle className="h-4 w-4" />
                 <span className="font-medium">{user?.username}</span>
               </div>
+
+              {/* Logout */}
               <Button
                 variant="destructive"
                 className="w-full"

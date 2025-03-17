@@ -8,8 +8,9 @@ import path from "path";
 import fs from "fs";
 import express from 'express';
 import { db } from "./db";
-import { roles, permissions, rolePermissions } from "@shared/schema";
-import { eq, and, isNull, sql } from "drizzle-orm";
+import { roles, permissions, rolePermissions, users, appSettings, notifications } from "@shared/schema";
+import { eq, and, isNull, sql, desc } from "drizzle-orm";
+import { WebSocketServer, WebSocket } from 'ws';
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(process.cwd(), "uploads");
@@ -40,6 +41,34 @@ const upload = multer({
     cb(null, true);
   }
 });
+
+// Helper function to send notification
+async function sendNotification(clients: Map<number, WebSocket>, userId: number, type: string, message: string, actorId?: number) {
+  try {
+    const [notification] = await db
+      .insert(notifications)
+      .values({
+        userId,
+        type,
+        message,
+        actorId
+      })
+      .returning();
+
+    const ws = clients.get(userId);
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        type: 'notification',
+        data: notification
+      }));
+    }
+
+    return notification;
+  } catch (error) {
+    console.error('Error sending notification:', error);
+    throw error;
+  }
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/ping', (_req, res) => {
@@ -96,10 +125,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.sendStatus(401);
       }
 
-      const rolesData = await db.query.roles.findMany({
+      const rolesWithPermissions = await db.query.roles.findMany({
         where: isNull(roles.deletedAt),
         with: {
-          permissions: {
+          rolePermissions: {
             with: {
               permission: true
             }
@@ -107,12 +136,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       });
 
-      const rolesWithPermissions = rolesData.map(role => ({
+      // Transform the response to match the expected format
+      const transformedRoles = rolesWithPermissions.map(role => ({
         ...role,
-        permissions: role.permissions.map(rp => rp.permission)
+        permissions: role.rolePermissions.map(rp => rp.permission)
       }));
 
-      res.json(rolesWithPermissions);
+      res.json(transformedRoles);
     } catch (error) {
       next(error);
     }
@@ -190,7 +220,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Soft delete
       await db.update(roles)
-        .set({ 
+        .set({
           deletedAt: sql`CURRENT_TIMESTAMP`,
           updatedAt: sql`CURRENT_TIMESTAMP`
         })
@@ -269,6 +299,216 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Add this route inside registerRoutes function
+  app.get('/api/users', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      // Check if user is admin or superadmin
+      const userRole = await db.query.roles.findFirst({
+        where: eq(roles.id, req.user.roleId as number),
+      });
+
+      if (!userRole || !['Superadmin', 'Admin'].includes(userRole.name)) {
+        return res.sendStatus(403);
+      }
+
+      const usersList = await db.query.users.findMany({
+        where: isNull(users.deletedAt),
+        with: {
+          role: true
+        }
+      });
+
+      res.json(usersList);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Admin Settings endpoints
+  app.get('/api/settings/admin', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      // Check if user is admin or superadmin
+      const userRole = await db.query.roles.findFirst({
+        where: eq(roles.id, req.user.roleId as number),
+      });
+
+      if (!userRole || !['Superadmin', 'Admin'].includes(userRole.name)) {
+        return res.sendStatus(403);
+      }
+
+      const [settings] = await db.select().from(appSettings).limit(1);
+      res.json(settings || { require2FA: false });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch('/api/settings/admin', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      // Check if user is admin or superadmin
+      const userRole = await db.query.roles.findFirst({
+        where: eq(roles.id, req.user.roleId as number),
+      });
+
+      if (!userRole || !['Superadmin', 'Admin'].includes(userRole.name)) {
+        return res.sendStatus(403);
+      }
+
+      const [settings] = await db.select().from(appSettings).limit(1);
+
+      if (settings) {
+        const [updated] = await db
+          .update(appSettings)
+          .set({
+            ...req.body,
+            updatedBy: req.user.id,
+            updatedAt: sql`CURRENT_TIMESTAMP`,
+          })
+          .where(eq(appSettings.id, settings.id))
+          .returning();
+        res.json(updated);
+      } else {
+        const [created] = await db
+          .insert(appSettings)
+          .values({
+            ...req.body,
+            updatedBy: req.user.id,
+          })
+          .returning();
+        res.json(created);
+      }
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // User 2FA endpoints
+  app.post('/api/user/2fa', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      const [settings] = await db.select().from(appSettings).limit(1);
+      const userRole = await db.query.roles.findFirst({
+        where: eq(roles.id, req.user.roleId as number),
+      });
+
+      // Only allow enabling 2FA if it's required by admin or user is admin/superadmin
+      if (!req.body.enabled && settings?.require2FA && !['Superadmin', 'Admin'].includes(userRole?.name)) {
+        return res.status(403).json({ message: "2FA is required by administrator" });
+      }
+
+      const [updated] = await db
+        .update(users)
+        .set({
+          twoFactorEnabled: req.body.enabled,
+          updatedAt: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(users.id, req.user.id))
+        .returning();
+
+      res.json(updated);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Notifications endpoints
+  app.get('/api/notifications', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      const userNotifications = await db.query.notifications.findMany({
+        where: eq(notifications.userId, req.user.id),
+        orderBy: desc(notifications.createdAt),
+        with: {
+          actor: true
+        }
+      });
+
+      res.json(userNotifications);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/notifications/read', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      await db
+        .update(notifications)
+        .set({ read: true })
+        .where(
+          and(
+            eq(notifications.userId, req.user.id),
+            eq(notifications.read, false)
+          )
+        );
+
+      res.sendStatus(200);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+
+  // WebSocket setup
+  const wss = new WebSocketServer({ noServer: true });
+  const clients = new Map<number, WebSocket>();
+
   const httpServer = createServer(app);
+
+  // Handle WebSocket upgrade
+  httpServer.on('upgrade', (request, socket, head) => {
+    if (!request.url?.startsWith('/ws-notifications')) {
+      socket.destroy();
+      return;
+    }
+
+    // Add session handling to WebSocket upgrade
+    const expressRequest = request as any;
+    app(expressRequest, {} as any, async () => {
+      if (!expressRequest.user?.id) {
+        socket.destroy();
+        return;
+      }
+
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        const userId = expressRequest.user.id;
+        clients.set(userId, ws);
+
+        ws.on('close', () => {
+          clients.delete(userId);
+        });
+
+        wss.emit('connection', ws, request);
+      });
+    });
+  });
+
+  // Expose the sendNotification function through the app locals
+  app.locals.sendNotification = (userId: number, type: string, message: string, actorId?: number) =>
+    sendNotification(clients, userId, type, message, actorId);
+
   return httpServer;
 }
+
+export type SendNotificationFn = (userId: number, type: string, message: string, actorId?: number) => Promise<any>;

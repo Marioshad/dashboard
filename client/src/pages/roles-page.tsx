@@ -32,25 +32,44 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { 
+import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useState } from "react";
+import { Badge } from "@/components/ui/badge";
+import { useState, useEffect } from "react";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { useAuth } from "@/hooks/use-auth";
+
+interface RoleWithPermissions extends Role {
+  permissions: Permission[];
+}
 
 export default function RolesPage() {
+  const { user } = useAuth();
   const { toast } = useToast();
-  const [selectedRole, setSelectedRole] = useState<Role | null>(null);
+  const [selectedRole, setSelectedRole] = useState<RoleWithPermissions | null>(null);
 
-  const { data: roles, isLoading: rolesLoading } = useQuery<Role[]>({
+  const isAdmin = user?.roleId === 1 || user?.roleId === 2; // Superadmin or Admin
+
+  const { data: roles, isLoading: rolesLoading } = useQuery<RoleWithPermissions[]>({
     queryKey: ["/api/roles"],
+    enabled: isAdmin,
   });
 
   const { data: permissions, isLoading: permissionsLoading } = useQuery<Permission[]>({
     queryKey: ["/api/permissions"],
+    enabled: isAdmin,
   });
 
   const form = useForm<z.infer<typeof insertRoleSchema>>({
@@ -61,6 +80,23 @@ export default function RolesPage() {
       permissions: [],
     },
   });
+
+  // Reset form when dialog closes
+  useEffect(() => {
+    if (!selectedRole) {
+      form.reset({
+        name: "",
+        description: "",
+        permissions: [],
+      });
+    } else {
+      form.reset({
+        name: selectedRole.name,
+        description: selectedRole.description || "",
+        permissions: selectedRole.permissions.map((p) => p.id),
+      });
+    }
+  }, [selectedRole, form]);
 
   const createRoleMutation = useMutation({
     mutationFn: async (data: z.infer<typeof insertRoleSchema>) => {
@@ -126,6 +162,18 @@ export default function RolesPage() {
       });
     },
   });
+
+  if (!isAdmin) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
+          <p className="text-muted-foreground">
+            You don't have permission to view this page.
+          </p>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   if (rolesLoading || permissionsLoading) {
     return (
@@ -201,27 +249,58 @@ export default function RolesPage() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Permissions</FormLabel>
-                        <Select
-                          multiple
-                          value={field.value}
-                          onValueChange={field.onChange}
-                        >
-                          <FormControl>
+                        <FormControl>
+                          <Select
+                            onValueChange={(value) => {
+                              const currentValue = Array.isArray(field.value)
+                                ? field.value
+                                : [];
+                              const numValue = Number(value);
+                              const newValue = currentValue.includes(numValue)
+                                ? currentValue.filter((v) => v !== numValue)
+                                : [...currentValue, numValue];
+                              field.onChange(newValue);
+                            }}
+                          >
                             <SelectTrigger>
                               <SelectValue placeholder="Select permissions" />
                             </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {permissions?.map((permission) => (
-                              <SelectItem
-                                key={permission.id}
-                                value={permission.id.toString()}
-                              >
-                                {permission.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                            <SelectContent>
+                              {permissions?.map((permission) => (
+                                <SelectItem
+                                  key={permission.id}
+                                  value={permission.id.toString()}
+                                >
+                                  {permission.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </FormControl>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {field.value?.map((permissionId) => {
+                            const permission = permissions?.find(
+                              (p) => p.id === permissionId
+                            );
+                            return (
+                              permission && (
+                                <Badge
+                                  key={permission.id}
+                                  variant="secondary"
+                                  className="text-xs cursor-pointer"
+                                  onClick={() => {
+                                    const newValue = field.value.filter(
+                                      (id) => id !== permission.id
+                                    );
+                                    field.onChange(newValue);
+                                  }}
+                                >
+                                  {permission.name} ×
+                                </Badge>
+                              )
+                            );
+                          })}
+                        </div>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -239,6 +318,58 @@ export default function RolesPage() {
                   </Button>
                 </form>
               </Form>
+            </CardContent>
+          </Card>
+
+          {/* Roles Table */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Roles and Permissions Overview</CardTitle>
+              <CardDescription>
+                Detailed view of all roles and their assigned permissions
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Role Name</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead className="text-center">Permissions Count</TableHead>
+                    <TableHead>Assigned Permissions</TableHead>
+                    <TableHead>Last Updated</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {roles?.map((role) => (
+                    <TableRow key={role.id}>
+                      <TableCell className="font-medium">{role.name}</TableCell>
+                      <TableCell>{role.description}</TableCell>
+                      <TableCell className="text-center">
+                        {role.permissions.length}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-1">
+                          {role.permissions.map((permission) => (
+                            <Badge
+                              key={permission.id}
+                              variant="outline"
+                              className="text-xs"
+                            >
+                              {permission.name}
+                            </Badge>
+                          ))}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {new Date(
+                          role.updatedAt || role.createdAt
+                        ).toLocaleDateString()}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </CardContent>
           </Card>
 
@@ -262,9 +393,25 @@ export default function RolesPage() {
                       <p className="text-sm text-muted-foreground">
                         {role.description}
                       </p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {role.permissions?.map((permission) => (
+                          <Badge
+                            key={permission.id}
+                            variant="outline"
+                            className="text-xs"
+                          >
+                            {permission.name}
+                          </Badge>
+                        ))}
+                      </div>
                     </div>
                     <div className="flex gap-2">
-                      <Dialog>
+                      <Dialog
+                        open={selectedRole?.id === role.id}
+                        onOpenChange={(open) => {
+                          if (!open) setSelectedRole(null);
+                        }}
+                      >
                         <DialogTrigger asChild>
                           <Button
                             variant="outline"
@@ -295,10 +442,7 @@ export default function RolesPage() {
                                   <FormItem>
                                     <FormLabel>Name</FormLabel>
                                     <FormControl>
-                                      <Input
-                                        {...field}
-                                        defaultValue={role.name}
-                                      />
+                                      <Input {...field} />
                                     </FormControl>
                                     <FormMessage />
                                   </FormItem>
@@ -311,11 +455,77 @@ export default function RolesPage() {
                                   <FormItem>
                                     <FormLabel>Description</FormLabel>
                                     <FormControl>
-                                      <Textarea
-                                        {...field}
-                                        defaultValue={role.description || ""}
-                                      />
+                                      <Textarea {...field} />
                                     </FormControl>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+                              <FormField
+                                control={form.control}
+                                name="permissions"
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>Permissions</FormLabel>
+                                    <FormControl>
+                                      <Select
+                                        onValueChange={(value) => {
+                                          const currentValue = Array.isArray(
+                                            field.value
+                                          )
+                                            ? field.value
+                                            : [];
+                                          const numValue = Number(value);
+                                          const newValue = currentValue.includes(
+                                            numValue
+                                          )
+                                            ? currentValue.filter(
+                                                (v) => v !== numValue
+                                              )
+                                            : [...currentValue, numValue];
+                                          field.onChange(newValue);
+                                        }}
+                                      >
+                                        <SelectTrigger>
+                                          <SelectValue placeholder="Select permissions" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {permissions?.map((permission) => (
+                                            <SelectItem
+                                              key={permission.id}
+                                              value={permission.id.toString()}
+                                            >
+                                              {permission.name}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </FormControl>
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                      {field.value?.map((permissionId) => {
+                                        const permission = permissions?.find(
+                                          (p) => p.id === permissionId
+                                        );
+                                        return (
+                                          permission && (
+                                            <Badge
+                                              key={permission.id}
+                                              variant="secondary"
+                                              className="text-xs cursor-pointer"
+                                              onClick={() => {
+                                                const newValue = field.value.filter(
+                                                  (id) =>
+                                                    id !== permission.id
+                                                );
+                                                field.onChange(newValue);
+                                              }}
+                                            >
+                                              {permission.name} ×
+                                            </Badge>
+                                          )
+                                        );
+                                      })}
+                                    </div>
                                     <FormMessage />
                                   </FormItem>
                                 )}
