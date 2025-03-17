@@ -28,19 +28,17 @@ pool.on('error', (err) => {
 export const db = drizzle(pool, { schema });
 
 // Function to test database connection and ensure tables exist
-export async function testConnection() {
-  let retries = 10; // Increased retries for production
-  const retryDelay = 5000; // 5 seconds between retries
+async function testConnection() {
+  let retries = 10;
+  const retryDelay = 5000;
 
   while (retries) {
     try {
       const client = await pool.connect();
 
-      // Test basic connectivity
       const result = await client.query('SELECT NOW()');
       console.log('Database connection successful:', result.rows[0].now);
 
-      // Create tables if they don't exist
       await client.query(`
         CREATE TABLE IF NOT EXISTS users (
           id SERIAL PRIMARY KEY,
@@ -52,7 +50,8 @@ export async function testConnection() {
           avatar_url TEXT,
           role_id INTEGER,
           created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-          updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+          deleted_at TIMESTAMP WITH TIME ZONE
         );
 
         CREATE TABLE IF NOT EXISTS roles (
@@ -60,14 +59,16 @@ export async function testConnection() {
           name TEXT NOT NULL UNIQUE,
           description TEXT,
           created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-          updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+          deleted_at TIMESTAMP WITH TIME ZONE
         );
 
         CREATE TABLE IF NOT EXISTS permissions (
           id SERIAL PRIMARY KEY,
           name TEXT NOT NULL UNIQUE,
           description TEXT,
-          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+          deleted_at TIMESTAMP WITH TIME ZONE
         );
 
         CREATE TABLE IF NOT EXISTS role_permissions (
@@ -94,8 +95,11 @@ export async function testConnection() {
             ALTER TABLE users ADD COLUMN IF NOT EXISTS role_id INTEGER;
             ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL;
             ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL;
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITH TIME ZONE;
+
+            ALTER TABLE roles ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITH TIME ZONE;
+            ALTER TABLE permissions ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITH TIME ZONE;
           EXCEPTION WHEN others THEN
-            -- Log any errors but don't fail
             RAISE NOTICE 'Error adding columns: %', SQLERRM;
           END;
         END $$;
@@ -117,7 +121,7 @@ export async function testConnection() {
       `);
       console.log('Database tables verified');
 
-      await seedRolesAndPermissions(); // Added call to seed function
+      await seedRolesAndPermissions();
 
       client.release();
       return true;
@@ -226,3 +230,4 @@ async function seedRolesAndPermissions() {
     throw error;
   }
 }
+export {testConnection};
