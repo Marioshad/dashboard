@@ -1,8 +1,8 @@
-import { users, type User, type InsertUser } from "@shared/schema";
+import { users, type User, type InsertUser, type UpdateProfile } from "@shared/schema";
 import { db, pool } from "./db";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 const PostgresSessionStore = connectPg(session);
 
@@ -10,6 +10,7 @@ export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  updateProfile(userId: number, profile: UpdateProfile): Promise<User>;
   sessionStore: session.Store;
 }
 
@@ -51,6 +52,23 @@ export class DatabaseStorage implements IStorage {
       return user;
     } catch (error) {
       console.error('Error creating user:', error);
+      throw error;
+    }
+  }
+
+  async updateProfile(userId: number, profile: UpdateProfile): Promise<User> {
+    try {
+      const [user] = await db
+        .update(users)
+        .set({
+          ...profile,
+          updatedAt: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(users.id, userId))
+        .returning();
+      return user;
+    } catch (error) {
+      console.error('Error updating user profile:', error);
       throw error;
     }
   }

@@ -42,7 +42,13 @@ export async function testConnection() {
         CREATE TABLE IF NOT EXISTS users (
           id SERIAL PRIMARY KEY,
           username TEXT NOT NULL UNIQUE,
-          password TEXT NOT NULL
+          password TEXT NOT NULL,
+          full_name TEXT,
+          email TEXT,
+          bio TEXT,
+          avatar_url TEXT,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS session (
@@ -51,6 +57,22 @@ export async function testConnection() {
           expire timestamp(6) NOT NULL,
           CONSTRAINT "session_pkey" PRIMARY KEY ("sid")
         );
+
+        -- Add new columns if they don't exist
+        DO $$ 
+        BEGIN 
+          BEGIN
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name TEXT;
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT;
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT;
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL;
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL;
+          EXCEPTION WHEN others THEN
+            -- Log any errors but don't fail
+            RAISE NOTICE 'Error adding columns: %', SQLERRM;
+          END;
+        END $$;
       `);
       console.log('Database tables verified');
 
