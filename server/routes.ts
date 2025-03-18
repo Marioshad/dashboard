@@ -462,7 +462,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-
   app.get('/api/subscription/prices', async (req, res) => {
     try {
       const prices = await stripe.prices.list({
@@ -635,7 +634,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   httpServer.on('upgrade', (request, socket, head) => {
-    if (request.url?.startsWith('/api/ws')) {  // Changed from '/ws' to '/api/ws'
+    if (request.url?.startsWith('/api/ws')) {
       const sessionParser = app._router.stack
         .find((layer: any) => layer.name === 'session')?.handle;
 
@@ -645,7 +644,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      sessionParser(request, {} as any, () => {
+      // Parse session before WebSocket upgrade
+      sessionParser(request, {} as any, async () => {
         const session = (request as any).session;
         console.log('WebSocket upgrade request session:', session);
 
@@ -655,12 +655,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return;
         }
 
-        (request as any).userId = session.passport.user;
-        console.log('WebSocket upgrade authenticated for user:', session.passport.user);
+        try {
+          (request as any).userId = session.passport.user;
+          console.log('WebSocket upgrade authenticated for user:', session.passport.user);
 
-        wss.handleUpgrade(request, socket, head, (ws) => {
-          wss.emit('connection', ws, request);
-        });
+          wss.handleUpgrade(request, socket, head, (ws) => {
+            wss.emit('connection', ws, request);
+          });
+        } catch (error) {
+          console.error('Error during WebSocket upgrade:', error);
+          socket.destroy();
+        }
       });
     }
   });
