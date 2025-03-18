@@ -27,12 +27,10 @@ export function Navbar() {
 
   useEffect(() => {
     // Connect to WebSocket
-    const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsHost = window.location.host;
-    const wsUrl = `${wsProtocol}//${wsHost}/ws-notifications`;
-
     try {
-      const ws = new WebSocket(wsUrl);
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const host = window.location.host;
+      const ws = new WebSocket(`${protocol}//${host}/ws-notifications`);
 
       ws.onopen = () => {
         console.log('WebSocket connected');
