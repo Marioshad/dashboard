@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { Link } from "wouter";
 import { Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -19,6 +19,7 @@ import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
 export function Navbar() {
+  const [socket, setSocket] = useState<WebSocket | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const { toast } = useToast();
@@ -28,57 +29,71 @@ export function Navbar() {
   });
 
   useEffect(() => {
-    let eventSource: EventSource | null = null;
-    let retryTimeout: NodeJS.Timeout;
+    let reconnectTimeout: NodeJS.Timeout;
     const maxRetries = 5;
     let retryCount = 0;
 
-    const connectEventSource = () => {
-      if (isConnecting) return;
+    const connectWebSocket = () => {
+      if (isConnecting || socket?.readyState === WebSocket.OPEN) return;
 
       setIsConnecting(true);
-      eventSource = new EventSource('/api/notifications/stream');
 
-      eventSource.onopen = () => {
-        setIsConnecting(false);
-        retryCount = 0;
-      };
+      try {
+        // Construct WebSocket URL using window.location
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        const wsUrl = `${protocol}//${window.location.host}/ws`;
+        const ws = new WebSocket(wsUrl);
 
-      eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === 'notification') {
-            queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+        ws.onopen = () => {
+          setIsConnecting(false);
+          retryCount = 0;
+          setSocket(ws);
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'notification') {
+              queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+            }
+          } catch (error) {
+            console.error('Failed to parse WebSocket message:', error);
           }
-        } catch (error) {
-          console.error('Failed to parse SSE message:', error);
-        }
-      };
+        };
 
-      eventSource.onerror = () => {
+        ws.onclose = () => {
+          setIsConnecting(false);
+          setSocket(null);
+
+          if (retryCount < maxRetries) {
+            retryCount++;
+            const delay = Math.min(1000 * Math.pow(2, retryCount), 30000);
+            reconnectTimeout = setTimeout(connectWebSocket, delay);
+          } else {
+            toast({
+              title: "Connection Error",
+              description: "Failed to connect to notification service. Please refresh the page.",
+              variant: "destructive",
+            });
+          }
+        };
+
+        ws.onerror = () => {
+          setIsConnecting(false);
+          ws.close();
+        };
+      } catch (error) {
         setIsConnecting(false);
-        eventSource?.close();
-
-        if (retryCount < maxRetries) {
-          retryCount++;
-          const delay = Math.min(1000 * Math.pow(2, retryCount), 30000);
-          retryTimeout = setTimeout(connectEventSource, delay);
-        } else {
-          toast({
-            title: "Connection Error",
-            description: "Failed to connect to notification service. Please refresh the page.",
-            variant: "destructive",
-          });
-        }
-      };
+        console.error('Failed to create WebSocket connection:', error);
+      }
     };
 
-    connectEventSource();
+    connectWebSocket();
 
     return () => {
-      clearTimeout(retryTimeout);
-      if (eventSource) {
-        eventSource.close();
+      clearTimeout(reconnectTimeout);
+      if (socket) {
+        socket.close();
       }
     };
   }, []);
