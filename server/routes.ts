@@ -11,6 +11,14 @@ import { db } from "./db";
 import { roles, permissions, rolePermissions, users, appSettings, notifications } from "@shared/schema";
 import { eq, and, isNull, sql, desc } from "drizzle-orm";
 import { WebSocketServer, WebSocket } from 'ws';
+import Stripe from "stripe";
+
+if (!process.env.STRIPE_SECRET_KEY) {
+  throw new Error('Missing required Stripe secret: STRIPE_SECRET_KEY');
+}
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+  apiVersion: "2023-10-16",
+});
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(process.cwd(), "uploads");
@@ -469,6 +477,124 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+
+  // Stripe subscription endpoint
+  app.post('/api/get-or-create-subscription', async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      let user = req.user;
+
+      // If user already has a subscription, return it
+      if (user.stripeSubscriptionId) {
+        const subscription = await stripe.subscriptions.retrieve(user.stripeSubscriptionId);
+
+        res.send({
+          subscriptionId: subscription.id,
+          clientSecret: subscription.latest_invoice?.payment_intent?.client_secret,
+        });
+        return;
+      }
+
+      if (!user.email) {
+        return res.status(400).json({ message: 'Email is required for subscription' });
+      }
+
+      // Create a new customer
+      const customer = await stripe.customers.create({
+        email: user.email,
+        name: user.username,
+      });
+
+      // Create a subscription
+      const subscription = await stripe.subscriptions.create({
+        customer: customer.id,
+        items: [{
+          price: 'price_H5ggYwtDq4fbrJ', // Replace with your actual price ID
+        }],
+        payment_behavior: 'default_incomplete',
+        expand: ['latest_invoice.payment_intent'],
+      });
+
+      // Update user with Stripe info
+      await db.update(users)
+        .set({
+          stripeCustomerId: customer.id,
+          stripeSubscriptionId: subscription.id,
+          subscriptionStatus: 'inactive',
+          updatedAt: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(users.id, user.id));
+
+      res.send({
+        subscriptionId: subscription.id,
+        clientSecret: subscription.latest_invoice?.payment_intent?.client_secret,
+      });
+    } catch (error: any) {
+      console.error('Subscription error:', error);
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  // Stripe webhook endpoint
+  app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+    const sig = req.headers['stripe-signature'];
+    let event;
+
+    try {
+      event = stripe.webhooks.constructEvent(
+        req.body,
+        sig as string,
+        process.env.STRIPE_WEBHOOK_SECRET as string
+      );
+    } catch (err: any) {
+      console.error('Webhook error:', err.message);
+      return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+
+    // Handle subscription events
+    switch (event.type) {
+      case 'customer.subscription.created':
+      case 'customer.subscription.updated': {
+        const subscription = event.data.object as Stripe.Subscription;
+
+        // Update user subscription status
+        await db.update(users)
+          .set({
+            subscriptionStatus: subscription.status,
+            updatedAt: sql`CURRENT_TIMESTAMP`,
+          })
+          .where(eq(users.stripeSubscriptionId, subscription.id));
+
+        // If subscription is active, assign Premium role
+        if (subscription.status === 'active') {
+          const premiumRole = await db.query.roles.findFirst({
+            where: eq(roles.name, 'Premium'),
+          });
+
+          if (premiumRole) {
+            const [user] = await db.select()
+              .from(users)
+              .where(eq(users.stripeSubscriptionId, subscription.id));
+
+            if (user) {
+              await db.update(users)
+                .set({
+                  roleId: premiumRole.id,
+                  updatedAt: sql`CURRENT_TIMESTAMP`,
+                })
+                .where(eq(users.id, user.id));
+            }
+          }
+        }
+        break;
+      }
+    }
+
+    res.json({ received: true });
+  });
 
   // WebSocket setup
   const wss = new WebSocketServer({ noServer: true });
