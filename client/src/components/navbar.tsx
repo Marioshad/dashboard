@@ -19,9 +19,8 @@ import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
 export function Navbar() {
-  const [socket, setSocket] = useState<WebSocket | null>(null);
-  const [unreadCount, setUnreadCount] = useState(0);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
   const { toast } = useToast();
 
   const { data: notifications } = useQuery<Notification[]>({
@@ -29,68 +28,57 @@ export function Navbar() {
   });
 
   useEffect(() => {
-    let reconnectTimeout: NodeJS.Timeout;
+    let eventSource: EventSource | null = null;
+    let retryTimeout: NodeJS.Timeout;
     const maxRetries = 5;
     let retryCount = 0;
 
-    const connectWebSocket = () => {
+    const connectEventSource = () => {
       if (isConnecting) return;
 
       setIsConnecting(true);
-      try {
-        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-        const host = window.location.host;
-        const ws = new WebSocket(`${protocol}//${host}/ws-notifications`);
+      eventSource = new EventSource('/api/notifications/stream');
 
-        ws.onopen = () => {
-          setIsConnecting(false);
-          retryCount = 0;
-        };
-
-        ws.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            if (data.type === "notification") {
-              queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
-            }
-          } catch (error) {
-            console.error('Failed to parse WebSocket message:', error);
-          }
-        };
-
-        ws.onerror = () => {
-          setIsConnecting(false);
-          ws.close();
-        };
-
-        ws.onclose = () => {
-          setIsConnecting(false);
-          if (retryCount < maxRetries) {
-            retryCount++;
-            const delay = Math.min(1000 * Math.pow(2, retryCount), 30000);
-            reconnectTimeout = setTimeout(connectWebSocket, delay);
-          } else {
-            toast({
-              title: "Connection Error",
-              description: "Failed to connect to notification service. Please refresh the page.",
-              variant: "destructive",
-            });
-          }
-        };
-
-        setSocket(ws);
-      } catch (error) {
+      eventSource.onopen = () => {
         setIsConnecting(false);
-        console.error('Failed to create WebSocket connection:', error);
-      }
+        retryCount = 0;
+      };
+
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'notification') {
+            queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+          }
+        } catch (error) {
+          console.error('Failed to parse SSE message:', error);
+        }
+      };
+
+      eventSource.onerror = () => {
+        setIsConnecting(false);
+        eventSource?.close();
+
+        if (retryCount < maxRetries) {
+          retryCount++;
+          const delay = Math.min(1000 * Math.pow(2, retryCount), 30000);
+          retryTimeout = setTimeout(connectEventSource, delay);
+        } else {
+          toast({
+            title: "Connection Error",
+            description: "Failed to connect to notification service. Please refresh the page.",
+            variant: "destructive",
+          });
+        }
+      };
     };
 
-    connectWebSocket();
+    connectEventSource();
 
     return () => {
-      clearTimeout(reconnectTimeout);
-      if (socket) {
-        socket.close();
+      clearTimeout(retryTimeout);
+      if (eventSource) {
+        eventSource.close();
       }
     };
   }, []);
