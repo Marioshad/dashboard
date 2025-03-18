@@ -41,10 +41,13 @@ export function Navbar() {
       try {
         // Construct WebSocket URL using window.location
         const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-        const wsUrl = `${protocol}//${window.location.host}/ws`;
+        const wsUrl = `${protocol}//${window.location.host}/api/ws`;  // Changed from '/ws' to '/api/ws'
+        console.log('Attempting WebSocket connection to:', wsUrl);
+
         const ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
+          console.log('WebSocket connection established');
           setIsConnecting(false);
           retryCount = 0;
           setSocket(ws);
@@ -62,6 +65,7 @@ export function Navbar() {
         };
 
         ws.onclose = () => {
+          console.log('WebSocket connection closed');
           setIsConnecting(false);
           setSocket(null);
 
@@ -78,7 +82,8 @@ export function Navbar() {
           }
         };
 
-        ws.onerror = () => {
+        ws.onerror = (error) => {
+          console.error('WebSocket connection error:', error);
           setIsConnecting(false);
           ws.close();
         };
@@ -118,8 +123,8 @@ export function Navbar() {
               <Button variant="ghost" size="icon" className="relative">
                 <Bell className={cn("h-5 w-5", isConnecting && "animate-pulse")} />
                 {unreadCount > 0 && (
-                  <Badge 
-                    variant="destructive" 
+                  <Badge
+                    variant="destructive"
                     className={cn(
                       "absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs",
                     )}

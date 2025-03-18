@@ -612,20 +612,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   const wss = new WebSocketServer({
     server: httpServer,
-    path: '/ws'
+    path: '/api/ws'  // Changed from '/ws' to '/api/ws'
   });
 
   wss.on('connection', (ws, request) => {
     const userId = (request as any).userId;
+    console.log('WebSocket connected for user:', userId);
 
     clients.set(userId, ws);
 
     ws.on('close', () => {
+      console.log('WebSocket closed for user:', userId);
       clients.delete(userId);
     });
 
     ws.on('error', (error) => {
-      console.error('WebSocket error:', error);
+      console.error('WebSocket error for user:', userId, error);
       clients.delete(userId);
     });
 
@@ -633,7 +635,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   httpServer.on('upgrade', (request, socket, head) => {
-    if (request.url?.startsWith('/ws')) {
+    if (request.url?.startsWith('/api/ws')) {  // Changed from '/ws' to '/api/ws'
       const sessionParser = app._router.stack
         .find((layer: any) => layer.name === 'session')?.handle;
 
@@ -645,6 +647,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       sessionParser(request, {} as any, () => {
         const session = (request as any).session;
+        console.log('WebSocket upgrade request session:', session);
 
         if (!session?.passport?.user) {
           console.error('WebSocket: User not authenticated');
@@ -653,6 +656,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
 
         (request as any).userId = session.passport.user;
+        console.log('WebSocket upgrade authenticated for user:', session.passport.user);
 
         wss.handleUpgrade(request, socket, head, (ws) => {
           wss.emit('connection', ws, request);
