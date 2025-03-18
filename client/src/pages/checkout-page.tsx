@@ -28,9 +28,11 @@ function CheckoutForm() {
       const { error } = await stripe.confirmPayment({
         elements,
         confirmParams: {
-          // Use relative URL path instead of full URL to avoid frame navigation issues
-          return_url: "/settings",
+          payment_method_data: {
+            billing_details: {} // This allows Stripe to collect billing details through the PaymentElement
+          }
         },
+        redirect: "if_required"
       });
 
       if (error) {
@@ -39,6 +41,14 @@ function CheckoutForm() {
           description: error.message,
           variant: "destructive",
         });
+      } else {
+        // Payment successful
+        toast({
+          title: "Payment successful",
+          description: "Your subscription has been activated",
+        });
+        // Redirect to settings page after successful payment
+        setLocation("/settings");
       }
     } catch (error: any) {
       toast({
