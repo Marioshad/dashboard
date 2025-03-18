@@ -1,11 +1,5 @@
 import { DashboardLayout } from "@/components/dashboard-layout";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/hooks/use-auth";
 import { Shield, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -15,13 +9,6 @@ import { loadStripe } from "@stripe/stripe-js";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 
 if (!import.meta.env.VITE_STRIPE_PUBLIC_KEY) {
   throw new Error('Missing required Stripe key: VITE_STRIPE_PUBLIC_KEY');
@@ -41,7 +28,7 @@ interface Price {
   };
 }
 
-function SubscribeForm({ onSuccess }: { onSuccess: () => void }) {
+function SubscribeForm() {
   const stripe = useStripe();
   const elements = useElements();
   const [loading, setLoading] = useState(false);
@@ -66,8 +53,6 @@ function SubscribeForm({ onSuccess }: { onSuccess: () => void }) {
           description: error.message,
           variant: "destructive",
         });
-      } else {
-        onSuccess();
       }
     } catch (error: any) {
       toast({
@@ -84,7 +69,7 @@ function SubscribeForm({ onSuccess }: { onSuccess: () => void }) {
     <form onSubmit={handleSubmit} className="space-y-4">
       <PaymentElement />
       <Button type="submit" disabled={!stripe || loading} className="w-full">
-        {loading ? "Processing..." : "Complete Subscription"}
+        {loading ? "Processing..." : "Subscribe Now"}
       </Button>
     </form>
   );
@@ -94,48 +79,28 @@ export default function SubscribePage() {
   const { user } = useAuth();
   const [selectedPrice, setSelectedPrice] = useState<string>();
   const [clientSecret, setClientSecret] = useState<string>();
-  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const { toast } = useToast();
 
   const { data: prices } = useQuery<Price[]>({
     queryKey: ["/api/subscription/prices"],
   });
 
-  const handleSubscribe = async (priceId: string) => {
-    try {
-      console.log('Starting subscription with price ID:', priceId);
-      const response = await apiRequest("POST", "/api/get-or-create-subscription", { priceId });
-      const data = await response.json();
+  useEffect(() => {
+    if (!selectedPrice || user?.subscriptionStatus === 'active') return;
 
-      console.log('Subscription response:', data);
-
-      if (data.clientSecret) {
-        console.log("Received client secret:", data.clientSecret.slice(0, 10) + "...");
+    apiRequest("POST", "/api/get-or-create-subscription", { priceId: selectedPrice })
+      .then((res) => res.json())
+      .then((data) => {
         setClientSecret(data.clientSecret);
-        setIsPaymentModalOpen(true);
-      } else {
-        console.error('Missing client secret in response:', data);
-        throw new Error("No client secret received");
-      }
-    } catch (error: any) {
-      console.error('Subscription error:', error);
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
+      })
+      .catch((error) => {
+        toast({
+          title: "Error",
+          description: error.message,
+          variant: "destructive",
+        });
       });
-    }
-  };
-
-  const handlePaymentSuccess = () => {
-    setIsPaymentModalOpen(false);
-    setClientSecret(undefined);
-    toast({
-      title: "Success",
-      description: "Your subscription has been activated!",
-    });
-    queryClient.invalidateQueries({ queryKey: ["/api/user"] });
-  };
+  }, [selectedPrice, user]);
 
   if (user?.subscriptionStatus === 'active') {
     return (
@@ -167,9 +132,12 @@ export default function SubscribePage() {
 
         <div className="grid gap-4 md:grid-cols-2">
           {prices?.map((price) => (
-            <Card
-              key={price.id}
-              className="relative"
+            <Card 
+              key={price.id} 
+              className={`relative cursor-pointer transition-all ${
+                selectedPrice === price.id ? 'border-primary ring-2 ring-primary' : ''
+              }`}
+              onClick={() => setSelectedPrice(price.id)}
             >
               <CardHeader>
                 <div className="flex items-center gap-2">
@@ -199,46 +167,15 @@ export default function SubscribePage() {
                   </li>
                 </ul>
 
-                <Button
-                  className="w-full"
-                  onClick={() => handleSubscribe(price.id)}
-                >
-                  Subscribe
-                </Button>
+                {selectedPrice === price.id && clientSecret ? (
+                  <Elements stripe={stripePromise} options={{ clientSecret }}>
+                    <SubscribeForm />
+                  </Elements>
+                ) : null}
               </CardContent>
             </Card>
           ))}
         </div>
-
-        {clientSecret && (
-          <Dialog open={isPaymentModalOpen} onOpenChange={(open) => {
-            setIsPaymentModalOpen(open);
-            if (!open) setClientSecret(undefined);
-          }}>
-            <DialogContent className="sm:max-w-[500px]">
-              <DialogHeader>
-                <DialogTitle>Complete your subscription</DialogTitle>
-                <DialogDescription>
-                  Enter your payment details to start your subscription
-                </DialogDescription>
-              </DialogHeader>
-              <Elements
-                stripe={stripePromise}
-                options={{
-                  clientSecret,
-                  appearance: {
-                    theme: 'stripe',
-                    variables: {
-                      colorPrimary: '#0099ff',
-                    },
-                  },
-                }}
-              >
-                <SubscribeForm onSuccess={handlePaymentSuccess} />
-              </Elements>
-            </DialogContent>
-          </Dialog>
-        )}
       </div>
     </DashboardLayout>
   );

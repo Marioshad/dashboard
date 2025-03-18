@@ -482,7 +482,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/subscription/prices', async (req, res) => {
     try {
       const prices = await stripe.prices.list({
-        product: process.env.STRIPE_PRODUCT_ID, //Corrected to use product ID instead of price ID.
+        product: process.env.STRIPE_PRICE_ID,
         active: true,
         expand: ['data.product'],
       });
@@ -494,61 +494,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Update the get-or-create-subscription endpoint
+  // Stripe subscription endpoint
   app.post('/api/get-or-create-subscription', async (req, res) => {
     try {
       if (!req.isAuthenticated()) {
         return res.sendStatus(401);
       }
 
-      const { productId } = req.body; // Changed to productId
-      console.log('Starting subscription with product ID:', productId);
-
-      if (!productId) {
-        return res.status(400).json({ message: 'Product ID is required' });
+      const { priceId } = req.body;
+      if (!priceId) {
+        return res.status(400).json({ message: 'Price ID is required' });
       }
 
       let user = req.user;
 
       // If user already has a subscription, return it
       if (user.stripeSubscriptionId) {
-        console.log('User has existing subscription:', user.stripeSubscriptionId);
         const subscription = await stripe.subscriptions.retrieve(user.stripeSubscriptionId);
 
-        return res.json({
+        res.send({
           subscriptionId: subscription.id,
           clientSecret: subscription.latest_invoice?.payment_intent?.client_secret,
         });
+        return;
       }
 
       if (!user.email) {
-        throw new Error('No user email on file');
+        return res.status(400).json({ message: 'Email is required for subscription' });
       }
 
       // Create a new customer
-      console.log('Creating new Stripe customer for user:', user.id);
       const customer = await stripe.customers.create({
         email: user.email,
         name: user.username,
       });
 
       // Create a subscription
-      console.log('Creating subscription for customer:', customer.id);
       const subscription = await stripe.subscriptions.create({
         customer: customer.id,
         items: [{
-          price_data: {
-            product: productId, // Use productId here
-            currency: 'usd', // Add currency and unit_amount
-            unit_amount: 1000, // Example price, adjust as needed.
-          },
+          price: priceId,
         }],
         payment_behavior: 'default_incomplete',
         expand: ['latest_invoice.payment_intent'],
       });
-
-      console.log('Subscription created:', subscription.id);
-      console.log('Payment intent:', subscription.latest_invoice?.payment_intent);
 
       // Update user with Stripe info
       await db.update(users)
@@ -560,9 +549,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         })
         .where(eq(users.id, user.id));
 
-      res.json({
+      res.send({
         subscriptionId: subscription.id,
-        clientSecret: (subscription.latest_invoice as any)?.payment_intent?.client_secret,
+        clientSecret: subscription.latest_invoice?.payment_intent?.client_secret,
       });
     } catch (error: any) {
       console.error('Subscription error:', error);
