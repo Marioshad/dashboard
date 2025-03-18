@@ -85,10 +85,11 @@ export default function SubscribePage() {
     queryKey: ["/api/subscription/prices"],
   });
 
-  useEffect(() => {
-    if (!selectedPrice || user?.subscriptionStatus === 'active') return;
+  const handleSubscribe = async (priceId: string) => {
+    if (user?.subscriptionStatus === 'active') return;
 
-    apiRequest("POST", "/api/get-or-create-subscription", { priceId: selectedPrice })
+    setSelectedPrice(priceId);
+    apiRequest("POST", "/api/get-or-create-subscription", { priceId })
       .then((res) => res.json())
       .then((data) => {
         setClientSecret(data.clientSecret);
@@ -100,7 +101,7 @@ export default function SubscribePage() {
           variant: "destructive",
         });
       });
-  }, [selectedPrice, user]);
+  };
 
   if (user?.subscriptionStatus === 'active') {
     return (
@@ -134,10 +135,9 @@ export default function SubscribePage() {
           {prices?.map((price) => (
             <Card 
               key={price.id} 
-              className={`relative cursor-pointer transition-all ${
+              className={`relative transition-all ${
                 selectedPrice === price.id ? 'border-primary ring-2 ring-primary' : ''
               }`}
-              onClick={() => setSelectedPrice(price.id)}
             >
               <CardHeader>
                 <div className="flex items-center gap-2">
@@ -171,7 +171,15 @@ export default function SubscribePage() {
                   <Elements stripe={stripePromise} options={{ clientSecret }}>
                     <SubscribeForm />
                   </Elements>
-                ) : null}
+                ) : (
+                  <Button 
+                    className="w-full"
+                    onClick={() => handleSubscribe(price.id)}
+                    disabled={selectedPrice !== undefined}
+                  >
+                    Choose Plan
+                  </Button>
+                )}
               </CardContent>
             </Card>
           ))}
