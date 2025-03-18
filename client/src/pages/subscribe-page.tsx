@@ -39,8 +39,12 @@ export default function SubscribePage() {
       const response = await apiRequest("POST", "/api/get-or-create-subscription", { priceId });
       const data = await response.json();
 
+      if (!data.clientSecret) {
+        throw new Error('Unable to create subscription. Please try again.');
+      }
+
       // Redirect to checkout page with subscription data
-      setLocation(`/checkout?session=${data.subscriptionId}&secret=${data.clientSecret}`);
+      setLocation(`/checkout?secret=${data.clientSecret}`);
     } catch (error: any) {
       toast({
         title: "Error",

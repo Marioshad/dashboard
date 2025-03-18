@@ -72,12 +72,13 @@ export default function CheckoutPage() {
   const [, setLocation] = useLocation();
 
   useEffect(() => {
-    if (!clientSecret) {
+    if (!clientSecret || clientSecret === 'undefined') {
+      console.error('No valid client secret found in URL');
       setLocation('/subscribe');
     }
   }, [clientSecret, setLocation]);
 
-  if (!clientSecret) {
+  if (!clientSecret || clientSecret === 'undefined') {
     return null;
   }
 
