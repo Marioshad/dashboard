@@ -478,11 +478,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
 
+  // Stripe pricing endpoint
+  app.get('/api/subscription/prices', async (req, res) => {
+    try {
+      const prices = await stripe.prices.list({
+        product: process.env.STRIPE_PRICE_ID,
+        active: true,
+        expand: ['data.product'],
+      });
+
+      res.json(prices.data);
+    } catch (error: any) {
+      console.error('Error fetching prices:', error);
+      res.status(400).json({ message: error.message });
+    }
+  });
+
   // Stripe subscription endpoint
   app.post('/api/get-or-create-subscription', async (req, res) => {
     try {
       if (!req.isAuthenticated()) {
         return res.sendStatus(401);
+      }
+
+      const { priceId } = req.body;
+      if (!priceId) {
+        return res.status(400).json({ message: 'Price ID is required' });
       }
 
       let user = req.user;
@@ -512,7 +533,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const subscription = await stripe.subscriptions.create({
         customer: customer.id,
         items: [{
-          price: process.env.STRIPE_PRICE_ID,
+          price: priceId,
         }],
         payment_behavior: 'default_incomplete',
         expand: ['latest_invoice.payment_intent'],

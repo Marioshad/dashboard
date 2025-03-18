@@ -1,19 +1,32 @@
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/hooks/use-auth";
-import { Shield } from "lucide-react";
+import { Shield, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState, useEffect } from "react";
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useQuery } from "@tanstack/react-query";
 
 if (!import.meta.env.VITE_STRIPE_PUBLIC_KEY) {
   throw new Error('Missing required Stripe key: VITE_STRIPE_PUBLIC_KEY');
 }
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY);
+
+interface Price {
+  id: string;
+  unit_amount: number;
+  recurring: {
+    interval: string;
+  };
+  product: {
+    name: string;
+    description: string;
+  };
+}
 
 function SubscribeForm() {
   const stripe = useStripe();
@@ -64,13 +77,18 @@ function SubscribeForm() {
 
 export default function SubscribePage() {
   const { user } = useAuth();
+  const [selectedPrice, setSelectedPrice] = useState<string>();
   const [clientSecret, setClientSecret] = useState<string>();
   const { toast } = useToast();
 
-  useEffect(() => {
-    if (user?.subscriptionStatus === 'active') return;
+  const { data: prices } = useQuery<Price[]>({
+    queryKey: ["/api/subscription/prices"],
+  });
 
-    apiRequest("POST", "/api/get-or-create-subscription")
+  useEffect(() => {
+    if (!selectedPrice || user?.subscriptionStatus === 'active') return;
+
+    apiRequest("POST", "/api/get-or-create-subscription", { priceId: selectedPrice })
       .then((res) => res.json())
       .then((data) => {
         setClientSecret(data.clientSecret);
@@ -82,7 +100,7 @@ export default function SubscribePage() {
           variant: "destructive",
         });
       });
-  }, [user]);
+  }, [selectedPrice, user]);
 
   if (user?.subscriptionStatus === 'active') {
     return (
@@ -108,49 +126,55 @@ export default function SubscribePage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Premium Subscription</h1>
           <p className="text-muted-foreground">
-            Upgrade your account to access premium features
+            Choose a plan that works for you
           </p>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          <Card className="relative">
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <Shield className="h-5 w-5 text-primary" />
-                <CardTitle>Premium Plan</CardTitle>
-              </div>
-              <CardDescription>
-                Access enhanced features and capabilities
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="text-2xl font-bold">$9.99/month</div>
-              <ul className="space-y-2 text-sm">
-                <li className="flex items-center">
-                  <Shield className="mr-2 h-4 w-4" />
-                  Premium role access
-                </li>
-                <li className="flex items-center">
-                  <Shield className="mr-2 h-4 w-4" />
-                  Enhanced features
-                </li>
-                <li className="flex items-center">
-                  <Shield className="mr-2 h-4 w-4" />
-                  Priority support
-                </li>
-              </ul>
-
-              {clientSecret ? (
-                <Elements stripe={stripePromise} options={{ clientSecret }}>
-                  <SubscribeForm />
-                </Elements>
-              ) : (
-                <div className="flex justify-center">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+        <div className="grid gap-4 md:grid-cols-2">
+          {prices?.map((price) => (
+            <Card 
+              key={price.id} 
+              className={`relative cursor-pointer transition-all ${
+                selectedPrice === price.id ? 'border-primary ring-2 ring-primary' : ''
+              }`}
+              onClick={() => setSelectedPrice(price.id)}
+            >
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <Shield className="h-5 w-5 text-primary" />
+                  <CardTitle>{price.product.name}</CardTitle>
                 </div>
-              )}
-            </CardContent>
-          </Card>
+                <CardDescription>
+                  {price.product.description}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="text-2xl font-bold">
+                  ${(price.unit_amount / 100).toFixed(2)}/{price.recurring.interval}
+                </div>
+                <ul className="space-y-2 text-sm">
+                  <li className="flex items-center">
+                    <Check className="mr-2 h-4 w-4 text-primary" />
+                    Premium role access
+                  </li>
+                  <li className="flex items-center">
+                    <Check className="mr-2 h-4 w-4 text-primary" />
+                    Enhanced features
+                  </li>
+                  <li className="flex items-center">
+                    <Check className="mr-2 h-4 w-4 text-primary" />
+                    Priority support
+                  </li>
+                </ul>
+
+                {selectedPrice === price.id && clientSecret ? (
+                  <Elements stripe={stripePromise} options={{ clientSecret }}>
+                    <SubscribeForm />
+                  </Elements>
+                ) : null}
+              </CardContent>
+            </Card>
+          ))}
         </div>
       </div>
     </DashboardLayout>
