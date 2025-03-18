@@ -482,7 +482,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/subscription/prices', async (req, res) => {
     try {
       const prices = await stripe.prices.list({
-        product: process.env.STRIPE_PRICE_ID,
+        product: process.env.STRIPE_PRODUCT_ID, //Corrected to use product ID instead of price ID.
         active: true,
         expand: ['data.product'],
       });
@@ -501,11 +501,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.sendStatus(401);
       }
 
-      const { priceId } = req.body;
-      console.log('Creating subscription with price ID:', priceId);
+      const { productId } = req.body; // Changed to productId
+      console.log('Starting subscription with product ID:', productId);
 
-      if (!priceId) {
-        return res.status(400).json({ message: 'Price ID is required' });
+      if (!productId) {
+        return res.status(400).json({ message: 'Product ID is required' });
       }
 
       let user = req.user;
@@ -522,7 +522,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       if (!user.email) {
-        return res.status(400).json({ message: 'Email is required for subscription' });
+        throw new Error('No user email on file');
       }
 
       // Create a new customer
@@ -537,7 +537,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const subscription = await stripe.subscriptions.create({
         customer: customer.id,
         items: [{
-          price: priceId,
+          price_data: {
+            product: productId, // Use productId here
+            currency: 'usd', // Add currency and unit_amount
+            unit_amount: 1000, // Example price, adjust as needed.
+          },
         }],
         payment_behavior: 'default_incomplete',
         expand: ['latest_invoice.payment_intent'],
