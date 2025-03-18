@@ -1,9 +1,9 @@
-import type { Express } from "express";
+import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { setupAuth } from "./auth";
 import { storage } from "./storage";
 import { updateProfileSchema } from "@shared/schema";
-import multer from "multer";
+import multer, { FileFilterCallback } from "multer";
 import path from "path";
 import fs from "fs";
 import express from 'express';
@@ -16,8 +16,11 @@ import Stripe from "stripe";
 if (!process.env.STRIPE_SECRET_KEY) {
   throw new Error('Missing required Stripe secret: STRIPE_SECRET_KEY');
 }
+
+// Update Stripe configuration
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: "2023-10-16",
+  apiVersion: "2025-02-24.acacia",
+  typescript: true,
 });
 
 // Ensure uploads directory exists
@@ -26,12 +29,16 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
+interface MulterRequest extends Request {
+  file: Express.Multer.File;
+}
+
 // Configure multer for file uploads
 const multerStorage = multer.diskStorage({
-  destination: function (req, file, cb) {
+  destination: (_req: Express.Request, _file: Express.Multer.File, cb: (error: Error | null, destination: string) => void) => {
     cb(null, uploadsDir);
   },
-  filename: function (req, file, cb) {
+  filename: (_req: Express.Request, file: Express.Multer.File, cb: (error: Error | null, filename: string) => void) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     cb(null, uniqueSuffix + path.extname(file.originalname));
   }
@@ -42,7 +49,7 @@ const upload = multer({
   limits: {
     fileSize: 5 * 1024 * 1024 // 5MB limit
   },
-  fileFilter: function (req, file, cb) {
+  fileFilter: (_req: Express.Request, file: Express.Multer.File, cb: FileFilterCallback) => {
     if (!file.mimetype.startsWith('image/')) {
       return cb(new Error('Only image files are allowed!'));
     }
@@ -86,7 +93,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   setupAuth(app);
 
   // Avatar upload endpoint
-  app.post('/api/profile/avatar', upload.single('avatar'), async (req, res, next) => {
+  app.post('/api/profile/avatar', upload.single('avatar'), async (req: MulterRequest, res, next) => {
     try {
       if (!req.isAuthenticated()) {
         return res.sendStatus(401);
@@ -514,15 +521,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           expand: ['latest_invoice.payment_intent']
         });
 
-        console.log('Retrieved existing subscription:', JSON.stringify(subscription, null, 2));
-        const clientSecret = subscription.latest_invoice?.payment_intent?.client_secret;
-        if (!clientSecret) {
+        const invoice = subscription.latest_invoice as Stripe.Invoice;
+        const paymentIntent = invoice.payment_intent as Stripe.PaymentIntent;
+
+        if (!paymentIntent?.client_secret) {
           throw new Error('Unable to retrieve payment information');
         }
 
         res.send({
           subscriptionId: subscription.id,
-          clientSecret
+          clientSecret: paymentIntent.client_secret
         });
         return;
       }
@@ -544,12 +552,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           price: priceId,
         }],
         payment_behavior: 'default_incomplete',
-        expand: ['latest_invoice.payment_intent'],
+        expand: ['latest_invoice.payment_intent']
       });
 
-      console.log('Created new subscription:', JSON.stringify(subscription, null, 2));
-      const clientSecret = subscription.latest_invoice?.payment_intent?.client_secret;
-      if (!clientSecret) {
+      const invoice = subscription.latest_invoice as Stripe.Invoice;
+      const paymentIntent = invoice.payment_intent as Stripe.PaymentIntent;
+
+      if (!paymentIntent?.client_secret) {
         throw new Error('Unable to create payment intent');
       }
 
@@ -565,7 +574,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.send({
         subscriptionId: subscription.id,
-        clientSecret
+        clientSecret: paymentIntent.client_secret
       });
     } catch (error: any) {
       console.error('Subscription error:', error);
@@ -637,31 +646,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   const httpServer = createServer(app);
 
-  // Handle WebSocket upgrade
-  httpServer.on('upgrade', (request, socket, head) => {
+  // Handle WebSocket upgrade with proper session handling
+  httpServer.on('upgrade', async (request, socket, head) => {
     if (!request.url?.startsWith('/ws-notifications')) {
       socket.destroy();
       return;
     }
 
-    // Add session handling to WebSocket upgrade
+    // Get session from the upgrade request
     const expressRequest = request as any;
-    app(expressRequest, {} as any, async () => {
-      if (!expressRequest.user?.id) {
-        socket.destroy();
-        return;
-      }
+    const sessionParser = app._router.stack
+      .find((layer: any) => layer.name === 'session')?.handle;
 
-      wss.handleUpgrade(request, socket, head, (ws) => {
-        const userId = expressRequest.user.id;
-        clients.set(userId, ws);
+    if (!sessionParser) {
+      console.error('Session middleware not found');
+      socket.destroy();
+      return;
+    }
 
-        ws.on('close', () => {
-          clients.delete(userId);
-        });
-
-        wss.emit('connection', ws, request);
+    // Parse session before WebSocket upgrade
+    await new Promise<void>((resolve) => {
+      sessionParser(expressRequest, {} as any, () => {
+        resolve();
       });
+    });
+
+    // Check authentication after session is parsed
+    if (!expressRequest.session?.passport?.user) {
+      console.error('WebSocket: User not authenticated');
+      socket.destroy();
+      return;
+    }
+
+    const userId = expressRequest.session.passport.user;
+
+    // Handle WebSocket upgrade for authenticated users
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      clients.set(userId, ws);
+
+      ws.on('close', () => {
+        clients.delete(userId);
+      });
+
+      ws.on('error', (error) => {
+        console.error('WebSocket connection error:', error);
+        clients.delete(userId);
+      });
+
+      wss.emit('connection', ws, request);
     });
   });
 

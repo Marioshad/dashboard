@@ -24,23 +24,22 @@ function CheckoutForm() {
   // Check if elements are ready
   useEffect(() => {
     if (!stripe || !elements) {
-      console.log('Stripe or Elements not yet initialized');
       return;
     }
-    const element = elements.getElement(PaymentElement);
-    console.log('Payment Element ready state:', !!element);
-    setIsReady(!!element);
+
+    const checkElement = async () => {
+      const element = elements.getElement(PaymentElement);
+      setIsReady(!!element);
+    };
+
+    checkElement();
   }, [stripe, elements]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Form submission started');
-    console.log('Current state:', { stripe: !!stripe, elements: !!elements, isReady, loading });
 
     if (!stripe || !elements || !isReady) {
-      const error = 'Payment system not ready. Please try again.';
-      console.error(error, { stripe: !!stripe, elements: !!elements, isReady });
-      setError(error);
+      setError('Payment system not ready. Please try again.');
       return;
     }
 
@@ -48,22 +47,22 @@ function CheckoutForm() {
     setError(undefined);
 
     try {
-      console.log('Starting payment confirmation...');
       const result = await stripe.confirmPayment({
         elements,
         confirmParams: {
-          return_url: window.location.origin + '/settings'
-        }
+          return_url: `${window.location.origin}/settings`,
+        },
+        redirect: 'if_required'
       });
 
-      console.log('Payment confirmation result:', result);
-
       if (result.error) {
-        console.error('Payment error:', result.error);
-        setError(result.error.message);
+        if (result.error.type === 'card_error' || result.error.type === 'validation_error') {
+          setError(result.error.message);
+        } else {
+          setError('An unexpected error occurred.');
+        }
         setLoading(false);
-      } else {
-        console.log('Payment successful');
+      } else if (result.paymentIntent?.status === 'succeeded') {
         toast({
           title: "Payment successful",
           description: "Your subscription has been activated",
@@ -71,8 +70,8 @@ function CheckoutForm() {
         setLocation("/settings");
       }
     } catch (error: any) {
-      console.error('Unexpected payment error:', error);
-      setError(error.message || 'An unexpected error occurred');
+      console.error('Payment error:', error);
+      setError('Failed to process payment. Please try again.');
       setLoading(false);
     }
   };
@@ -81,12 +80,16 @@ function CheckoutForm() {
     <form onSubmit={handleSubmit} className="space-y-6">
       <PaymentElement />
       {error && (
-        <div className="text-sm text-destructive">
+        <div className="text-sm text-destructive font-medium">
           {error}
         </div>
       )}
       <div className="flex justify-between">
-        <Button variant="outline" type="button" onClick={() => setLocation('/subscribe')}>
+        <Button 
+          variant="outline" 
+          type="button" 
+          onClick={() => setLocation('/subscribe')}
+        >
           Back to Plans
         </Button>
         <Button 
