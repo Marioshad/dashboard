@@ -18,44 +18,52 @@ function CheckoutForm() {
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
   const [, setLocation] = useLocation();
+  const [error, setError] = useState<string>();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!stripe || !elements) return;
+
+    if (!stripe || !elements) {
+      console.error('Stripe or Elements not initialized');
+      setError('Payment system not ready. Please try again.');
+      return;
+    }
+
+    // Check if payment element is ready
+    const element = elements.getElement(PaymentElement);
+    if (!element) {
+      console.error('Payment element not ready');
+      setError('Payment form not ready. Please try again.');
+      return;
+    }
 
     setLoading(true);
+    setError(undefined);
+
     try {
-      const { error, paymentIntent } = await stripe.confirmPayment({
+      console.log('Starting payment confirmation...');
+      const result = await stripe.confirmPayment({
         elements,
         confirmParams: {
-          payment_method_data: {
-            billing_details: {} 
-          }
-        },
-        redirect: "if_required"
+          return_url: window.location.origin + '/settings'
+        }
       });
 
-      if (error) {
-        toast({
-          title: "Payment failed",
-          description: error.message,
-          variant: "destructive",
-        });
+      console.log('Payment confirmation result:', result);
+
+      if (result.error) {
+        setError(result.error.message);
+        console.error('Payment error:', result.error);
       } else {
-        // Payment successful
         toast({
           title: "Payment successful",
           description: "Your subscription has been activated",
         });
-        // Redirect to settings page after successful payment
         setLocation("/settings");
       }
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
+      console.error('Payment error:', error);
+      setError(error.message || 'An unexpected error occurred');
     } finally {
       setLoading(false);
     }
@@ -64,6 +72,11 @@ function CheckoutForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       <PaymentElement />
+      {error && (
+        <div className="text-sm text-destructive">
+          {error}
+        </div>
+      )}
       <div className="flex justify-between">
         <Button variant="outline" type="button" onClick={() => setLocation('/subscribe')}>
           Back to Plans
