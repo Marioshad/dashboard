@@ -25,11 +25,11 @@ function CheckoutForm() {
 
     setLoading(true);
     try {
-      const { error } = await stripe.confirmPayment({
+      const { error, paymentIntent } = await stripe.confirmPayment({
         elements,
         confirmParams: {
           payment_method_data: {
-            billing_details: {} // This allows Stripe to collect billing details through the PaymentElement
+            billing_details: {} 
           }
         },
         redirect: "if_required"
