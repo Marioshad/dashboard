@@ -128,6 +128,7 @@ export default function SubscribePage() {
       title: "Success",
       description: "Your subscription has been activated!",
     });
+    queryClient.invalidateQueries({ queryKey: ["/api/user"] });
   };
 
   if (user?.subscriptionStatus === 'active') {
