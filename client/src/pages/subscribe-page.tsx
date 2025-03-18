@@ -191,21 +191,21 @@ export default function SubscribePage() {
           ))}
         </div>
 
-        <Dialog open={isPaymentModalOpen} onOpenChange={setIsPaymentModalOpen}>
-          <DialogContent className="sm:max-w-[500px]">
-            <DialogHeader>
-              <DialogTitle>Complete your subscription</DialogTitle>
-              <DialogDescription>
-                Enter your payment details to start your subscription
-              </DialogDescription>
-            </DialogHeader>
-            {clientSecret && (
+        {clientSecret && (
+          <Dialog open={isPaymentModalOpen} onOpenChange={setIsPaymentModalOpen}>
+            <DialogContent className="sm:max-w-[500px]">
+              <DialogHeader>
+                <DialogTitle>Complete your subscription</DialogTitle>
+                <DialogDescription>
+                  Enter your payment details to start your subscription
+                </DialogDescription>
+              </DialogHeader>
               <Elements stripe={stripePromise} options={{ clientSecret }}>
                 <SubscribeForm onSuccess={handlePaymentSuccess} />
               </Elements>
-            )}
-          </DialogContent>
-        </Dialog>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
     </DashboardLayout>
   );
