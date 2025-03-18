@@ -23,16 +23,24 @@ function CheckoutForm() {
 
   // Check if elements are ready
   useEffect(() => {
-    if (!stripe || !elements) return;
+    if (!stripe || !elements) {
+      console.log('Stripe or Elements not yet initialized');
+      return;
+    }
     const element = elements.getElement(PaymentElement);
+    console.log('Payment Element ready state:', !!element);
     setIsReady(!!element);
   }, [stripe, elements]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('Form submission started');
+    console.log('Current state:', { stripe: !!stripe, elements: !!elements, isReady, loading });
 
     if (!stripe || !elements || !isReady) {
-      setError('Payment system not ready. Please try again.');
+      const error = 'Payment system not ready. Please try again.';
+      console.error(error, { stripe: !!stripe, elements: !!elements, isReady });
+      setError(error);
       return;
     }
 
@@ -51,10 +59,11 @@ function CheckoutForm() {
       console.log('Payment confirmation result:', result);
 
       if (result.error) {
-        setError(result.error.message);
         console.error('Payment error:', result.error);
-        setLoading(false); // Reset loading state on error
+        setError(result.error.message);
+        setLoading(false);
       } else {
+        console.log('Payment successful');
         toast({
           title: "Payment successful",
           description: "Your subscription has been activated",
@@ -62,9 +71,9 @@ function CheckoutForm() {
         setLocation("/settings");
       }
     } catch (error: any) {
-      console.error('Payment error:', error);
+      console.error('Unexpected payment error:', error);
       setError(error.message || 'An unexpected error occurred');
-      setLoading(false); // Reset loading state on error
+      setLoading(false);
     }
   };
 
@@ -98,6 +107,7 @@ export default function CheckoutPage() {
   const [, setLocation] = useLocation();
 
   useEffect(() => {
+    console.log('CheckoutPage mounted', { clientSecret });
     if (!clientSecret || clientSecret === 'undefined') {
       console.error('No valid client secret found in URL');
       setLocation('/subscribe');
