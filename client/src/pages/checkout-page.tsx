@@ -19,21 +19,20 @@ function CheckoutForm() {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const [error, setError] = useState<string>();
+  const [isReady, setIsReady] = useState(false);
+
+  // Check if elements are ready
+  useEffect(() => {
+    if (!stripe || !elements) return;
+    const element = elements.getElement(PaymentElement);
+    setIsReady(!!element);
+  }, [stripe, elements]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!stripe || !elements) {
-      console.error('Stripe or Elements not initialized');
+    if (!stripe || !elements || !isReady) {
       setError('Payment system not ready. Please try again.');
-      return;
-    }
-
-    // Check if payment element is ready
-    const element = elements.getElement(PaymentElement);
-    if (!element) {
-      console.error('Payment element not ready');
-      setError('Payment form not ready. Please try again.');
       return;
     }
 
@@ -54,6 +53,7 @@ function CheckoutForm() {
       if (result.error) {
         setError(result.error.message);
         console.error('Payment error:', result.error);
+        setLoading(false); // Reset loading state on error
       } else {
         toast({
           title: "Payment successful",
@@ -64,8 +64,7 @@ function CheckoutForm() {
     } catch (error: any) {
       console.error('Payment error:', error);
       setError(error.message || 'An unexpected error occurred');
-    } finally {
-      setLoading(false);
+      setLoading(false); // Reset loading state on error
     }
   };
 
@@ -81,7 +80,10 @@ function CheckoutForm() {
         <Button variant="outline" type="button" onClick={() => setLocation('/subscribe')}>
           Back to Plans
         </Button>
-        <Button type="submit" disabled={!stripe || loading}>
+        <Button 
+          type="submit" 
+          disabled={!stripe || !elements || !isReady || loading}
+        >
           {loading ? "Processing..." : "Complete Payment"}
         </Button>
       </div>
