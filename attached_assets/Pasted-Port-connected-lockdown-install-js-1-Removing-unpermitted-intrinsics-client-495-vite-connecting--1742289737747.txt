@@ -1,0 +1,45 @@
+Port connected
+lockdown-install.js:1 Removing unpermitted intrinsics
+client:495 [vite] connecting...
+client:536 WebSocket connection to 'wss://414db6ca-3556-4208-a0ce-8313d30e4f78-00-324813i7gbvxk.kirk.replit.dev/?token=mzj4R8vD94jz' failed: 
+setupWebSocket @ client:536Understand this errorAI
+client:536 Uncaught (in promise) SyntaxError: Failed to construct 'WebSocket': The URL 'wss://localhost:undefined/?token=mzj4R8vD94jz' is invalid.
+    at setupWebSocket (client:536:19)
+    at fallback (client:509:16)
+    at WebSocket.<anonymous> (client:555:7)Understand this errorAI
+chunk-RPCDYKBN.js?v=8957bd02:21551 Download the React DevTools for a better development experience: https://reactjs.org/link/react-devtools
+
+                
+          
+          
+          
+         Chrome is moving towards a new experience that allows users to choose to browse without third-party cookies.Understand this warningAI
+chunk-RPCDYKBN.js?v=8957bd02:18625 [Violation] 'setTimeout' handler took 136ms
+[Violation] Forced reflow while executing JavaScript took 48ms
+2inject.js:1 Port connected
+navbar.tsx:35 WebSocket connection to 'wss://414db6ca-3556-4208-a0ce-8313d30e4f78-00-324813i7gbvxk.kirk.replit.dev/ws-notifications' failed: 
+(anonymous) @ navbar.tsx:35
+commitHookEffectListMount @ chunk-RPCDYKBN.js?v=8957bd02:16915
+commitPassiveMountOnFiber @ chunk-RPCDYKBN.js?v=8957bd02:18156
+commitPassiveMountEffects_complete @ chunk-RPCDYKBN.js?v=8957bd02:18129
+commitPassiveMountEffects_begin @ chunk-RPCDYKBN.js?v=8957bd02:18119
+commitPassiveMountEffects @ chunk-RPCDYKBN.js?v=8957bd02:18109
+flushPassiveEffectsImpl @ chunk-RPCDYKBN.js?v=8957bd02:19490
+flushPassiveEffects @ chunk-RPCDYKBN.js?v=8957bd02:19447
+commitRootImpl @ chunk-RPCDYKBN.js?v=8957bd02:19416
+commitRoot @ chunk-RPCDYKBN.js?v=8957bd02:19277
+performSyncWorkOnRoot @ chunk-RPCDYKBN.js?v=8957bd02:18895
+flushSyncCallbacks @ chunk-RPCDYKBN.js?v=8957bd02:9119
+(anonymous) @ chunk-RPCDYKBN.js?v=8957bd02:18627Understand this errorAI
+navbar.tsx:50 WebSocket error: Event {isTrusted: true, type: 'error', target: WebSocket, currentTarget: WebSocket, eventPhase: 2, …}
+ws.onerror @ navbar.tsx:50Understand this errorAI
+lockdown-install.js:1 Removing unpermitted intrinsics
+web-client-content-script.js:2 Uncaught TypeError: Failed to execute 'observe' on 'MutationObserver': parameter 1 is not of type 'Node'.
+    at HTMLIFrameElement.<anonymous> (web-client-content-script.js:2:305385)
+(anonymous) @ web-client-content-script.js:2Understand this errorAI
+2inject.js:1 Port connected
+lockdown-install.js:1 Removing unpermitted intrinsics
+2inject.js:1 Port connected
+lockdown-install.js:1 Removing unpermitted intrinsics
+web-client-content-script.js:2 Uncaught TypeError: Failed to execute 'observe' on 'MutationObserver': parameter 1 is not of type 'Node'.
+    at HTMLIFrameElement.<anonymous> (web-client-content-script.js:2:305385)
