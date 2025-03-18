@@ -502,6 +502,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const { priceId } = req.body;
+      console.log('Creating subscription with price ID:', priceId);
+
       if (!priceId) {
         return res.status(400).json({ message: 'Price ID is required' });
       }
@@ -510,6 +512,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // If user already has a subscription, return it
       if (user.stripeSubscriptionId) {
+        console.log('User has existing subscription:', user.stripeSubscriptionId);
         const subscription = await stripe.subscriptions.retrieve(user.stripeSubscriptionId);
 
         res.send({
@@ -524,12 +527,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Create a new customer
+      console.log('Creating new Stripe customer for user:', user.id);
       const customer = await stripe.customers.create({
         email: user.email,
         name: user.username,
       });
 
       // Create a subscription
+      console.log('Creating subscription for customer:', customer.id);
       const subscription = await stripe.subscriptions.create({
         customer: customer.id,
         items: [{
@@ -538,6 +543,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         payment_behavior: 'default_incomplete',
         expand: ['latest_invoice.payment_intent'],
       });
+
+      console.log('Subscription created:', subscription.id);
+      console.log('Payment intent:', subscription.latest_invoice?.payment_intent);
 
       // Update user with Stripe info
       await db.update(users)

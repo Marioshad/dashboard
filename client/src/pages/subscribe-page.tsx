@@ -97,16 +97,22 @@ export default function SubscribePage() {
 
   const handleSubscribe = async (priceId: string) => {
     try {
+      console.log('Starting subscription with price ID:', priceId);
       const response = await apiRequest("POST", "/api/get-or-create-subscription", { priceId });
       const data = await response.json();
+
+      console.log('Subscription response:', data);
+
       if (data.clientSecret) {
         console.log("Received client secret:", data.clientSecret.slice(0, 10) + "...");
         setClientSecret(data.clientSecret);
         setIsPaymentModalOpen(true);
       } else {
+        console.error('Missing client secret in response:', data);
         throw new Error("No client secret received");
       }
     } catch (error: any) {
+      console.error('Subscription error:', error);
       toast({
         title: "Error",
         description: error.message,
@@ -154,8 +160,8 @@ export default function SubscribePage() {
 
         <div className="grid gap-4 md:grid-cols-2">
           {prices?.map((price) => (
-            <Card 
-              key={price.id} 
+            <Card
+              key={price.id}
               className="relative"
             >
               <CardHeader>
@@ -186,7 +192,7 @@ export default function SubscribePage() {
                   </li>
                 </ul>
 
-                <Button 
+                <Button
                   className="w-full"
                   onClick={() => handleSubscribe(price.id)}
                 >
@@ -209,8 +215,8 @@ export default function SubscribePage() {
                   Enter your payment details to start your subscription
                 </DialogDescription>
               </DialogHeader>
-              <Elements 
-                stripe={stripePromise} 
+              <Elements
+                stripe={stripePromise}
                 options={{
                   clientSecret,
                   appearance: {
