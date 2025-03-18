@@ -14,6 +14,7 @@ import PermissionsPage from "@/pages/permissions-page";
 import SettingsPage from "@/pages/settings-page";
 import UsersPage from "@/pages/users-page";
 import SubscribePage from "@/pages/subscribe-page";
+import CheckoutPage from "@/pages/checkout-page";
 
 function Router() {
   return (
@@ -26,6 +27,7 @@ function Router() {
       <ProtectedRoute path="/settings" component={SettingsPage} />
       <ProtectedRoute path="/users" component={UsersPage} />
       <ProtectedRoute path="/subscribe" component={SubscribePage} />
+      <ProtectedRoute path="/checkout" component={CheckoutPage} />
       <Route path="/auth" component={AuthPage} />
       <Route component={NotFound} />
     </Switch>

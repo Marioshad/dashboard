@@ -3,18 +3,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useAuth } from "@/hooks/use-auth";
 import { Shield, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useState, useEffect } from "react";
-import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
-import { loadStripe } from "@stripe/stripe-js";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useState } from "react";
+import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
-
-if (!import.meta.env.VITE_STRIPE_PUBLIC_KEY) {
-  throw new Error('Missing required Stripe key: VITE_STRIPE_PUBLIC_KEY');
-}
-
-const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY);
+import { useLocation } from "wouter";
 
 interface Price {
   id: string;
@@ -28,58 +21,11 @@ interface Price {
   };
 }
 
-function SubscribeForm() {
-  const stripe = useStripe();
-  const elements = useElements();
-  const [loading, setLoading] = useState(false);
-  const { toast } = useToast();
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!stripe || !elements) return;
-
-    setLoading(true);
-    try {
-      const { error } = await stripe.confirmPayment({
-        elements,
-        confirmParams: {
-          return_url: `${window.location.origin}/settings`,
-        },
-      });
-
-      if (error) {
-        toast({
-          title: "Payment failed",
-          description: error.message,
-          variant: "destructive",
-        });
-      }
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <PaymentElement />
-      <Button type="submit" disabled={!stripe || loading} className="w-full">
-        {loading ? "Processing..." : "Subscribe Now"}
-      </Button>
-    </form>
-  );
-}
-
 export default function SubscribePage() {
   const { user } = useAuth();
-  const [selectedPrice, setSelectedPrice] = useState<string>();
-  const [clientSecret, setClientSecret] = useState<string>();
+  const [loading, setLoading] = useState<string>();
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
 
   const { data: prices } = useQuery<Price[]>({
     queryKey: ["/api/subscription/prices"],
@@ -88,19 +34,22 @@ export default function SubscribePage() {
   const handleSubscribe = async (priceId: string) => {
     if (user?.subscriptionStatus === 'active') return;
 
-    setSelectedPrice(priceId);
-    apiRequest("POST", "/api/get-or-create-subscription", { priceId })
-      .then((res) => res.json())
-      .then((data) => {
-        setClientSecret(data.clientSecret);
-      })
-      .catch((error) => {
-        toast({
-          title: "Error",
-          description: error.message,
-          variant: "destructive",
-        });
+    setLoading(priceId);
+    try {
+      const response = await apiRequest("POST", "/api/get-or-create-subscription", { priceId });
+      const data = await response.json();
+
+      // Redirect to checkout page with subscription data
+      setLocation(`/checkout?session=${data.subscriptionId}&secret=${data.clientSecret}`);
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
       });
+    } finally {
+      setLoading(undefined);
+    }
   };
 
   if (user?.subscriptionStatus === 'active') {
@@ -135,9 +84,7 @@ export default function SubscribePage() {
           {prices?.map((price) => (
             <Card 
               key={price.id} 
-              className={`relative transition-all ${
-                selectedPrice === price.id ? 'border-primary ring-2 ring-primary' : ''
-              }`}
+              className="relative transition-all hover:border-primary"
             >
               <CardHeader>
                 <div className="flex items-center gap-2">
@@ -167,19 +114,13 @@ export default function SubscribePage() {
                   </li>
                 </ul>
 
-                {selectedPrice === price.id && clientSecret ? (
-                  <Elements stripe={stripePromise} options={{ clientSecret }}>
-                    <SubscribeForm />
-                  </Elements>
-                ) : (
-                  <Button 
-                    className="w-full"
-                    onClick={() => handleSubscribe(price.id)}
-                    disabled={selectedPrice !== undefined}
-                  >
-                    Choose Plan
-                  </Button>
-                )}
+                <Button 
+                  className="w-full"
+                  onClick={() => handleSubscribe(price.id)}
+                  disabled={loading !== undefined}
+                >
+                  {loading === price.id ? "Processing..." : "Subscribe Now"}
+                </Button>
               </CardContent>
             </Card>
           ))}
