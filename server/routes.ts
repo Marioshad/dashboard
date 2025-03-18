@@ -10,7 +10,6 @@ import express from 'express';
 import { db } from "./db";
 import { roles, permissions, rolePermissions, users, appSettings, notifications } from "@shared/schema";
 import { eq, and, isNull, sql, desc } from "drizzle-orm";
-import { WebSocketServer, WebSocket } from 'ws';
 import Stripe from "stripe";
 
 if (!process.env.STRIPE_SECRET_KEY) {
@@ -57,8 +56,11 @@ const upload = multer({
   }
 });
 
+// Store SSE clients
+const clients = new Map<number, express.Response>();
+
 // Helper function to send notification
-async function sendNotification(clients: Map<number, WebSocket>, userId: number, type: string, message: string, actorId?: number) {
+async function sendNotification(userId: number, type: string, message: string, actorId?: number) {
   try {
     const [notification] = await db
       .insert(notifications)
@@ -70,12 +72,9 @@ async function sendNotification(clients: Map<number, WebSocket>, userId: number,
       })
       .returning();
 
-    const ws = clients.get(userId);
-    if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({
-        type: 'notification',
-        data: notification
-      }));
+    const res = clients.get(userId);
+    if (res) {
+      res.write(`data: ${JSON.stringify({ type: 'notification', data: notification })}\n\n`);
     }
 
     return notification;
@@ -441,6 +440,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // SSE endpoint for notifications
+  app.get('/api/notifications/stream', (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.sendStatus(401);
+    }
+
+    const userId = req.user.id;
+
+    // Set headers for SSE
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive'
+    });
+
+    // Send initial heartbeat
+    res.write('data: {"type":"connected"}\n\n');
+
+    // Store client connection
+    clients.set(userId, res);
+
+    // Remove client on connection close
+    req.on('close', () => {
+      clients.delete(userId);
+    });
+  });
+
   // Notifications endpoints
   app.get('/api/notifications', async (req, res, next) => {
     try {
@@ -640,66 +666,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ received: true });
   });
 
-  // WebSocket setup
-  const wss = new WebSocketServer({ noServer: true });
-  const clients = new Map<number, WebSocket>();
-
   const httpServer = createServer(app);
 
-  // Handle WebSocket upgrade with proper session handling
-  httpServer.on('upgrade', async (request, socket, head) => {
-    if (!request.url?.startsWith('/ws-notifications')) {
-      socket.destroy();
-      return;
-    }
-
-    // Get session from the upgrade request
-    const expressRequest = request as any;
-    const sessionParser = app._router.stack
-      .find((layer: any) => layer.name === 'session')?.handle;
-
-    if (!sessionParser) {
-      console.error('Session middleware not found');
-      socket.destroy();
-      return;
-    }
-
-    // Parse session before WebSocket upgrade
-    await new Promise<void>((resolve) => {
-      sessionParser(expressRequest, {} as any, () => {
-        resolve();
-      });
-    });
-
-    // Check authentication after session is parsed
-    if (!expressRequest.session?.passport?.user) {
-      console.error('WebSocket: User not authenticated');
-      socket.destroy();
-      return;
-    }
-
-    const userId = expressRequest.session.passport.user;
-
-    // Handle WebSocket upgrade for authenticated users
-    wss.handleUpgrade(request, socket, head, (ws) => {
-      clients.set(userId, ws);
-
-      ws.on('close', () => {
-        clients.delete(userId);
-      });
-
-      ws.on('error', (error) => {
-        console.error('WebSocket connection error:', error);
-        clients.delete(userId);
-      });
-
-      wss.emit('connection', ws, request);
-    });
-  });
-
   // Expose the sendNotification function through the app locals
-  app.locals.sendNotification = (userId: number, type: string, message: string, actorId?: number) =>
-    sendNotification(clients, userId, type, message, actorId);
+  app.locals.sendNotification = sendNotification;
 
   return httpServer;
 }
