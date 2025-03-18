@@ -28,7 +28,8 @@ function CheckoutForm() {
       const { error } = await stripe.confirmPayment({
         elements,
         confirmParams: {
-          return_url: `${window.location.origin}/settings`,
+          // Use relative URL path instead of full URL to avoid frame navigation issues
+          return_url: "/settings",
         },
       });
 
