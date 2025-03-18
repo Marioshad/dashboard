@@ -515,11 +515,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log('User has existing subscription:', user.stripeSubscriptionId);
         const subscription = await stripe.subscriptions.retrieve(user.stripeSubscriptionId);
 
-        res.send({
+        return res.send({
           subscriptionId: subscription.id,
           clientSecret: subscription.latest_invoice?.payment_intent?.client_secret,
         });
-        return;
       }
 
       if (!user.email) {
