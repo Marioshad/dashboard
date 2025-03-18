@@ -99,8 +99,13 @@ export default function SubscribePage() {
     try {
       const response = await apiRequest("POST", "/api/get-or-create-subscription", { priceId });
       const data = await response.json();
-      setClientSecret(data.clientSecret);
-      setIsPaymentModalOpen(true);
+      if (data.clientSecret) {
+        console.log("Received client secret:", data.clientSecret.slice(0, 10) + "...");
+        setClientSecret(data.clientSecret);
+        setIsPaymentModalOpen(true);
+      } else {
+        throw new Error("No client secret received");
+      }
     } catch (error: any) {
       toast({
         title: "Error",
@@ -112,6 +117,7 @@ export default function SubscribePage() {
 
   const handlePaymentSuccess = () => {
     setIsPaymentModalOpen(false);
+    setClientSecret(undefined);
     toast({
       title: "Success",
       description: "Your subscription has been activated!",
@@ -192,7 +198,10 @@ export default function SubscribePage() {
         </div>
 
         {clientSecret && (
-          <Dialog open={isPaymentModalOpen} onOpenChange={setIsPaymentModalOpen}>
+          <Dialog open={isPaymentModalOpen} onOpenChange={(open) => {
+            setIsPaymentModalOpen(open);
+            if (!open) setClientSecret(undefined);
+          }}>
             <DialogContent className="sm:max-w-[500px]">
               <DialogHeader>
                 <DialogTitle>Complete your subscription</DialogTitle>
@@ -200,7 +209,18 @@ export default function SubscribePage() {
                   Enter your payment details to start your subscription
                 </DialogDescription>
               </DialogHeader>
-              <Elements stripe={stripePromise} options={{ clientSecret }}>
+              <Elements 
+                stripe={stripePromise} 
+                options={{
+                  clientSecret,
+                  appearance: {
+                    theme: 'stripe',
+                    variables: {
+                      colorPrimary: '#0099ff',
+                    },
+                  },
+                }}
+              >
                 <SubscribeForm onSuccess={handlePaymentSuccess} />
               </Elements>
             </DialogContent>
