@@ -1,5 +1,11 @@
 import { DashboardLayout } from "@/components/dashboard-layout";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { useAuth } from "@/hooks/use-auth";
 import { Shield, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";

@@ -494,7 +494,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Stripe subscription endpoint
+  // Update the get-or-create-subscription endpoint
   app.post('/api/get-or-create-subscription', async (req, res) => {
     try {
       if (!req.isAuthenticated()) {
@@ -515,7 +515,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log('User has existing subscription:', user.stripeSubscriptionId);
         const subscription = await stripe.subscriptions.retrieve(user.stripeSubscriptionId);
 
-        return res.send({
+        return res.json({
           subscriptionId: subscription.id,
           clientSecret: subscription.latest_invoice?.payment_intent?.client_secret,
         });
@@ -556,9 +556,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         })
         .where(eq(users.id, user.id));
 
-      res.send({
+      res.json({
         subscriptionId: subscription.id,
-        clientSecret: subscription.latest_invoice?.payment_intent?.client_secret,
+        clientSecret: (subscription.latest_invoice as any)?.payment_intent?.client_secret,
       });
     } catch (error: any) {
       console.error('Subscription error:', error);
