@@ -42,16 +42,19 @@ app.use((req, res, next) => {
 
 (async () => {
   try {
+    log("Starting application initialization...");
+
     log("Testing database connection...");
     await testConnection();
+    log("Database connection and migrations completed successfully");
 
-    log("Initializing email service...");
-    const testAccount = await initializeEmailService();
-    log(`Email service initialized with test account: ${testAccount.user}`);
-    log(`View test emails at: https://ethereal.email`);
+    // Note: Email service initialization temporarily disabled for faster startup
+    // Will be initialized after server is running
+    log("Email service initialization deferred");
 
     log("Setting up routes...");
     const server = await registerRoutes(app);
+    log("Routes registered successfully");
 
     app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
       const status = err.status || err.statusCode || 500;
@@ -76,15 +79,27 @@ app.use((req, res, next) => {
       }
     }
 
-    // Use PORT from environment variable (required for Railway) or fallback to 5000
     const port = process.env.PORT || 5000;
     log(`Attempting to start server on port ${port}...`);
+    log(`Using host: 0.0.0.0`);
 
     server.listen({
       port,
       host: "0.0.0.0",
     }, () => {
       log(`Server is running on port ${port}`);
+      log("Server initialization completed successfully");
+
+      // Initialize email service after server is running
+      log("Initializing email service...");
+      initializeEmailService()
+        .then(testAccount => {
+          log(`Email service initialized with test account: ${testAccount.user}`);
+          log(`View test emails at: https://ethereal.email`);
+        })
+        .catch(error => {
+          log("Failed to initialize email service:", error);
+        });
     });
   } catch (error) {
     log("Startup error:", error);
