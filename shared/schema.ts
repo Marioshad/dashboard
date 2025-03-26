@@ -21,16 +21,12 @@ export const notifications = pgTable("notifications", {
   actorId: integer("actor_id").references(() => users.id), // User who triggered the notification
 });
 
-// Add subscription fields to the user table
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
   fullName: text("full_name"),
   email: text("email"),
-  emailVerified: boolean("email_verified").default(false),
-  verificationToken: text("verification_token"),
-  verificationTokenExpiry: timestamp("verification_token_expiry"),
   bio: text("bio"),
   avatarUrl: text("avatar_url"),
   roleId: integer("role_id"),

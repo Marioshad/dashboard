@@ -2,7 +2,6 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { pool, testConnection } from "./db";
-import { initializeEmailService } from "./services/email";
 
 const app = express();
 app.use(express.json());
@@ -48,9 +47,6 @@ app.use((req, res, next) => {
     await testConnection();
     log("Database connection and migrations completed successfully");
 
-    // Note: Email service initialization temporarily disabled for faster startup
-    // Will be initialized after server is running
-    log("Email service initialization deferred");
 
     log("Setting up routes...");
     const server = await registerRoutes(app);
@@ -89,17 +85,6 @@ app.use((req, res, next) => {
     }, () => {
       log(`Server is running on port ${port}`);
       log("Server initialization completed successfully");
-
-      // Initialize email service after server is running
-      log("Initializing email service...");
-      initializeEmailService()
-        .then(testAccount => {
-          log(`Email service initialized with test account: ${testAccount.user}`);
-          log(`View test emails at: https://ethereal.email`);
-        })
-        .catch(error => {
-          log("Failed to initialize email service:", error);
-        });
     });
   } catch (error) {
     log("Startup error:", error);
