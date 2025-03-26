@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { pool, testConnection } from "./db";
+import { initializeEmailService } from "./services/email";
 
 const app = express();
 app.use(express.json());
@@ -43,6 +44,11 @@ app.use((req, res, next) => {
   try {
     log("Testing database connection...");
     await testConnection();
+
+    log("Initializing email service...");
+    const testAccount = await initializeEmailService();
+    log(`Email service initialized with test account: ${testAccount.user}`);
+    log(`View test emails at: https://ethereal.email`);
 
     log("Setting up routes...");
     const server = await registerRoutes(app);
