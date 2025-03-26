@@ -1,17 +1,40 @@
-import { MailService } from '@sendgrid/mail';
-import { users } from '@shared/schema';
+import nodemailer from 'nodemailer';
 import { db } from '../db';
+import { users } from '@shared/schema';
 import { eq, and, isNull, lt } from 'drizzle-orm';
 import crypto from 'crypto';
 
-if (!process.env.SENDGRID_API_KEY) {
-  throw new Error('SENDGRID_API_KEY environment variable is required');
-}
-
-const mailService = new MailService();
-mailService.setApiKey(process.env.SENDGRID_API_KEY);
-
 const VERIFICATION_EXPIRY_DAYS = 7;
+
+// Create reusable transporter
+let transporter: nodemailer.Transporter;
+
+// Initialize email transporter
+export async function initializeEmailService() {
+  try {
+    // Generate test SMTP service account from ethereal.email
+    // Only needed if you don't have a real mail account for testing
+    const testAccount = await nodemailer.createTestAccount();
+
+    // Create reusable transporter object using the default SMTP transport
+    transporter = nodemailer.createTransport({
+      host: "smtp.ethereal.email",
+      port: 587,
+      secure: false, // true for 465, false for other ports
+      auth: {
+        user: testAccount.user,
+        pass: testAccount.pass,
+      },
+    });
+
+    console.log('Email service initialized with test account:', testAccount.user);
+    console.log('View emails at: https://ethereal.email');
+    return testAccount;
+  } catch (error) {
+    console.error('Failed to initialize email service:', error);
+    throw error;
+  }
+}
 
 export async function sendVerificationEmail(userId: number, email: string, username: string) {
   try {
@@ -30,11 +53,11 @@ export async function sendVerificationEmail(userId: number, email: string, usern
       .where(eq(users.id, userId));
 
     // Send verification email
-    const verificationUrl = `${process.env.APP_URL}/verify-email?token=${token}`;
-    
-    await mailService.send({
+    const verificationUrl = `${process.env.APP_URL || 'http://localhost:3000'}/verify-email?token=${token}`;
+
+    const info = await transporter.sendMail({
+      from: '"Your App" <noreply@yourdomain.com>',
       to: email,
-      from: process.env.SENDGRID_FROM_EMAIL || 'noreply@yourdomain.com',
       subject: 'Verify your email address',
       html: `
         <h1>Welcome to our platform!</h1>
@@ -45,6 +68,10 @@ export async function sendVerificationEmail(userId: number, email: string, usern
         <p>If you did not create an account, no further action is required.</p>
       `,
     });
+
+    console.log('Verification email sent:', info.messageId);
+    // Preview URL for Ethereal emails
+    console.log('Preview URL:', nodemailer.getTestMessageUrl(info));
 
     return true;
   } catch (error) {
