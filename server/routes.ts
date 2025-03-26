@@ -1,4 +1,4 @@
-import type { Express, Request } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { setupAuth } from "./auth";
 import { storage } from "./storage";
@@ -12,6 +12,7 @@ import { roles, permissions, rolePermissions, users, appSettings, notifications 
 import { eq, and, isNull, sql, desc } from "drizzle-orm";
 import Stripe from "stripe";
 import { WebSocketServer } from 'ws';
+import { sendVerificationEmail } from './services/email';
 
 if (!process.env.STRIPE_SECRET_KEY) {
   throw new Error('Missing required Stripe secret: STRIPE_SECRET_KEY');
@@ -607,6 +608,137 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ received: true });
   });
 
+  app.get('/api/verify-email', async (req, res) => {
+    try {
+      const { token } = req.query;
+
+      if (!token || typeof token !== 'string') {
+        return res.status(400).json({ message: 'Invalid verification token' });
+      }
+
+      const [user] = await db.select()
+        .from(users)
+        .where(
+          and(
+            eq(users.verificationToken, token),
+            isNull(users.deletedAt)
+          )
+        )
+        .limit(1);
+
+      if (!user) {
+        return res.status(404).json({ message: 'Invalid or expired verification token' });
+      }
+
+      if (user.emailVerified) {
+        return res.status(400).json({ message: 'Email already verified' });
+      }
+
+      const now = new Date();
+      if (user.verificationTokenExpiry && user.verificationTokenExpiry < now) {
+        return res.status(400).json({ message: 'Verification token has expired' });
+      }
+
+      // Update user as verified
+      await db.update(users)
+        .set({
+          emailVerified: true,
+          verificationToken: null,
+          verificationTokenExpiry: null,
+          updatedAt: now,
+        })
+        .where(eq(users.id, user.id));
+
+      // Send welcome notification
+      await sendNotification(user.id, 'welcome', 'Welcome! Your email has been verified.');
+
+      res.json({ message: 'Email verified successfully' });
+    } catch (error) {
+      console.error('Error verifying email:', error);
+      res.status(500).json({ message: 'Error verifying email' });
+    }
+  });
+
+  // Add verification status check endpoint
+  app.get('/api/verification-status', async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      const [user] = await db.select({
+        emailVerified: users.emailVerified,
+        verificationTokenExpiry: users.verificationTokenExpiry,
+        email: users.email,
+      })
+      .from(users)
+      .where(eq(users.id, req.user.id))
+      .limit(1);
+
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      const response = {
+        verified: user.emailVerified,
+        pending: !user.emailVerified && user.verificationTokenExpiry > new Date(),
+        email: user.email,
+      };
+
+      res.json(response);
+    } catch (error) {
+      console.error('Error checking verification status:', error);
+      res.status(500).json({ message: 'Error checking verification status' });
+    }
+  });
+
+  // Add resend verification email endpoint
+  app.post('/api/resend-verification', async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      const [user] = await db.select()
+        .from(users)
+        .where(eq(users.id, req.user.id))
+        .limit(1);
+
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      if (user.emailVerified) {
+        return res.status(400).json({ message: 'Email already verified' });
+      }
+
+      await sendVerificationEmail(user.id, user.email, user.username);
+      res.json({ message: 'Verification email sent successfully' });
+    } catch (error) {
+      console.error('Error resending verification email:', error);
+      res.status(500).json({ message: 'Error sending verification email' });
+    }
+  });
+
+  // Middleware to check email verification
+  function requireEmailVerification(req: Request, res: Response, next: NextFunction) {
+    if (!req.isAuthenticated()) {
+      return res.sendStatus(401);
+    }
+
+    if (!req.user.emailVerified) {
+      return res.status(403).json({
+        message: 'Email verification required',
+        verificationPending: true
+      });
+    }
+
+    next();
+  }
+
+  // Add verification check to protected routes
+  app.use('/api/protected/*', requireEmailVerification);
+
   const httpServer = createServer(app);
 
   const wss = new WebSocketServer({
@@ -633,7 +765,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     ws.send(JSON.stringify({ type: 'connected' }));
   });
 
-  httpServer.on('upgrade', (request, socket, head) => {
+  wss.on('upgrade', (request, socket, head) => {
     if (request.url?.startsWith('/api/ws')) {
       const sessionParser = app._router.stack
         .find((layer: any) => layer.name === 'session')?.handle;
