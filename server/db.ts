@@ -31,8 +31,8 @@ export const db = drizzle(pool, { schema });
 
 // Function to test database connection and ensure tables exist
 async function testConnection() {
-  let retries = 10;
-  const retryDelay = 5000;
+  let retries = 5; // Reduced from 10 to 5
+  const retryDelay = 2000; // Reduced from 5000 to 2000ms
 
   while (retries) {
     try {
@@ -62,7 +62,6 @@ async function testConnection() {
   }
   return false;
 }
-
 
 async function seedRolesAndPermissions() {
   try {
@@ -101,14 +100,12 @@ async function seedRolesAndPermissions() {
 
     // Map permissions to roles
     if (insertedRoles.length > 0 && insertedPermissions.length > 0) {
+      const rolePermissionMappings = [];
+
       const superadminRole = insertedRoles.find(r => r.name === 'Superadmin');
       const adminRole = insertedRoles.find(r => r.name === 'Admin');
       const userRole = insertedRoles.find(r => r.name === 'User');
 
-      // Prepare role-permission mappings
-      const rolePermissionMappings = [];
-
-      // Superadmin gets all permissions
       if (superadminRole) {
         insertedPermissions.forEach(permission => {
           rolePermissionMappings.push({
@@ -118,7 +115,6 @@ async function seedRolesAndPermissions() {
         });
       }
 
-      // Admin gets all except manage_permissions
       if (adminRole) {
         insertedPermissions
           .filter(p => p.name !== 'manage_permissions')
@@ -130,7 +126,6 @@ async function seedRolesAndPermissions() {
           });
       }
 
-      // User gets basic permissions
       if (userRole) {
         insertedPermissions
           .filter(p => ['view_dashboard', 'manage_profile'].includes(p.name))
@@ -142,7 +137,6 @@ async function seedRolesAndPermissions() {
           });
       }
 
-      // Insert role-permission mappings
       await db.insert(rolePermissions)
         .values(rolePermissionMappings)
         .onConflictDoNothing();
@@ -155,4 +149,5 @@ async function seedRolesAndPermissions() {
     throw error;
   }
 }
-export {testConnection};
+
+export { testConnection };
