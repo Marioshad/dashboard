@@ -43,6 +43,22 @@ export default function SubscribePage() {
     setLoading(priceId);
     try {
       const response = await apiRequest("POST", "/api/get-or-create-subscription", { priceId });
+      
+      // Handle non-200 responses
+      if (!response.ok) {
+        const errorData = await response.json();
+        if (errorData.stripeDisabled) {
+          toast({
+            title: "Payment System Unavailable",
+            description: "The premium subscription system is currently unavailable. Please contact the administrator.",
+            variant: "destructive",
+          });
+          return;
+        } else {
+          throw new Error(errorData.message || 'Failed to create subscription');
+        }
+      }
+      
       const data = await response.json();
 
       if (!data.clientSecret) {
@@ -81,17 +97,31 @@ export default function SubscribePage() {
   }
 
   if (pricesError) {
+    const error = pricesError as any;
+    const isPaymentDisabled = error?.stripeDisabled;
+
     return (
       <DashboardLayout>
         <div className="space-y-8">
           <h1 className="text-3xl font-bold tracking-tight">Premium Subscription</h1>
           <Card>
             <CardHeader>
-              <CardTitle>Error Loading Plans</CardTitle>
+              <CardTitle>
+                {isPaymentDisabled ? "Payment System Disabled" : "Error Loading Plans"}
+              </CardTitle>
               <CardDescription>
-                We encountered an error loading the subscription plans. Please try again later.
+                {isPaymentDisabled 
+                  ? "The premium subscription system is currently unavailable. Please contact the administrator for assistance."
+                  : "We encountered an error loading the subscription plans. Please try again later."}
               </CardDescription>
             </CardHeader>
+            {isPaymentDisabled && (
+              <CardContent>
+                <p className="text-sm text-muted-foreground">
+                  Administrator: Please set STRIPE_SECRET_KEY and VITE_STRIPE_PUBLIC_KEY environment variables to enable payments.
+                </p>
+              </CardContent>
+            )}
           </Card>
         </div>
       </DashboardLayout>

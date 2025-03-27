@@ -13,14 +13,17 @@ import { eq, and, isNull, sql, desc } from "drizzle-orm";
 import Stripe from "stripe";
 import { WebSocketServer } from 'ws';
 
-if (!process.env.STRIPE_SECRET_KEY) {
-  throw new Error('Missing required Stripe secret: STRIPE_SECRET_KEY');
+// Make Stripe integration optional
+let stripe: Stripe | null = null;
+if (process.env.STRIPE_SECRET_KEY) {
+  stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+    apiVersion: "2025-02-24.acacia",
+    typescript: true,
+  });
+  console.log("Stripe payment processing initialized successfully");
+} else {
+  console.warn("STRIPE_SECRET_KEY not provided. Payment features will be disabled.");
 }
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: "2025-02-24.acacia",
-  typescript: true,
-});
 
 const uploadsDir = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(uploadsDir)) {
@@ -464,7 +467,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/subscription/prices', async (req, res) => {
     try {
-      const prices = await stripe.prices.list({
+      if (!stripe) {
+        return res.status(503).json({ 
+          message: 'Payment service unavailable. Please contact administrator.',
+          stripeDisabled: true
+        });
+      }
+
+      if (!process.env.STRIPE_PRICE_ID) {
+        return res.status(503).json({ 
+          message: 'Payment service misconfigured. Missing price configuration.',
+          stripeDisabled: true 
+        });
+      }
+
+      const prices = await stripe!.prices.list({
         product: process.env.STRIPE_PRICE_ID,
         active: true,
         expand: ['data.product'],
@@ -483,6 +500,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.sendStatus(401);
       }
 
+      if (!stripe) {
+        return res.status(503).json({ 
+          message: 'Payment service unavailable. Please contact administrator.',
+          stripeDisabled: true
+        });
+      }
+
       const { priceId } = req.body;
       if (!priceId) {
         return res.status(400).json({ message: 'Price ID is required' });
@@ -491,7 +515,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let user = req.user;
 
       if (user.stripeSubscriptionId) {
-        const subscription = await stripe.subscriptions.retrieve(user.stripeSubscriptionId, {
+        const subscription = await stripe!.subscriptions.retrieve(user.stripeSubscriptionId, {
           expand: ['latest_invoice.payment_intent']
         });
 
@@ -513,12 +537,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'Email is required for subscription' });
       }
 
-      const customer = await stripe.customers.create({
+      const customer = await stripe!.customers.create({
         email: user.email,
         name: user.username,
       });
 
-      const subscription = await stripe.subscriptions.create({
+      const subscription = await stripe!.subscriptions.create({
         customer: customer.id,
         items: [{
           price: priceId,
@@ -554,14 +578,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+    if (!stripe) {
+      return res.status(503).json({ 
+        message: 'Payment service unavailable. Please contact administrator.',
+        stripeDisabled: true
+      });
+    }
+    
+    if (!process.env.STRIPE_WEBHOOK_SECRET) {
+      console.error('Missing Stripe webhook secret');
+      return res.status(500).json({ message: 'Payment webhook misconfigured' });
+    }
+
     const sig = req.headers['stripe-signature'];
     let event;
 
     try {
-      event = stripe.webhooks.constructEvent(
+      event = stripe!.webhooks.constructEvent(
         req.body,
         sig as string,
-        process.env.STRIPE_WEBHOOK_SECRET as string
+        process.env.STRIPE_WEBHOOK_SECRET
       );
     } catch (err: any) {
       console.error('Webhook error:', err.message);
