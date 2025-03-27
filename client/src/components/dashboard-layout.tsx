@@ -45,12 +45,16 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Background accents */}
+      <div className="dashboard-accent-1"></div>
+      <div className="dashboard-accent-2"></div>
+      
       <Navbar />
       <div className="flex">
-        <aside className="w-64 bg-card border-r min-h-[calc(100vh-4rem)] p-4">
+        <aside className="w-64 fruity-sidebar-gradient border-r min-h-[calc(100vh-4rem)] p-4">
           <div className="flex flex-col h-full">
             <div className="space-y-2">
-              <h2 className="text-lg font-semibold mb-4">Dashboard</h2>
+              <h2 className="text-lg font-semibold mb-4 text-white">Dashboard</h2>
               <nav className="space-y-2">
                 {/* Home Section */}
                 <Collapsible
@@ -260,7 +264,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               </Link>
 
               {/* User Profile */}
-              <div className="flex items-center gap-2 mb-4 p-2 rounded-lg bg-secondary">
+              <div className="flex items-center gap-2 mb-4 p-2 rounded-lg fruity-profile-card text-white">
                 <UserCircle className="h-4 w-4" />
                 <span className="font-medium">{user?.username}</span>
               </div>
@@ -268,7 +272,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               {/* Logout */}
               <Button
                 variant="destructive"
-                className="w-full"
+                className="w-full fruity-logout-btn"
                 onClick={() => logoutMutation.mutate()}
                 disabled={logoutMutation.isPending}
               >
@@ -280,7 +284,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         </aside>
 
         {/* Main content */}
-        <main className="flex-1 p-8">{children}</main>
+        <main className="flex-1 p-8 fruity-main-content">{children}</main>
       </div>
     </div>
   );

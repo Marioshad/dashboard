@@ -1,0 +1,186 @@
+/* Fruity Colors Palette */
+:root {
+  --fruity-red: #FF8383;
+  --fruity-yellow: #FFF574;
+  --fruity-teal: #A1D6CB;
+  --fruity-purple: #A19AD3;
+}
+
+/* Card headers with fruity colors */
+.card-fruity-red .card-header {
+  background-color: var(--fruity-red);
+  color: white;
+  border-radius: 0.5rem 0.5rem 0 0;
+}
+
+.card-fruity-yellow .card-header {
+  background-color: var(--fruity-yellow);
+  color: #333;
+  border-radius: 0.5rem 0.5rem 0 0;
+}
+
+.card-fruity-teal .card-header {
+  background-color: var(--fruity-teal);
+  color: #333;
+  border-radius: 0.5rem 0.5rem 0 0;
+}
+
+.card-fruity-purple .card-header {
+  background-color: var(--fruity-purple);
+  color: white;
+  border-radius: 0.5rem 0.5rem 0 0;
+}
+
+/* Button styles with fruity colors */
+.btn-fruity-red {
+  background-color: var(--fruity-red);
+  color: white;
+}
+
+.btn-fruity-yellow {
+  background-color: var(--fruity-yellow);
+  color: #333;
+}
+
+.btn-fruity-teal {
+  background-color: var(--fruity-teal);
+  color: #333;
+}
+
+.btn-fruity-purple {
+  background-color: var(--fruity-purple);
+  color: white;
+}
+
+/* Dashboard background accents */
+.dashboard-accent-1 {
+  background: linear-gradient(145deg, var(--fruity-red), transparent);
+  opacity: 0.1;
+  position: fixed;
+  width: 30vw;
+  height: 30vh;
+  top: 10%;
+  right: 0;
+  z-index: -1;
+  border-radius: 50%;
+}
+
+.dashboard-accent-2 {
+  background: linear-gradient(145deg, var(--fruity-yellow), transparent);
+  opacity: 0.1;
+  position: fixed;
+  width: 40vw;
+  height: 40vh;
+  bottom: 5%;
+  left: 0;
+  z-index: -1;
+  border-radius: 50%;
+}
+
+/* Miscellaneous elements */
+.fruity-badge-red {
+  background-color: var(--fruity-red);
+  color: white;
+}
+
+.fruity-badge-yellow {
+  background-color: var(--fruity-yellow);
+  color: #333;
+}
+
+.fruity-badge-teal {
+  background-color: var(--fruity-teal);
+  color: #333;
+}
+
+.fruity-badge-purple {
+  background-color: var(--fruity-purple);
+  color: white;
+}
+
+/* Menu and sidebar customization */
+.fruity-sidebar-gradient {
+  background: linear-gradient(180deg, #A19AD3, #A1D6CB);
+}
+
+.fruity-navbar-gradient {
+  background: linear-gradient(90deg, #FF8383, #A19AD3);
+  border-bottom: none;
+}
+
+.fruity-notification-button {
+  background-color: rgba(255, 255, 255, 0.2) !important;
+  color: white !important;
+  margin-right: 8px;
+}
+
+.fruity-notification-badge {
+  background-color: var(--fruity-yellow) !important;
+  color: #333 !important;
+}
+
+.fruity-currency-button {
+  background-color: rgba(255, 255, 255, 0.2) !important;
+  color: white !important;
+}
+
+.fruity-profile-card {
+  background: linear-gradient(90deg, var(--fruity-teal), var(--fruity-purple));
+  border: none;
+}
+
+.fruity-logout-btn {
+  background: linear-gradient(90deg, var(--fruity-red), #ff5757) !important;
+  border: none;
+}
+
+/* Applied to all cards */
+.card {
+  border: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+}
+
+/* Main content area styling */
+.fruity-main-content {
+  position: relative;
+  z-index: 1;
+}
+
+/* Card styling for inventory and food items */
+.fruity-main-content .card {
+  border-left: 4px solid var(--fruity-teal);
+  margin-bottom: 16px;
+}
+
+.fruity-main-content h1 {
+  color: var(--fruity-purple);
+  font-weight: bold;
+  margin-bottom: 24px;
+  position: relative;
+}
+
+.fruity-main-content h1:after {
+  content: '';
+  position: absolute;
+  bottom: -8px;
+  left: 0;
+  width: 60px;
+  height: 4px;
+  background: linear-gradient(90deg, var(--fruity-yellow), var(--fruity-red));
+}
+
+/* Button styling inside main content */
+.fruity-main-content button.btn-primary {
+  background: linear-gradient(90deg, var(--fruity-teal), var(--fruity-purple));
+  border: none;
+}
+
+.fruity-main-content .table th {
+  background-color: rgba(161, 154, 211, 0.1);
+}
