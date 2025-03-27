@@ -670,6 +670,299 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ received: true });
   });
 
+  // Food Tracking API Routes
+  
+  // Locations API
+  app.get('/api/locations', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      const userLocations = await storage.getLocations(req.user.id);
+      res.json(userLocations);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/locations', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      const result = insertLocationSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ message: "Invalid location data", errors: result.error.format() });
+      }
+      
+      const location = await storage.createLocation({
+        ...result.data,
+        userId: req.user.id
+      });
+      
+      res.status(201).json(location);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/api/locations/:id', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      const locationId = parseInt(req.params.id);
+      if (isNaN(locationId)) {
+        return res.status(400).json({ message: "Invalid location ID" });
+      }
+      
+      const location = await storage.getLocation(locationId);
+      if (!location) {
+        return res.status(404).json({ message: "Location not found" });
+      }
+      
+      // Verify ownership
+      if (location.userId !== req.user.id) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
+      res.json(location);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch('/api/locations/:id', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      const locationId = parseInt(req.params.id);
+      if (isNaN(locationId)) {
+        return res.status(400).json({ message: "Invalid location ID" });
+      }
+      
+      // Check if location exists and belongs to user
+      const location = await storage.getLocation(locationId);
+      if (!location) {
+        return res.status(404).json({ message: "Location not found" });
+      }
+      
+      if (location.userId !== req.user.id) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
+      const result = updateLocationSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ message: "Invalid location data", errors: result.error.format() });
+      }
+      
+      const updatedLocation = await storage.updateLocation(locationId, result.data);
+      res.json(updatedLocation);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete('/api/locations/:id', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      const locationId = parseInt(req.params.id);
+      if (isNaN(locationId)) {
+        return res.status(400).json({ message: "Invalid location ID" });
+      }
+      
+      // Check if location exists and belongs to user
+      const location = await storage.getLocation(locationId);
+      if (!location) {
+        return res.status(404).json({ message: "Location not found" });
+      }
+      
+      if (location.userId !== req.user.id) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
+      await storage.deleteLocation(locationId);
+      res.sendStatus(204);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Food Items API
+  app.get('/api/food-items', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      const locationId = req.query.locationId ? parseInt(req.query.locationId as string) : undefined;
+      
+      const items = await storage.getFoodItems(req.user.id, locationId);
+      res.json(items);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/food-items', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      const result = insertFoodItemSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ message: "Invalid food item data", errors: result.error.format() });
+      }
+      
+      // Verify location ownership if provided
+      if (result.data.locationId) {
+        const location = await storage.getLocation(result.data.locationId);
+        if (!location || location.userId !== req.user.id) {
+          return res.status(403).json({ message: "Invalid location or access denied" });
+        }
+      }
+      
+      const foodItem = await storage.createFoodItem({
+        ...result.data,
+        userId: req.user.id
+      });
+      
+      res.status(201).json(foodItem);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/api/food-items/:id', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      const itemId = parseInt(req.params.id);
+      if (isNaN(itemId)) {
+        return res.status(400).json({ message: "Invalid food item ID" });
+      }
+      
+      const item = await storage.getFoodItem(itemId);
+      if (!item) {
+        return res.status(404).json({ message: "Food item not found" });
+      }
+      
+      // Verify ownership
+      if (item.userId !== req.user.id) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
+      res.json(item);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch('/api/food-items/:id', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      const itemId = parseInt(req.params.id);
+      if (isNaN(itemId)) {
+        return res.status(400).json({ message: "Invalid food item ID" });
+      }
+      
+      // Check if item exists and belongs to user
+      const item = await storage.getFoodItem(itemId);
+      if (!item) {
+        return res.status(404).json({ message: "Food item not found" });
+      }
+      
+      if (item.userId !== req.user.id) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
+      const result = updateFoodItemSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ message: "Invalid food item data", errors: result.error.format() });
+      }
+      
+      // If location is being changed, verify ownership of the new location
+      if (result.data.locationId && result.data.locationId !== item.locationId) {
+        const location = await storage.getLocation(result.data.locationId);
+        if (!location || location.userId !== req.user.id) {
+          return res.status(403).json({ message: "Invalid location or access denied" });
+        }
+      }
+      
+      const updatedItem = await storage.updateFoodItem(itemId, result.data);
+      res.json(updatedItem);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete('/api/food-items/:id', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      const itemId = parseInt(req.params.id);
+      if (isNaN(itemId)) {
+        return res.status(400).json({ message: "Invalid food item ID" });
+      }
+      
+      // Check if item exists and belongs to user
+      const item = await storage.getFoodItem(itemId);
+      if (!item) {
+        return res.status(404).json({ message: "Food item not found" });
+      }
+      
+      if (item.userId !== req.user.id) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
+      await storage.deleteFoodItem(itemId);
+      res.sendStatus(204);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Receipt upload endpoint
+  app.post('/api/receipts/upload', upload.single('receipt'), async (req: MulterRequest, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+
+      // In a real app, we would process the receipt image here to extract food items
+      // For now, we'll just return the upload path so the frontend can display it
+      const receiptUrl = `/uploads/${req.file.filename}`;
+      
+      // Return a successful response with the receipt URL
+      res.json({ 
+        receiptUrl,
+        message: "Receipt uploaded successfully. Processing will be implemented in a future update."
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   const httpServer = createServer(app);
 
   const wss = new WebSocketServer({
