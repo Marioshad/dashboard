@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, date } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -66,6 +66,30 @@ export const rolePermissions = pgTable("role_permissions", {
   permissionId: integer("permission_id").notNull().references(() => permissions.id)
 });
 
+// Food Vault Models
+export const locations = pgTable("locations", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  type: text("type").notNull(), // 'home', 'office', etc.
+  userId: integer("user_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const foodItems = pgTable("food_items", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  quantity: integer("quantity").notNull(),
+  unit: text("unit").notNull(), // g, kg, pieces, etc.
+  locationId: integer("location_id").notNull().references(() => locations.id),
+  expiryDate: date("expiry_date").notNull(),
+  price: integer("price"), // in cents
+  purchased: timestamp("purchased").notNull(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ one, many }) => ({
   role: one(roles, {
@@ -74,6 +98,8 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   }),
   notifications: many(notifications),
   actedNotifications: many(notifications, { relationName: "actor" }),
+  locations: many(locations),
+  foodItems: many(foodItems),
 }));
 
 export const rolesRelations = relations(roles, ({ many }) => ({
@@ -112,6 +138,25 @@ export const notificationsRelations = relations(notifications, ({ one }) => ({
     fields: [notifications.actorId],
     references: [users.id],
     relationName: "actor",
+  }),
+}));
+
+export const locationsRelations = relations(locations, ({ one, many }) => ({
+  user: one(users, {
+    fields: [locations.userId],
+    references: [users.id],
+  }),
+  foodItems: many(foodItems),
+}));
+
+export const foodItemsRelations = relations(foodItems, ({ one }) => ({
+  location: one(locations, {
+    fields: [foodItems.locationId],
+    references: [locations.id],
+  }),
+  user: one(users, {
+    fields: [foodItems.userId],
+    references: [users.id],
   }),
 }));
 
@@ -171,6 +216,35 @@ export const insertPermissionSchema = createInsertSchema(permissions).pick({
 
 export const updatePermissionSchema = insertPermissionSchema;
 
+// Food schemas
+export const insertLocationSchema = createInsertSchema(locations).pick({
+  name: true,
+  type: true,
+}).extend({
+  name: z.string().min(2, "Location name must be at least 2 characters"),
+  type: z.string().min(2, "Location type must be at least 2 characters"),
+});
+
+export const updateLocationSchema = insertLocationSchema;
+
+export const insertFoodItemSchema = createInsertSchema(foodItems).pick({
+  name: true,
+  quantity: true,
+  unit: true,
+  locationId: true,
+  expiryDate: true,
+  price: true,
+}).extend({
+  name: z.string().min(2, "Food name must be at least 2 characters"),
+  quantity: z.number().min(1, "Quantity must be at least 1"),
+  unit: z.string().min(1, "Unit is required"),
+  locationId: z.number().min(1, "Location is required"),
+  expiryDate: z.date().or(z.string()),
+  price: z.number().optional(),
+});
+
+export const updateFoodItemSchema = insertFoodItemSchema;
+
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type UpdateProfile = z.infer<typeof updateProfileSchema>;
@@ -178,8 +252,14 @@ export type InsertRole = z.infer<typeof insertRoleSchema>;
 export type UpdateRole = z.infer<typeof updateRoleSchema>;
 export type InsertPermission = z.infer<typeof insertPermissionSchema>;
 export type UpdatePermission = z.infer<typeof updatePermissionSchema>;
+export type InsertLocation = z.infer<typeof insertLocationSchema>;
+export type UpdateLocation = z.infer<typeof updateLocationSchema>;
+export type InsertFoodItem = z.infer<typeof insertFoodItemSchema>;
+export type UpdateFoodItem = z.infer<typeof updateFoodItemSchema>;
 export type User = typeof users.$inferSelect;
 export type Role = typeof roles.$inferSelect;
 export type Permission = typeof permissions.$inferSelect;
 export type AppSettings = typeof appSettings.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
+export type Location = typeof locations.$inferSelect;
+export type FoodItem = typeof foodItems.$inferSelect;
