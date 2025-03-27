@@ -14,8 +14,13 @@ export function NotificationSettings() {
     mutationFn: async (data: {
       [key: string]: boolean;
     }) => {
-      const response = await apiRequest("PATCH", "/api/profile", data);
-      return response.json();
+      return await apiRequest("/api/profile", {
+        method: "PATCH",
+        body: JSON.stringify(data),
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/user"] });

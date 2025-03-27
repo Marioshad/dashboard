@@ -44,7 +44,7 @@ export default function SubscribePage() {
 
     setLoading(priceId);
     try {
-      const response = await apiRequest("/api/get-or-create-subscription", {
+      const data = await apiRequest("/api/get-or-create-subscription", {
         method: "POST",
         body: JSON.stringify({ priceId }),
         headers: {
@@ -52,23 +52,16 @@ export default function SubscribePage() {
         },
       });
       
-      // Handle non-200 responses
-      if (!response.ok) {
-        const errorData = await response.json();
-        if (errorData.stripeDisabled) {
-          toast({
-            title: "Payment System Unavailable",
-            description: "The premium subscription system is currently unavailable. Please contact the administrator.",
-            variant: "destructive",
-          });
-          return;
-        } else {
-          throw new Error(errorData.message || 'Failed to create subscription');
-        }
+      // Check if Stripe is disabled
+      if (data.stripeDisabled) {
+        toast({
+          title: "Payment System Unavailable",
+          description: "The premium subscription system is currently unavailable. Please contact the administrator.",
+          variant: "destructive",
+        });
+        return;
       }
       
-      const data = await response.json();
-
       if (!data.clientSecret) {
         throw new Error('Unable to create subscription. Please try again.');
       }
