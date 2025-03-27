@@ -49,7 +49,31 @@ export class DatabaseStorage implements IStorage {
       });
       console.log('Session store initialized successfully');
     } catch (error) {
-      console.error('Error initializing session store:', error);
+      console.error('Error initializing session store:');
+      
+      if (error instanceof Error) {
+        console.error(`- Error name: ${error.name}`);
+        console.error(`- Error message: ${error.message}`);
+        if (error.stack) {
+          console.error(`- Stack trace: ${error.stack}`);
+        }
+      } else if (typeof error === 'object' && error !== null) {
+        try {
+          console.error(`- Details: ${JSON.stringify(error, Object.getOwnPropertyNames(error))}`);
+        } catch (jsonError) {
+          console.error(`- Unable to stringify error object - ${Object.prototype.toString.call(error)}`);
+          try {
+            Object.entries(error as Record<string, unknown>).forEach(([key, value]) => {
+              console.error(`- Property ${key}: ${String(value)}`);
+            });
+          } catch (propError) {
+            console.error(`- Error accessing error properties: ${String(propError)}`);
+          }
+        }
+      } else {
+        console.error(`- ${String(error)}`);
+      }
+      
       // Fallback - in-memory session store, only for recovery
       console.warn('Using fallback in-memory session store - users will need to log in again');
       const MemoryStore = require('memorystore')(session);
