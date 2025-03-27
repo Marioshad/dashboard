@@ -40,16 +40,34 @@ async function testConnection() {
       console.log('Database connection successful:', (await client.query('SELECT NOW()')).rows[0].now);
 
       try {
-        // Execute initial migration with proper error handling
+        // Execute initial migration with robust error handling
         const migrationPath = path.join(process.cwd(), 'server', 'migrations', '001_initial.sql');
         if (!fs.existsSync(migrationPath)) {
           console.error('Migration file not found:', migrationPath);
           throw new Error('Migration file not found');
         }
 
-        const migrationSQL = fs.readFileSync(migrationPath, 'utf8');
-        await client.query(migrationSQL);
-        console.log('Database tables and migration scripts executed successfully');
+        // Run migration in a transaction for safety
+        await client.query('BEGIN');
+        try {
+          const migrationSQL = fs.readFileSync(migrationPath, 'utf8');
+          await client.query(migrationSQL);
+          await client.query('COMMIT');
+          console.log('Database migration executed successfully');
+        } catch (migrationError) {
+          // Rollback migration on error
+          await client.query('ROLLBACK');
+          console.error('Migration error - rolled back:', migrationError);
+          
+          // Specific handling for column errors
+          if (migrationError instanceof Error && 
+              migrationError.message.includes('column') && 
+              process.env.NODE_ENV === 'production') {
+            console.warn('Column error detected. Please run the migration script manually: node server/runMigration.js');
+          } else {
+            throw migrationError;
+          }
+        }
         
         // Check for session table (critical for authentication)
         const sessionTableCheck = await client.query(`
@@ -62,20 +80,33 @@ async function testConnection() {
         
         if (!sessionTableCheck.rows[0].exists) {
           console.log('Session table does not exist, will be created by session store');
+        } else {
+          // If we previously had session issues, validate its structure
+          try {
+            await client.query('SELECT sid, sess, expire FROM session LIMIT 0');
+            console.log('Session table structure verified');
+          } catch (sessionErr) {
+            console.warn('Session table exists but may have invalid structure');
+            try {
+              console.log('Recreating session table to resolve potential schema issues...');
+              await client.query('DROP TABLE IF EXISTS session');
+              console.log('Session table dropped, will be recreated on startup');
+            } catch (dropErr) {
+              console.error('Error dropping session table:', dropErr);
+            }
+          }
         }
 
         await seedRolesAndPermissions();
         client.release();
         return true;
       } catch (error) {
-        const migrationError = error as Error;
-        console.error('Database migration error:', migrationError);
+        const dbError = error as Error;
+        console.error('Database setup error:', dbError);
         
-        // If it's a column-related error, try to recover by recreating the session
-        if (migrationError.message && (
-            migrationError.message.includes('column') || 
-            migrationError.message.includes('deserialize'))) {
-          console.log('Attempting session table recreation to resolve schema issues...');
+        // Special handling for session issues
+        if (dbError.message && dbError.message.includes('deserialize')) {
+          console.log('Session deserialization issue detected. Recreating session table...');
           try {
             await client.query('DROP TABLE IF EXISTS session');
             console.log('Session table dropped, will be recreated on startup');
@@ -85,10 +116,10 @@ async function testConnection() {
         }
         
         client.release();
-        throw migrationError;
+        throw dbError;
       }
     } catch (err) {
-      console.error('Database connection/migration attempt failed:', err);
+      console.error('Database connection attempt failed:', err);
       retries -= 1;
       if (!retries) {
         throw err;

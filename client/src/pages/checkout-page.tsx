@@ -6,11 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 
-if (!import.meta.env.VITE_STRIPE_PUBLIC_KEY) {
-  throw new Error('Missing required Stripe key: VITE_STRIPE_PUBLIC_KEY');
-}
-
-const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY);
+// Make Stripe payment optional
+const stripePublicKey = import.meta.env.VITE_STRIPE_PUBLIC_KEY;
+const stripePromise = stripePublicKey ? loadStripe(stripePublicKey) : null;
 
 function CheckoutForm() {
   const stripe = useStripe();
@@ -108,6 +106,7 @@ export default function CheckoutPage() {
   const params = new URLSearchParams(search);
   const clientSecret = params.get('secret');
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
 
   useEffect(() => {
     console.log('CheckoutPage mounted', { clientSecret });
@@ -116,6 +115,19 @@ export default function CheckoutPage() {
       setLocation('/subscribe');
     }
   }, [clientSecret, setLocation]);
+
+  // If Stripe is not configured, show error
+  if (!stripePromise) {
+    useEffect(() => {
+      toast({
+        title: "Payment Service Unavailable",
+        description: "The payment service is currently unavailable. Please contact support.",
+        variant: "destructive",
+      });
+      setLocation('/subscribe');
+    }, []);
+    return null;
+  }
 
   if (!clientSecret || clientSecret === 'undefined') {
     return null;
