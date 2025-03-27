@@ -1,0 +1,123 @@
+Starting Container
+
+npm warn config production Use `--omit=dev` instead.
+
+ 
+
+> rest-express@1.0.0 start
+
+> NODE_ENV=production node dist/index.js
+
+ 
+
+1:26:20 PM [express] - Protocol: postgresql:
+
+1:26:20 PM [express] - Host: postgres.railway.internal
+
+1:26:20 PM [express] - Port: 5432
+
+1:26:20 PM [express] - Username: [REDACTED]
+
+1:26:20 PM [express] - Password: [REDACTED]
+
+1:26:20 PM [express] - Path (database): railway
+
+1:26:17 PM [express] Database connection info:
+
+1:26:17 PM [express] - Protocol: postgresql:
+
+1:26:17 PM [express] - Host: postgres.railway.internal
+
+1:26:17 PM [express] - Port: 5432
+
+1:26:17 PM [express] - Username: [REDACTED]
+
+1:26:17 PM [express] - Password: [REDACTED]
+
+1:26:17 PM [express] - Path (database): railway
+
+Session store initialized successfully
+
+Stripe payment processing initialized successfully
+
+1:26:17 PM [express] Starting server in production mode
+
+1:26:17 PM [express] Starting application initialization...
+
+1:26:17 PM [express] Testing database connection...
+
+1:26:17 PM [express] Testing database connection with basic query...
+
+1:26:17 PM [express] Database connection successful, server time: Thu Mar 27 2025 13:26:17 GMT+0000 (Coordinated Universal Time)
+
+1:26:17 PM [express] Running database migrations...
+
+1:26:17 PM [express] Startup error: Error: ENOENT: no such file or directory, scandir '/app/dist/migrations'
+
+npm warn config production Use `--omit=dev` instead.
+
+ 
+
+> rest-express@1.0.0 start
+
+> NODE_ENV=production node dist/index.js
+
+ 
+
+1:26:20 PM [express] Starting server in production mode
+
+1:26:20 PM [express] Database connection info:
+
+1:26:20 PM [express] Starting application initialization...
+
+1:26:20 PM [express] Testing database connection...
+
+1:26:20 PM [express] Testing database connection with basic query...
+
+Stripe payment processing initialized successfully
+
+Session store initialized successfully
+
+1:26:20 PM [express] Database connection successful, server time: Thu Mar 27 2025 13:26:20 GMT+0000 (Coordinated Universal Time)
+
+1:26:20 PM [express] Running database migrations...
+
+1:26:20 PM [express] Startup error: Error: ENOENT: no such file or directory, scandir '/app/dist/migrations'
+
+npm warn config production Use `--omit=dev` instead.
+
+ 
+
+> rest-express@1.0.0 start
+
+> NODE_ENV=production node dist/index.js
+
+ 
+
+1:26:23 PM [express] Database connection info:
+
+1:26:23 PM [express] - Protocol: postgresql:
+
+1:26:23 PM [express] - Host: postgres.railway.internal
+
+1:26:23 PM [express] - Port: 5432
+
+1:26:23 PM [express] - Username: [REDACTED]
+
+1:26:23 PM [express] - Password: [REDACTED]
+
+1:26:23 PM [express] - Path (database): railway
+
+Session store initialized successfully
+
+Stripe payment processing initialized successfully
+
+1:26:23 PM [express] Starting server in production mode
+
+1:26:23 PM [express] Starting application initialization...
+
+1:26:23 PM [express] Testing database connection...
+
+1:26:23 PM [express] Testing database connection with basic query...
+
+1:26:23 PM [express] Database connection successful, server time: Thu Mar 27 2025 13:26:23 GMT+0000 (Coordinated Universal Time)

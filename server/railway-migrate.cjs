@@ -19,8 +19,29 @@ const pool = new Pool({
 });
 
 async function runMigration() {
-  // Get all migration files
-  const migrationsDir = path.join(__dirname, 'migrations');
+  // Check multiple possible migration locations
+  let migrationsDir;
+  const possiblePaths = [
+    path.join(__dirname, 'migrations'),
+    path.join(__dirname, '..', 'dist', 'migrations'),
+    '/app/dist/migrations',
+    '/app/server/migrations'
+  ];
+  
+  for (const possiblePath of possiblePaths) {
+    if (fs.existsSync(possiblePath) && fs.readdirSync(possiblePath).some(file => file.endsWith('.sql'))) {
+      migrationsDir = possiblePath;
+      console.log(`Using migrations directory: ${migrationsDir}`);
+      break;
+    }
+  }
+  
+  if (!migrationsDir) {
+    console.error('Could not find migrations directory. Checked paths:');
+    possiblePaths.forEach(p => console.error(`- ${p}`));
+    process.exit(1);
+  }
+  
   const migrationFiles = fs.readdirSync(migrationsDir)
     .filter(file => file.endsWith('.sql'))
     .sort(); // Sort to ensure migrations run in order (001, 002, etc.)

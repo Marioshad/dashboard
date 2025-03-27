@@ -29,7 +29,34 @@ export async function runMigrations(): Promise<boolean> {
   });
 
   // Get all migration files
-  const migrationsDir = path.join(__dirname, 'migrations');
+  let migrationsDir = path.join(__dirname, 'migrations');
+  
+  // In production, migrations might be in a different location
+  if (process.env.NODE_ENV === 'production') {
+    // Check if we're in dist folder structure
+    const distMigrationsPath = path.join(__dirname, 'migrations');
+    if (fs.existsSync(distMigrationsPath)) {
+      migrationsDir = distMigrationsPath;
+      log(`Using production migrations path: ${migrationsDir}`, 'migration');
+    } else {
+      // Try parent directory as fallback (for Railway deployment)
+      const parentMigrationsPath = path.join(__dirname, '..', 'server', 'migrations');
+      if (fs.existsSync(parentMigrationsPath)) {
+        migrationsDir = parentMigrationsPath;
+        log(`Using parent migrations path: ${migrationsDir}`, 'migration');
+      } else {
+        log(`Warning: Couldn't find migrations directory in production. Checked: ${distMigrationsPath} and ${parentMigrationsPath}`, 'migration');
+      }
+    }
+  }
+  
+  log(`Using migrations directory: ${migrationsDir}`, 'migration');
+  
+  if (!fs.existsSync(migrationsDir)) {
+    log(`Error: Migrations directory does not exist: ${migrationsDir}`, 'migration');
+    return false;
+  }
+  
   const migrationFiles = fs.readdirSync(migrationsDir)
     .filter(file => file.endsWith('.sql'))
     .sort(); // Sort to ensure migrations run in order (001, 002, etc.)

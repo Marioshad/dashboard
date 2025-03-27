@@ -61,14 +61,24 @@ export default function InventoryPage() {
   const [openAddDialog, setOpenAddDialog] = useState(false);
   const [openEditDialog, setOpenEditDialog] = useState(false);
   const [itemToEdit, setItemToEdit] = useState<FoodItem | null>(null);
-  const [newItem, setNewItem] = useState({
+  interface NewFoodItem {
+    name: string;
+    quantity: number;
+    unit: string;
+    locationId: number;
+    expiryDate: string;
+    price: number;
+    purchased: Date;
+  }
+  
+  const [newItem, setNewItem] = useState<NewFoodItem>({
     name: "",
     quantity: 1,
     unit: "pieces",
     locationId: 0,
     expiryDate: format(addDays(new Date(), 7), "yyyy-MM-dd"), // Default to a week from now
     price: 0,
-    purchased: format(new Date(), "yyyy-MM-dd"), // Today's date
+    purchased: new Date(), // Today's date as Date object
   });
   
   // Fetch locations
@@ -190,7 +200,7 @@ export default function InventoryPage() {
       locationId: locations.length > 0 ? locations[0].id : 0,
       expiryDate: format(addDays(new Date(), 7), "yyyy-MM-dd"),
       price: 0,
-      purchased: format(new Date(), "yyyy-MM-dd"),
+      purchased: new Date(),
     });
   };
   
@@ -472,7 +482,10 @@ export default function InventoryPage() {
                   id="expiryDate"
                   type="date"
                   value={newItem.expiryDate}
-                  onChange={(e) => setNewItem({ ...newItem, expiryDate: e.target.value })}
+                  onChange={(e) => {
+                    const expiryDate = e.target.value ? parseISO(e.target.value) : addDays(new Date(), 7);
+                    setNewItem({ ...newItem, expiryDate: format(expiryDate, "yyyy-MM-dd") });
+                  }}
                 />
               </div>
               
@@ -481,8 +494,11 @@ export default function InventoryPage() {
                 <Input
                   id="purchased"
                   type="date"
-                  value={newItem.purchased}
-                  onChange={(e) => setNewItem({ ...newItem, purchased: e.target.value })}
+                  value={format(newItem.purchased, "yyyy-MM-dd")}
+                  onChange={(e) => {
+                    const purchasedDate = e.target.value ? parseISO(e.target.value) : new Date();
+                    setNewItem({ ...newItem, purchased: purchasedDate });
+                  }}
                 />
               </div>
             </div>
@@ -602,8 +618,9 @@ export default function InventoryPage() {
                       ? format(parseISO(itemToEdit.expiryDate), "yyyy-MM-dd")
                       : format(itemToEdit.expiryDate, "yyyy-MM-dd")}
                     onChange={(e) => {
-                      // Ensure we're storing the date as a string format for the server
-                      setItemToEdit({ ...itemToEdit, expiryDate: e.target.value });
+                      // Parse the date and format as string
+                      const expiryDate = e.target.value ? e.target.value : format(new Date(), "yyyy-MM-dd");
+                      setItemToEdit({ ...itemToEdit, expiryDate: expiryDate });
                     }}
                   />
                 </div>
@@ -617,8 +634,9 @@ export default function InventoryPage() {
                       ? format(parseISO(itemToEdit.purchased), "yyyy-MM-dd") 
                       : format(itemToEdit.purchased, "yyyy-MM-dd")}
                     onChange={(e) => {
-                      // Ensure we're storing the date as a string format for the server
-                      setItemToEdit({ ...itemToEdit, purchased: e.target.value });
+                      // Convert input to a Date object for timestamp field
+                      const purchasedDate = e.target.value ? parseISO(e.target.value) : new Date();
+                      setItemToEdit({ ...itemToEdit, purchased: purchasedDate });
                     }}
                   />
                 </div>
