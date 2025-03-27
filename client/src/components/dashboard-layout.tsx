@@ -31,7 +31,8 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const [openMenus, setOpenMenus] = useState<string[]>(['users', 'home', 'food']);
 
-  const isAdmin = user?.roleId === 1 || user?.roleId === 2; // Superadmin or Admin
+  // Check role ID for admin status
+  const isAdmin = (user?.roleId === 1 || user?.roleId === 2); // Superadmin or Admin
 
   const isMenuOpen = (menu: string) => openMenus.includes(menu);
   const toggleMenu = (menu: string) => {

@@ -24,7 +24,8 @@ interface AdminSettings {
 export default function SettingsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const isAdmin = user?.roleId === 1 || user?.roleId === 2; // Superadmin or Admin
+  // Check role ID for admin status
+  const isAdmin = (user?.roleId === 1 || user?.roleId === 2); // Superadmin or Admin
 
   const { data: adminSettings } = useQuery<AdminSettings>({
     queryKey: ["/api/settings/admin"],
