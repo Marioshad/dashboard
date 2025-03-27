@@ -112,57 +112,76 @@ export function Navbar() {
   }, [notifications]);
 
   return (
-    <div className="fruity-navbar-gradient shadow-md z-10">
-      <div className="flex h-16 items-center px-4">
-        <nav className="flex-1">
-          <Link href="/">
-            <span className="text-2xl font-bold cursor-pointer text-white">FoodVault</span>
-          </Link>
-        </nav>
-        <div className="flex items-center gap-4">
+    <div className="fruity-navbar-gradient">
+      <div className="flex justify-between items-center px-4 h-full">
+        <div className="flex items-center gap-3">
+          {/* Page Title - Dynamic based on current route */}
+          <h1 className="text-lg font-medium text-dark">
+            Dashboard
+          </h1>
+        </div>
+        
+        <div className="flex items-center gap-2">
+          {/* Currency Selector */}
           <Link href="/profile">
-            <Button variant="ghost" size="sm" className="flex items-center gap-1 fruity-currency-button">
-              <Coins className="h-4 w-4" />
-              <span>{currencySymbol}</span>
-              <span className="text-xs ml-1">{currency}</span>
+            <Button className="fruity-currency-button">
+              <Coins className="h-4 w-4 mr-2" />
+              <span className="font-semibold">{currencySymbol}</span>
+              <span className="text-xs ml-1 opacity-70">{currency}</span>
             </Button>
           </Link>
           
+          {/* Notification Dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="relative fruity-notification-button">
+              <Button className="relative fruity-notification-button">
                 <Bell className={cn("h-5 w-5", isConnecting && "animate-pulse")} />
                 {unreadCount > 0 && (
                   <Badge
-                    variant="destructive"
-                    className={cn(
-                      "absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs fruity-notification-badge",
-                    )}
+                    className="fruity-notification-badge absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs"
                   >
                     {unreadCount}
                   </Badge>
                 )}
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-80">
-              <DropdownMenuLabel>Notifications</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <div className="max-h-80 overflow-auto">
+            <DropdownMenuContent align="end" className="w-80 p-0 overflow-hidden rounded-xl border-0 shadow-xl">
+              <div className="bg-primary-gradient text-white p-4">
+                <h3 className="font-bold">Notifications</h3>
+                <p className="text-xs opacity-80">You have {unreadCount} unread messages</p>
+              </div>
+              <DropdownMenuSeparator className="m-0" />
+              <div className="max-h-80 overflow-auto py-2">
                 {notifications?.length === 0 ? (
-                  <div className="p-4 text-center text-sm text-muted-foreground">
-                    No notifications
+                  <div className="p-6 text-center">
+                    <div className="mb-2 rounded-full bg-gray-100 w-12 h-12 mx-auto flex items-center justify-center">
+                      <Bell className="h-6 w-6 text-gray-500" />
+                    </div>
+                    <p className="text-sm font-medium text-gray-700">No notifications</p>
+                    <p className="text-xs text-gray-500 mt-1">You're all caught up!</p>
                   </div>
                 ) : (
                   notifications?.map((notification) => (
-                    <DropdownMenuItem key={notification.id} className="flex flex-col items-start gap-1 p-4">
-                      <div className="text-sm">{notification.message}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {new Date(notification.createdAt).toLocaleDateString()}
+                    <DropdownMenuItem key={notification.id} className="flex flex-col items-start gap-1 p-4 cursor-pointer hover:bg-gray-50">
+                      <div className="flex w-full items-center mb-1">
+                        <span className={`w-2 h-2 rounded-full mr-2 ${notification.read ? 'bg-gray-300' : 'bg-primary'}`}></span>
+                        <div className="font-medium text-sm flex-1">{notification.type}</div>
+                        <div className="text-xs text-gray-500">
+                          {new Date(notification.createdAt).toLocaleDateString()}
+                        </div>
                       </div>
+                      <div className="text-sm text-gray-600 pl-4">{notification.message}</div>
                     </DropdownMenuItem>
                   ))
                 )}
               </div>
+              {notifications && notifications.length > 0 && (
+                <div className="p-3 border-t border-gray-100">
+                  <Button className="w-full text-xs" variant="outline" size="sm">
+                    View All Notifications
+                  </Button>
+                </div>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

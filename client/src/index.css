@@ -12,12 +12,5 @@
     @apply font-sans antialiased bg-background text-foreground;
   }
   
-  :root {
-    --fruity-red: #FF8383;
-    --fruity-yellow: #FFF574;
-    --fruity-teal: #A1D6CB;
-    --fruity-green: #87D987;
-    --fruity-purple: #A19AD3;
-    --fruity-orange: #FFBE7A;
-  }
+  /* We're now using the professional color palette defined in fruity-colors.css */
 }
