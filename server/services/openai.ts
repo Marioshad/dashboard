@@ -36,9 +36,9 @@ export async function processReceiptImage(filePath: string): Promise<ExtractedIt
     const fileBuffer = fs.readFileSync(absolutePath);
     const base64Image = fileBuffer.toString("base64");
 
-    // Call OpenAI Vision API with the receipt image
+    // Call OpenAI API with the receipt image
     const response = await openai.chat.completions.create({
-      model: "gpt-4-vision-preview",
+      model: "gpt-4o",
       messages: [
         {
           role: "system",
