@@ -1,7 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
-import { pool } from "./db";
+import { testDatabaseConnection } from "./db";
 
 const app = express();
 app.use(express.json());
@@ -44,12 +44,8 @@ app.use((req, res, next) => {
     log("Starting application initialization...");
 
     log("Testing database connection...");
-    try {
-      // Simple query to test connection
-      await pool.query('SELECT NOW()');
-      log("Database connection successful");
-    } catch (error) {
-      log("Database connection failed:", String(error));
+    const dbConnectionStatus = await testDatabaseConnection();
+    if (!dbConnectionStatus) {
       throw new Error("Failed to connect to the database");
     }
 

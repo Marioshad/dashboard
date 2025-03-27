@@ -8,6 +8,7 @@ import { db, pool } from "./db";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
 import { eq, sql, and, isNull } from "drizzle-orm";
+import { Pool } from 'pg';
 
 const PostgresSessionStore = connectPg(session);
 
@@ -41,7 +42,7 @@ export class DatabaseStorage implements IStorage {
   constructor() {
     try {
       this.sessionStore = new PostgresSessionStore({
-        pool,
+        pool: pool as unknown as Pool,
         createTableIfMissing: true,
         tableName: 'session', // explicitly set table name
         pruneSessionInterval: 60 * 15, // Clean up expired sessions every 15 minutes
