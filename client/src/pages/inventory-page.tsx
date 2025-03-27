@@ -602,8 +602,8 @@ export default function InventoryPage() {
                       ? format(parseISO(itemToEdit.expiryDate), "yyyy-MM-dd")
                       : format(itemToEdit.expiryDate, "yyyy-MM-dd")}
                     onChange={(e) => {
-                      const dateValue = parseISO(e.target.value);
-                      setItemToEdit({ ...itemToEdit, expiryDate: dateValue });
+                      // Ensure we're storing the date as a string format for the server
+                      setItemToEdit({ ...itemToEdit, expiryDate: e.target.value });
                     }}
                   />
                 </div>
@@ -617,8 +617,8 @@ export default function InventoryPage() {
                       ? format(parseISO(itemToEdit.purchased), "yyyy-MM-dd") 
                       : format(itemToEdit.purchased, "yyyy-MM-dd")}
                     onChange={(e) => {
-                      const dateValue = parseISO(e.target.value);
-                      setItemToEdit({ ...itemToEdit, purchased: dateValue });
+                      // Ensure we're storing the date as a string format for the server
+                      setItemToEdit({ ...itemToEdit, purchased: e.target.value });
                     }}
                   />
                 </div>
