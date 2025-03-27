@@ -1,10 +1,7 @@
-import { Pool, neonConfig } from '@neondatabase/serverless';
-import { drizzle } from 'drizzle-orm/neon-serverless';
-import ws from "ws";
+import { Pool } from 'pg';
+import { drizzle } from 'drizzle-orm/node-postgres';
 import * as schema from "@shared/schema";
 import { log } from './vite';
-
-neonConfig.webSocketConstructor = ws;
 
 if (!process.env.DATABASE_URL) {
   throw new Error(
@@ -65,7 +62,11 @@ try {
 export const pool = new Pool({ 
   connectionString,
   // Set a reasonable timeout (10s)
-  connectionTimeoutMillis: 10000
+  connectionTimeoutMillis: 10000,
+  // Add SSL configuration for Railway deployment
+  ssl: process.env.RAILWAY_ENVIRONMENT ? {
+    rejectUnauthorized: false // Required for Railway deployment
+  } : undefined
 });
 
 // Add specific PostgreSQL error event handling for better error messages

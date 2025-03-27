@@ -547,7 +547,7 @@ export default function InventoryPage() {
                     type="number"
                     min="1"
                     value={itemToEdit.quantity}
-                    onChange={(e) => setItemToEdit({ ...itemToEdit, quantity: parseInt(e.target.value) })}
+                    onChange={(e) => setItemToEdit({ ...itemToEdit, quantity: e.target.value })}
                   />
                 </div>
                 
@@ -598,8 +598,13 @@ export default function InventoryPage() {
                   <Input
                     id="edit-expiryDate"
                     type="date"
-                    value={format(parseISO(itemToEdit.expiryDate), "yyyy-MM-dd")}
-                    onChange={(e) => setItemToEdit({ ...itemToEdit, expiryDate: e.target.value })}
+                    value={typeof itemToEdit.expiryDate === 'string'
+                      ? format(parseISO(itemToEdit.expiryDate), "yyyy-MM-dd")
+                      : format(itemToEdit.expiryDate, "yyyy-MM-dd")}
+                    onChange={(e) => {
+                      const dateValue = parseISO(e.target.value);
+                      setItemToEdit({ ...itemToEdit, expiryDate: dateValue });
+                    }}
                   />
                 </div>
                 
@@ -608,8 +613,13 @@ export default function InventoryPage() {
                   <Input
                     id="edit-purchased"
                     type="date"
-                    value={format(parseISO(itemToEdit.purchased), "yyyy-MM-dd")}
-                    onChange={(e) => setItemToEdit({ ...itemToEdit, purchased: e.target.value })}
+                    value={typeof itemToEdit.purchased === 'string' 
+                      ? format(parseISO(itemToEdit.purchased), "yyyy-MM-dd") 
+                      : format(itemToEdit.purchased, "yyyy-MM-dd")}
+                    onChange={(e) => {
+                      const dateValue = parseISO(e.target.value);
+                      setItemToEdit({ ...itemToEdit, purchased: dateValue });
+                    }}
                   />
                 </div>
               </div>
