@@ -31,9 +31,11 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { format, parseISO, isAfter, addDays, isBefore, differenceInDays } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { useCurrency } from "@/hooks/use-currency";
 
 export default function ExpiryTrackerPage() {
   const { toast } = useToast();
+  const { formatPrice } = useCurrency();
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("all");
   
@@ -319,6 +321,7 @@ export default function ExpiryTrackerPage() {
                         <div className="font-medium">{item.name}</div>
                         <div className="text-sm text-muted-foreground">
                           {item.quantity} {item.unit} · {getLocationName(item.locationId)}
+                          {item.price ? ` · ${formatPrice(item.price)}` : ''}
                         </div>
                         <div className="flex items-center gap-2">
                           <Calendar className="h-4 w-4 text-muted-foreground" />

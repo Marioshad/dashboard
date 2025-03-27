@@ -4,6 +4,7 @@ import { DashboardLayout } from "@/components/dashboard-layout";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { FoodItem, Location } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
+import { useCurrency } from "@/hooks/use-currency";
 import {
   Card,
   CardContent,
@@ -54,6 +55,7 @@ import { Badge } from "@/components/ui/badge";
 
 export default function InventoryPage() {
   const { toast } = useToast();
+  const { formatPrice, currencySymbol } = useCurrency();
   const [selectedLocation, setSelectedLocation] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [openAddDialog, setOpenAddDialog] = useState(false);
@@ -354,7 +356,7 @@ export default function InventoryPage() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            {item.price ? `$${(item.price / 100).toFixed(2)}` : "N/A"}
+                            {item.price ? formatPrice(item.price) : "N/A"}
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">
@@ -496,7 +498,8 @@ export default function InventoryPage() {
                 placeholder="Optional"
               />
               <p className="text-sm text-muted-foreground">
-                Enter price in cents (e.g. 299 for $2.99)
+                Enter price in cents (e.g. 299 for {formatPrice(299)})
+                <br />Current currency: {currencySymbol}
               </p>
             </div>
           </div>
@@ -620,6 +623,10 @@ export default function InventoryPage() {
                   value={itemToEdit.price || 0}
                   onChange={(e) => setItemToEdit({ ...itemToEdit, price: parseInt(e.target.value) })}
                 />
+                <p className="text-sm text-muted-foreground">
+                  Enter price in cents (e.g. 299 for {formatPrice(299)})
+                  <br />Current currency: {currencySymbol}
+                </p>
               </div>
             </div>
             
