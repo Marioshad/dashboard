@@ -1,14 +1,9 @@
-// Helper script to run migrations in Node environment
-import pg from 'pg';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+// Railway migration script (CommonJS version)
+const pg = require('pg');
+const fs = require('fs');
+const path = require('path');
 
 const { Pool } = pg;
-
-// Get the current directory
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 // Get the database URL from the environment
 const dbUrl = process.env.DATABASE_URL;
@@ -24,19 +19,18 @@ const pool = new Pool({
 });
 
 async function runMigration() {
-  console.log('Starting migration process...');
-  console.log('Database URL:', dbUrl.split('@')[1]); // Log only the domain part of the URL for security
-  
   // Get all migration files
   const migrationsDir = path.join(__dirname, 'migrations');
   const migrationFiles = fs.readdirSync(migrationsDir)
     .filter(file => file.endsWith('.sql'))
     .sort(); // Sort to ensure migrations run in order (001, 002, etc.)
 
+  console.log('Running database migrations...');
   console.log(`Found ${migrationFiles.length} migration files: ${migrationFiles.join(', ')}`);
+  console.log('Database URL:', dbUrl.split('@')[1]); // Log only the domain part of the URL for security
 
   try {
-    // Test connection
+    // Test connection first
     await pool.query('SELECT NOW()');
     console.log('Database connection successful');
     
@@ -79,4 +73,5 @@ async function runMigration() {
   }
 }
 
+// Run the migration
 runMigration();

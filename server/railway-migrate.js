@@ -1,4 +1,4 @@
-// Helper script to run migrations in Node environment
+// Railway migration script
 import pg from 'pg';
 import fs from 'fs';
 import path from 'path';
@@ -20,26 +20,20 @@ if (!dbUrl) {
 // Create a new PostgreSQL client
 const pool = new Pool({
   connectionString: dbUrl,
-  ssl: dbUrl.includes('localhost') ? false : { rejectUnauthorized: false } // Only use SSL for non-local connections
+  ssl: { rejectUnauthorized: false } // Required for Railway
 });
 
 async function runMigration() {
-  console.log('Starting migration process...');
-  console.log('Database URL:', dbUrl.split('@')[1]); // Log only the domain part of the URL for security
-  
   // Get all migration files
   const migrationsDir = path.join(__dirname, 'migrations');
   const migrationFiles = fs.readdirSync(migrationsDir)
     .filter(file => file.endsWith('.sql'))
     .sort(); // Sort to ensure migrations run in order (001, 002, etc.)
 
+  console.log('Running database migrations...');
   console.log(`Found ${migrationFiles.length} migration files: ${migrationFiles.join(', ')}`);
 
   try {
-    // Test connection
-    await pool.query('SELECT NOW()');
-    console.log('Database connection successful');
-    
     // Start a transaction
     await pool.query('BEGIN');
     
@@ -48,14 +42,7 @@ async function runMigration() {
       console.log(`Applying migration: ${file}`);
       const migrationPath = path.join(migrationsDir, file);
       const migrationSQL = fs.readFileSync(migrationPath, 'utf8');
-      
-      try {
-        await pool.query(migrationSQL);
-        console.log(`Successfully applied ${file}`);
-      } catch (error) {
-        console.error(`Error executing ${file}:`, error.message);
-        throw error; // Re-throw to trigger rollback
-      }
+      await pool.query(migrationSQL);
     }
     
     // Commit the transaction
@@ -64,18 +51,12 @@ async function runMigration() {
     console.log('All migrations completed successfully');
   } catch (error) {
     // Rollback in case of error
+    await pool.query('ROLLBACK');
     console.error('Migration failed:', error.message);
-    try {
-      await pool.query('ROLLBACK');
-      console.log('Transaction rolled back');
-    } catch (rollbackError) {
-      console.error('Error during rollback:', rollbackError.message);
-    }
     process.exit(1);
   } finally {
     // Close the connection
     await pool.end();
-    console.log('Database connection closed');
   }
 }
 
