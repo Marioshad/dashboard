@@ -61,39 +61,60 @@ Set the following environment variables in Railway dashboard:
 - `SESSION_SECRET` (add a secure random string)
 - `NODE_ENV=production`
 - `PORT` (automatically added by Railway)
+- `OPENAI_API_KEY` (if using receipt scanning features)
+- `STRIPE_SECRET_KEY` (optional, for payment processing)
+- `SENDGRID_API_KEY` (optional, for email notifications)
+- `SENDGRID_FROM_EMAIL` (optional, sender email for notifications)
 
 ### 4. Deployment Settings
 
 Configure your deployment settings in Railway:
-- Build Command: `npm install && npm run build`
+- Build Command: `npm install && npm run build && ./railway-build.sh`
 - Start Command: `npm start`
 
-### 5. Database Setup
+**Important:** The `railway-build.sh` script is crucial as it ensures migration files are copied to the correct location in the production build.
 
-The application uses Drizzle ORM for database management. After deployment:
+### 5. Database Migrations
 
-1. Railway will automatically provision a PostgreSQL database
-2. The application will automatically create necessary tables on first run
-3. No manual database setup is required
+The application automatically runs migrations on startup:
+
+1. All migration files in `server/migrations` are processed in order based on their numeric prefix (001_, 002_, etc.)
+2. Migrations use transactions, so they either completely succeed or completely fail
+3. Changes to the database schema should be done through new migration files
+4. If migrations fail, the application will log detailed errors but will still attempt to start with the existing schema
 
 ### 6. Important Notes
 
 - The application uses secure session cookies in production
-- WebSocket connections are handled automatically in the production environment
-- All database operations are logged for debugging purposes
+- WebSocket connections for real-time notifications are routed through `/api/ws`
+- PostgreSQL is configured to use SSL for remote connections
+- Receipt processing uses OpenAI's Vision API for OCR scanning
+- Stripe integration is optional - if the API key is not provided, payment features will be disabled but the app will continue to function
 
 ## Database Schema
 
-The application uses a simple users table:
-```sql
-CREATE TABLE users (
-  id SERIAL PRIMARY KEY,
-  username TEXT NOT NULL UNIQUE,
-  password TEXT NOT NULL
-);
-```
+The application uses a comprehensive schema with several tables:
 
-The schema is automatically managed through Drizzle ORM.
+### Core Tables
+- `users` - User accounts and profile information
+- `roles` - User role definitions
+- `permissions` - Available permissions in the system
+- `role_permissions` - Many-to-many relationship between roles and permissions
+
+### Application-specific Tables
+- `app_settings` - User-specific application settings including currency preferences
+- `notifications` - User notifications for real-time updates
+- `locations` - Food storage locations (pantry, refrigerator, freezer, etc.)
+- `food_items` - Inventory of food items with expiry tracking
+
+### Features
+- Soft delete functionality using `deletedAt` timestamp fields
+- Currency selection for price display throughout the application
+- Decimal quantity support for precise food inventory tracking
+- Receipt scanning and OCR processing via OpenAI
+- WebSocket-based real-time notifications
+
+The schema is automatically managed through Drizzle ORM and database migrations.
 
 ## Support
 
