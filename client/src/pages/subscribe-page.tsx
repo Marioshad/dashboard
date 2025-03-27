@@ -44,7 +44,13 @@ export default function SubscribePage() {
 
     setLoading(priceId);
     try {
-      const response = await apiRequest("POST", "/api/get-or-create-subscription", { priceId });
+      const response = await apiRequest("/api/get-or-create-subscription", {
+        method: "POST",
+        body: JSON.stringify({ priceId }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
       
       // Handle non-200 responses
       if (!response.ok) {

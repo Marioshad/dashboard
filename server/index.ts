@@ -49,7 +49,7 @@ app.use((req, res, next) => {
       await pool.query('SELECT NOW()');
       log("Database connection successful");
     } catch (error) {
-      log("Database connection failed:", error);
+      log("Database connection failed:", String(error));
       throw new Error("Failed to connect to the database");
     }
 
@@ -76,7 +76,7 @@ app.use((req, res, next) => {
       try {
         serveStatic(app);
       } catch (error) {
-        log("Error setting up static file serving:", error);
+        log("Error setting up static file serving: " + String(error));
         throw error;
       }
     }
@@ -93,7 +93,7 @@ app.use((req, res, next) => {
       log("Server initialization completed successfully");
     });
   } catch (error) {
-    log("Startup error:", error);
+    log("Startup error: " + String(error));
     process.exit(1);
   }
 })();
