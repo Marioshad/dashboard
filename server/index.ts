@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { testDatabaseConnection } from "./db";
+import { runMigrations } from "./migration-runner";
 
 const app = express();
 app.use(express.json());
@@ -57,6 +58,16 @@ app.use((req, res, next) => {
       throw new Error("Failed to connect to the database - check server logs for details");
     }
 
+    // Run migrations automatically
+    log("Running database migrations...");
+    const migrationsStatus = await runMigrations();
+    if (migrationsStatus) {
+      log("Database migrations completed successfully");
+    } else {
+      log("Warning: Database migrations failed, continuing startup with existing schema");
+      // We continue anyway because migrations might fail if they were already applied
+      // or if there are permission issues, but the app might still function with the existing schema
+    }
 
     log("Setting up routes...");
     const server = await registerRoutes(app);
