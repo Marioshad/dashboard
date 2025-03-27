@@ -1,29 +1,41 @@
-import type { Express } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { setupAuth } from "./auth";
 import { storage } from "./storage";
 import { updateProfileSchema } from "@shared/schema";
-import multer from "multer";
+import multer, { FileFilterCallback } from "multer";
 import path from "path";
 import fs from "fs";
 import express from 'express';
 import { db } from "./db";
 import { roles, permissions, rolePermissions, users, appSettings, notifications } from "@shared/schema";
 import { eq, and, isNull, sql, desc } from "drizzle-orm";
-import { WebSocketServer, WebSocket } from 'ws';
+import Stripe from "stripe";
+import { WebSocketServer } from 'ws';
 
-// Ensure uploads directory exists
+if (!process.env.STRIPE_SECRET_KEY) {
+  throw new Error('Missing required Stripe secret: STRIPE_SECRET_KEY');
+}
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+  apiVersion: "2025-02-24.acacia",
+  typescript: true,
+});
+
 const uploadsDir = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Configure multer for file uploads
+interface MulterRequest extends Request {
+  file: Express.Multer.File;
+}
+
 const multerStorage = multer.diskStorage({
-  destination: function (req, file, cb) {
+  destination: (_req: Express.Request, _file: Express.Multer.File, cb: (error: Error | null, destination: string) => void) => {
     cb(null, uploadsDir);
   },
-  filename: function (req, file, cb) {
+  filename: (_req: Express.Request, file: Express.Multer.File, cb: (error: Error | null, filename: string) => void) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     cb(null, uniqueSuffix + path.extname(file.originalname));
   }
@@ -34,7 +46,7 @@ const upload = multer({
   limits: {
     fileSize: 5 * 1024 * 1024 // 5MB limit
   },
-  fileFilter: function (req, file, cb) {
+  fileFilter: (_req: Express.Request, file: Express.Multer.File, cb: FileFilterCallback) => {
     if (!file.mimetype.startsWith('image/')) {
       return cb(new Error('Only image files are allowed!'));
     }
@@ -42,8 +54,10 @@ const upload = multer({
   }
 });
 
-// Helper function to send notification
-async function sendNotification(clients: Map<number, WebSocket>, userId: number, type: string, message: string, actorId?: number) {
+// Store WebSocket clients
+const clients = new Map<number, WebSocket>();
+
+async function sendNotification(userId: number, type: string, message: string, actorId?: number) {
   try {
     const [notification] = await db
       .insert(notifications)
@@ -77,8 +91,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   setupAuth(app);
 
-  // Avatar upload endpoint
-  app.post('/api/profile/avatar', upload.single('avatar'), async (req, res, next) => {
+  app.post('/api/profile/avatar', upload.single('avatar'), async (req: MulterRequest, res, next) => {
     try {
       if (!req.isAuthenticated()) {
         return res.sendStatus(401);
@@ -96,10 +109,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Serve uploaded files
   app.use('/uploads', express.static(uploadsDir));
 
-  // Profile update endpoint
   app.patch('/api/profile', async (req, res, next) => {
     try {
       if (!req.isAuthenticated()) {
@@ -118,7 +129,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Roles endpoints
   app.get('/api/roles', async (req, res, next) => {
     try {
       if (!req.isAuthenticated()) {
@@ -136,7 +146,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       });
 
-      // Transform the response to match the expected format
       const transformedRoles = rolesWithPermissions.map(role => ({
         ...role,
         permissions: role.rolePermissions.map(rp => rp.permission)
@@ -156,12 +165,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const { permissions: permissionIds, ...roleData } = req.body;
 
-      // Start a transaction
       const [role] = await db.insert(roles)
         .values(roleData)
         .returning();
 
-      // Add permissions
       if (permissionIds?.length) {
         await db.insert(rolePermissions)
           .values(permissionIds.map((id: number) => ({
@@ -184,19 +191,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const { permissions: permissionIds, ...roleData } = req.body;
 
-      // Update role
       const [role] = await db.update(roles)
         .set({ ...roleData, updatedAt: sql`CURRENT_TIMESTAMP` })
         .where(eq(roles.id, parseInt(req.params.id)))
         .returning();
 
-      // Update permissions
       if (permissionIds) {
-        // Remove existing permissions
         await db.delete(rolePermissions)
           .where(eq(rolePermissions.roleId, role.id));
 
-        // Add new permissions
         if (permissionIds.length) {
           await db.insert(rolePermissions)
             .values(permissionIds.map((id: number) => ({
@@ -218,7 +221,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.sendStatus(401);
       }
 
-      // Soft delete
       await db.update(roles)
         .set({
           deletedAt: sql`CURRENT_TIMESTAMP`,
@@ -232,7 +234,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Permissions endpoints
   app.get('/api/permissions', async (req, res, next) => {
     try {
       if (!req.isAuthenticated()) {
@@ -288,7 +289,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.sendStatus(401);
       }
 
-      // Soft delete
       await db.update(permissions)
         .set({ deletedAt: sql`CURRENT_TIMESTAMP` })
         .where(eq(permissions.id, parseInt(req.params.id)));
@@ -299,14 +299,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Add this route inside registerRoutes function
   app.get('/api/users', async (req, res, next) => {
     try {
       if (!req.isAuthenticated()) {
         return res.sendStatus(401);
       }
 
-      // Check if user is admin or superadmin
       const userRole = await db.query.roles.findFirst({
         where: eq(roles.id, req.user.roleId as number),
       });
@@ -328,14 +326,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Admin Settings endpoints
   app.get('/api/settings/admin', async (req, res, next) => {
     try {
       if (!req.isAuthenticated()) {
         return res.sendStatus(401);
       }
 
-      // Check if user is admin or superadmin
       const userRole = await db.query.roles.findFirst({
         where: eq(roles.id, req.user.roleId as number),
       });
@@ -357,7 +353,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.sendStatus(401);
       }
 
-      // Check if user is admin or superadmin
       const userRole = await db.query.roles.findFirst({
         where: eq(roles.id, req.user.roleId as number),
       });
@@ -394,7 +389,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // User 2FA endpoints
   app.post('/api/user/2fa', async (req, res, next) => {
     try {
       if (!req.isAuthenticated()) {
@@ -406,7 +400,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         where: eq(roles.id, req.user.roleId as number),
       });
 
-      // Only allow enabling 2FA if it's required by admin or user is admin/superadmin
       if (!req.body.enabled && settings?.require2FA && !['Superadmin', 'Admin'].includes(userRole?.name)) {
         return res.status(403).json({ message: "2FA is required by administrator" });
       }
@@ -426,7 +419,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Notifications endpoints
+
   app.get('/api/notifications', async (req, res, next) => {
     try {
       if (!req.isAuthenticated()) {
@@ -469,44 +462,215 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get('/api/subscription/prices', async (req, res) => {
+    try {
+      const prices = await stripe.prices.list({
+        product: process.env.STRIPE_PRICE_ID,
+        active: true,
+        expand: ['data.product'],
+      });
 
-  // WebSocket setup
-  const wss = new WebSocketServer({ noServer: true });
-  const clients = new Map<number, WebSocket>();
+      res.json(prices.data);
+    } catch (error: any) {
+      console.error('Error fetching prices:', error);
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/get-or-create-subscription', async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      const { priceId } = req.body;
+      if (!priceId) {
+        return res.status(400).json({ message: 'Price ID is required' });
+      }
+
+      let user = req.user;
+
+      if (user.stripeSubscriptionId) {
+        const subscription = await stripe.subscriptions.retrieve(user.stripeSubscriptionId, {
+          expand: ['latest_invoice.payment_intent']
+        });
+
+        const invoice = subscription.latest_invoice as Stripe.Invoice;
+        const paymentIntent = invoice.payment_intent as Stripe.PaymentIntent;
+
+        if (!paymentIntent?.client_secret) {
+          throw new Error('Unable to retrieve payment information');
+        }
+
+        res.send({
+          subscriptionId: subscription.id,
+          clientSecret: paymentIntent.client_secret
+        });
+        return;
+      }
+
+      if (!user.email) {
+        return res.status(400).json({ message: 'Email is required for subscription' });
+      }
+
+      const customer = await stripe.customers.create({
+        email: user.email,
+        name: user.username,
+      });
+
+      const subscription = await stripe.subscriptions.create({
+        customer: customer.id,
+        items: [{
+          price: priceId,
+        }],
+        payment_behavior: 'default_incomplete',
+        expand: ['latest_invoice.payment_intent']
+      });
+
+      const invoice = subscription.latest_invoice as Stripe.Invoice;
+      const paymentIntent = invoice.payment_intent as Stripe.PaymentIntent;
+
+      if (!paymentIntent?.client_secret) {
+        throw new Error('Unable to create payment intent');
+      }
+
+      await db.update(users)
+        .set({
+          stripeCustomerId: customer.id,
+          stripeSubscriptionId: subscription.id,
+          subscriptionStatus: 'inactive',
+          updatedAt: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(users.id, user.id));
+
+      res.send({
+        subscriptionId: subscription.id,
+        clientSecret: paymentIntent.client_secret
+      });
+    } catch (error: any) {
+      console.error('Subscription error:', error);
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+    const sig = req.headers['stripe-signature'];
+    let event;
+
+    try {
+      event = stripe.webhooks.constructEvent(
+        req.body,
+        sig as string,
+        process.env.STRIPE_WEBHOOK_SECRET as string
+      );
+    } catch (err: any) {
+      console.error('Webhook error:', err.message);
+      return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+
+    switch (event.type) {
+      case 'customer.subscription.created':
+      case 'customer.subscription.updated': {
+        const subscription = event.data.object as Stripe.Subscription;
+
+        await db.update(users)
+          .set({
+            subscriptionStatus: subscription.status,
+            updatedAt: sql`CURRENT_TIMESTAMP`,
+          })
+          .where(eq(users.stripeSubscriptionId, subscription.id));
+
+        if (subscription.status === 'active') {
+          const premiumRole = await db.query.roles.findFirst({
+            where: eq(roles.name, 'Premium'),
+          });
+
+          if (premiumRole) {
+            const [user] = await db.select()
+              .from(users)
+              .where(eq(users.stripeSubscriptionId, subscription.id));
+
+            if (user) {
+              await db.update(users)
+                .set({
+                  roleId: premiumRole.id,
+                  updatedAt: sql`CURRENT_TIMESTAMP`,
+                })
+                .where(eq(users.id, user.id));
+            }
+          }
+        }
+        break;
+      }
+    }
+
+    res.json({ received: true });
+  });
 
   const httpServer = createServer(app);
 
-  // Handle WebSocket upgrade
-  httpServer.on('upgrade', (request, socket, head) => {
-    if (!request.url?.startsWith('/ws-notifications')) {
-      socket.destroy();
-      return;
-    }
+  const wss = new WebSocketServer({
+    server: httpServer,
+    path: '/api/ws'
+  });
 
-    // Add session handling to WebSocket upgrade
-    const expressRequest = request as any;
-    app(expressRequest, {} as any, async () => {
-      if (!expressRequest.user?.id) {
+  wss.on('connection', (ws, request) => {
+    const userId = (request as any).userId;
+    console.log('WebSocket connected for user:', userId);
+
+    clients.set(userId, ws);
+
+    ws.on('close', () => {
+      console.log('WebSocket closed for user:', userId);
+      clients.delete(userId);
+    });
+
+    ws.on('error', (error) => {
+      console.error('WebSocket error for user:', userId, error);
+      clients.delete(userId);
+    });
+
+    ws.send(JSON.stringify({ type: 'connected' }));
+  });
+
+  wss.on('upgrade', (request, socket, head) => {
+    if (request.url?.startsWith('/api/ws')) {
+      const sessionParser = app._router.stack
+        .find((layer: any) => layer.name === 'session')?.handle;
+
+      if (!sessionParser) {
+        console.error('Session middleware not found');
         socket.destroy();
         return;
       }
 
-      wss.handleUpgrade(request, socket, head, (ws) => {
-        const userId = expressRequest.user.id;
-        clients.set(userId, ws);
+      // Parse session before WebSocket upgrade
+      sessionParser(request, {} as any, async () => {
+        const session = (request as any).session;
+        console.log('WebSocket upgrade request session:', session);
 
-        ws.on('close', () => {
-          clients.delete(userId);
-        });
+        if (!session?.passport?.user) {
+          console.error('WebSocket: User not authenticated');
+          socket.destroy();
+          return;
+        }
 
-        wss.emit('connection', ws, request);
+        try {
+          (request as any).userId = session.passport.user;
+          console.log('WebSocket upgrade authenticated for user:', session.passport.user);
+
+          wss.handleUpgrade(request, socket, head, (ws) => {
+            wss.emit('connection', ws, request);
+          });
+        } catch (error) {
+          console.error('Error during WebSocket upgrade:', error);
+          socket.destroy();
+        }
       });
-    });
+    }
   });
 
-  // Expose the sendNotification function through the app locals
-  app.locals.sendNotification = (userId: number, type: string, message: string, actorId?: number) =>
-    sendNotification(clients, userId, type, message, actorId);
+  app.locals.sendNotification = sendNotification;
 
   return httpServer;
 }

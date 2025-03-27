@@ -14,10 +14,24 @@ CREATE TABLE IF NOT EXISTS users (
     web_notifications BOOLEAN DEFAULT TRUE,
     mention_notifications BOOLEAN DEFAULT TRUE,
     follow_notifications BOOLEAN DEFAULT TRUE,
+    stripe_customer_id TEXT,
+    stripe_subscription_id TEXT,
+    subscription_status TEXT DEFAULT 'inactive',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     deleted_at TIMESTAMP
 );
+
+-- Handle potential schema changes (safely remove email_verified column if it exists)
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'users' AND column_name = 'email_verified'
+    ) THEN
+        ALTER TABLE users DROP COLUMN email_verified;
+    END IF;
+END $$;
 
 -- Create notifications table if not exists
 CREATE TABLE IF NOT EXISTS notifications (
@@ -62,3 +76,8 @@ CREATE TABLE IF NOT EXISTS app_settings (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_by INTEGER REFERENCES users(id)
 );
+
+-- Insert default app settings if table is empty
+INSERT INTO app_settings (require_2fa)
+SELECT FALSE
+WHERE NOT EXISTS (SELECT 1 FROM app_settings);

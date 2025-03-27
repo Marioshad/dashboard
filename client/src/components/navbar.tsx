@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { Link } from "wouter";
 import { Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,54 +11,96 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { Notification } from "@shared/schema";
 import { queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 export function Navbar() {
   const [socket, setSocket] = useState<WebSocket | null>(null);
+  const [isConnecting, setIsConnecting] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const { toast } = useToast();
 
   const { data: notifications } = useQuery<Notification[]>({
     queryKey: ["/api/notifications"],
   });
 
   useEffect(() => {
-    // Connect to WebSocket
-    const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsHost = window.location.host;
-    const wsUrl = `${wsProtocol}//${wsHost}/ws-notifications`;
+    let reconnectTimeout: NodeJS.Timeout;
+    const maxRetries = 5;
+    let retryCount = 0;
 
-    try {
-      const ws = new WebSocket(wsUrl);
+    const connectWebSocket = () => {
+      if (isConnecting || socket?.readyState === WebSocket.OPEN) return;
 
-      ws.onopen = () => {
-        console.log('WebSocket connected');
-      };
+      setIsConnecting(true);
 
-      ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        if (data.type === "notification") {
-          // Refresh notifications
-          queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
-        }
-      };
+      try {
+        // Construct WebSocket URL using window.location
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        const wsUrl = `${protocol}//${window.location.host}/api/ws`;  // Changed from '/ws' to '/api/ws'
+        console.log('Attempting WebSocket connection to:', wsUrl);
 
-      ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
-      };
+        const ws = new WebSocket(wsUrl);
 
-      setSocket(ws);
+        ws.onopen = () => {
+          console.log('WebSocket connection established');
+          setIsConnecting(false);
+          retryCount = 0;
+          setSocket(ws);
+        };
 
-      return () => {
-        ws.close();
-      };
-    } catch (error) {
-      console.error('Failed to create WebSocket connection:', error);
-    }
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'notification') {
+              queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+            }
+          } catch (error) {
+            console.error('Failed to parse WebSocket message:', error);
+          }
+        };
+
+        ws.onclose = () => {
+          console.log('WebSocket connection closed');
+          setIsConnecting(false);
+          setSocket(null);
+
+          if (retryCount < maxRetries) {
+            retryCount++;
+            const delay = Math.min(1000 * Math.pow(2, retryCount), 30000);
+            reconnectTimeout = setTimeout(connectWebSocket, delay);
+          } else {
+            toast({
+              title: "Connection Error",
+              description: "Failed to connect to notification service. Please refresh the page.",
+              variant: "destructive",
+            });
+          }
+        };
+
+        ws.onerror = (error) => {
+          console.error('WebSocket connection error:', error);
+          setIsConnecting(false);
+          ws.close();
+        };
+      } catch (error) {
+        setIsConnecting(false);
+        console.error('Failed to create WebSocket connection:', error);
+      }
+    };
+
+    connectWebSocket();
+
+    return () => {
+      clearTimeout(reconnectTimeout);
+      if (socket) {
+        socket.close();
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -78,10 +121,10 @@ export function Navbar() {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="relative">
-                <Bell className="h-5 w-5" />
+                <Bell className={cn("h-5 w-5", isConnecting && "animate-pulse")} />
                 {unreadCount > 0 && (
-                  <Badge 
-                    variant="destructive" 
+                  <Badge
+                    variant="destructive"
                     className={cn(
                       "absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs",
                     )}

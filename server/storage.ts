@@ -18,12 +18,23 @@ export class DatabaseStorage implements IStorage {
   sessionStore: session.Store;
 
   constructor() {
-    this.sessionStore = new PostgresSessionStore({
-      pool,
-      createTableIfMissing: true,
-      tableName: 'session', // explicitly set table name
-      pruneSessionInterval: 60 * 15, // Clean up expired sessions every 15 minutes
-    });
+    try {
+      this.sessionStore = new PostgresSessionStore({
+        pool,
+        createTableIfMissing: true,
+        tableName: 'session', // explicitly set table name
+        pruneSessionInterval: 60 * 15, // Clean up expired sessions every 15 minutes
+      });
+      console.log('Session store initialized successfully');
+    } catch (error) {
+      console.error('Error initializing session store:', error);
+      // Fallback - in-memory session store, only for recovery
+      console.warn('Using fallback in-memory session store - users will need to log in again');
+      const MemoryStore = require('memorystore')(session);
+      this.sessionStore = new MemoryStore({
+        checkPeriod: 60 * 60 * 1000 // prune expired entries every hour
+      });
+    }
   }
 
   async getUser(id: number): Promise<User | undefined> {
