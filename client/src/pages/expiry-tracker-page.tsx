@@ -134,7 +134,7 @@ export default function ExpiryTrackerPage() {
     
     if (daysUntil <= 3) {
       return (
-        <Badge variant="warning" className="gap-1 bg-amber-500">
+        <Badge variant="outline" className="gap-1 bg-amber-500 text-white border-amber-500">
           <AlertTriangle className="h-3 w-3" /> {daysUntil} {daysUntil === 1 ? 'day' : 'days'} left
         </Badge>
       );
@@ -244,7 +244,7 @@ export default function ExpiryTrackerPage() {
               </TabsTrigger>
               <TabsTrigger value="expiring" className="relative">
                 Soon
-                <Badge variant="warning" className="ml-1 px-1.5 bg-amber-500">{expiringItems.length}</Badge>
+                <Badge variant="outline" className="ml-1 px-1.5 bg-amber-500 text-white border-amber-500">{expiringItems.length}</Badge>
               </TabsTrigger>
               <TabsTrigger value="week" className="relative">
                 Week

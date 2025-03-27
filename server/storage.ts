@@ -227,7 +227,7 @@ export class DatabaseStorage implements IStorage {
         .insert(foodItems)
         .values({
           name: item.name,
-          quantity: item.quantity,
+          quantity: String(item.quantity), // Convert number to string for decimal column
           unit: item.unit,
           locationId: item.locationId,
           expiryDate: expiryDateString,
@@ -282,7 +282,7 @@ export class DatabaseStorage implements IStorage {
       const updates: Record<string, any> = {};
       
       if (item.name !== undefined) updates.name = item.name;
-      if (item.quantity !== undefined) updates.quantity = item.quantity;
+      if (item.quantity !== undefined) updates.quantity = String(item.quantity);
       if (item.unit !== undefined) updates.unit = item.unit;
       if (item.locationId !== undefined) updates.locationId = item.locationId;
       if (item.price !== undefined) updates.price = item.price;
