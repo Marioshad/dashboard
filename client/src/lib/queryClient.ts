@@ -16,7 +16,9 @@ export async function apiRequest(
     headers?: Record<string, string>;
   }
 ): Promise<any> {
-  console.log(`Making API request to ${url}`, options);
+  console.log(`Making API request to ${options?.method || 'GET'}`, url);
+  console.log("Request headers:", JSON.stringify(options?.headers || {}));
+  console.log("Request body:", options?.body || "none");
   
   const res = await fetch(url, {
     method: options?.method || 'GET',
@@ -26,6 +28,8 @@ export async function apiRequest(
   });
 
   console.log(`Response status: ${res.status}`);
+  // Log some important response headers
+  console.log(`Response headers: content-type=${res.headers.get('content-type')}, cache-control=${res.headers.get('cache-control')}`);
   
   if (!res.ok) {
     const errorText = await res.text();

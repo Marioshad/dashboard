@@ -49,8 +49,10 @@ export default function ProfilePage() {
 
   const updateProfileMutation = useMutation({
     mutationFn: async (data: z.infer<typeof updateProfileSchema>) => {
-      console.log("Updating profile with data:", data);
+      console.log("PROFILE UPDATE: Starting update process");
+      console.log("PROFILE UPDATE: Data being sent:", JSON.stringify(data));
       try {
+        console.log("PROFILE UPDATE: Sending API request to /api/profile");
         const result = await apiRequest("/api/profile", {
           method: "PATCH",
           body: JSON.stringify(data),
@@ -58,14 +60,19 @@ export default function ProfilePage() {
             "Content-Type": "application/json",
           },
         });
-        console.log("Profile update result:", result);
+        console.log("PROFILE UPDATE: API request completed");
+        console.log("PROFILE UPDATE: Response status received");
+        console.log("PROFILE UPDATE: Response data:", JSON.stringify(result));
         return result;
       } catch (error) {
-        console.error("Profile update error:", error);
+        console.error("PROFILE UPDATE: Error occurred during update:", error);
+        console.error("PROFILE UPDATE: Error details:", JSON.stringify(error, Object.getOwnPropertyNames(error)));
         throw error;
       }
     },
     onSuccess: (updatedUser) => {
+      console.log("PROFILE UPDATE: Success callback triggered");
+      console.log("PROFILE UPDATE: Updated user data:", JSON.stringify(updatedUser));
       queryClient.setQueryData(["/api/user"], updatedUser);
       toast({
         title: "Profile Updated",
@@ -143,7 +150,12 @@ export default function ProfilePage() {
           <CardContent>
             <Form {...form}>
               <form
-                onSubmit={form.handleSubmit((data) => updateProfileMutation.mutate(data))}
+                onSubmit={form.handleSubmit((data) => {
+                  console.log("FORM SUBMIT: Form submission triggered");
+                  console.log("FORM SUBMIT: Form data being submitted:", JSON.stringify(data));
+                  console.log("FORM SUBMIT: Form errors:", JSON.stringify(form.formState.errors));
+                  updateProfileMutation.mutate(data);
+                })}
                 className="space-y-6"
               >
                 <div className="mb-6">
