@@ -8,7 +8,11 @@ import path from "path";
 import fs from "fs";
 import express from 'express';
 import { db } from "./db";
-import { roles, permissions, rolePermissions, users, appSettings, notifications } from "@shared/schema";
+import { 
+  roles, permissions, rolePermissions, users, appSettings, notifications,
+  locations, foodItems, insertLocationSchema, updateLocationSchema,
+  insertFoodItemSchema, updateFoodItemSchema
+} from "@shared/schema";
 import { eq, and, isNull, sql, desc } from "drizzle-orm";
 import Stripe from "stripe";
 import { WebSocketServer, WebSocket as WsWebSocket } from 'ws';
