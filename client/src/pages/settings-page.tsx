@@ -15,6 +15,7 @@ import { Shield } from "lucide-react";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { NotificationSettings } from "@/components/notification-settings";
+import { FoodTrackerTest } from "@/components/food-tracker-test";
 
 interface AdminSettings {
   require2FA: boolean;
@@ -167,6 +168,9 @@ export default function SettingsPage() {
 
         {/* Add the NotificationSettings component */}
         <NotificationSettings />
+        
+        {/* Food Tracker Test Component */}
+        <FoodTrackerTest />
       </div>
     </DashboardLayout>
   );

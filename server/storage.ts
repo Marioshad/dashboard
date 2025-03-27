@@ -180,6 +180,14 @@ export class DatabaseStorage implements IStorage {
   // Food item methods
   async createFoodItem(item: InsertFoodItem & { userId: number }): Promise<FoodItem> {
     try {
+      // Convert expiryDate to string format for PostgreSQL date column
+      const expiryDateString = item.expiryDate instanceof Date 
+        ? item.expiryDate.toISOString().split('T')[0] // Convert to YYYY-MM-DD format
+        : item.expiryDate;
+      
+      // Force types to SQL to avoid TypeScript errors
+      const dateNow = new Date().toISOString();
+      
       const [result] = await db
         .insert(foodItems)
         .values({
@@ -187,12 +195,12 @@ export class DatabaseStorage implements IStorage {
           quantity: item.quantity,
           unit: item.unit,
           locationId: item.locationId,
-          expiryDate: item.expiryDate,
+          expiryDate: expiryDateString,
           price: item.price,
           userId: item.userId,
-          purchased: new Date(),
-          createdAt: new Date(),
-          updatedAt: new Date(),
+          purchased: sql`${dateNow}::timestamp`,
+          createdAt: sql`${dateNow}::timestamp`,
+          updatedAt: sql`${dateNow}::timestamp`,
         })
         .returning();
       return result;
@@ -235,22 +243,30 @@ export class DatabaseStorage implements IStorage {
 
   async updateFoodItem(id: number, item: UpdateFoodItem): Promise<FoodItem> {
     try {
-      // Create an update object with only defined fields
-      const updateObj: Record<string, any> = {};
+      // Build the update object with correct types
+      const updates: Record<string, any> = {};
       
-      if (item.name !== undefined) updateObj.name = item.name;
-      if (item.quantity !== undefined) updateObj.quantity = item.quantity;
-      if (item.unit !== undefined) updateObj.unit = item.unit;
-      if (item.locationId !== undefined) updateObj.locationId = item.locationId;
-      if (item.expiryDate !== undefined) updateObj.expiryDate = item.expiryDate;
-      if (item.price !== undefined) updateObj.price = item.price;
+      if (item.name !== undefined) updates.name = item.name;
+      if (item.quantity !== undefined) updates.quantity = item.quantity;
+      if (item.unit !== undefined) updates.unit = item.unit;
+      if (item.locationId !== undefined) updates.locationId = item.locationId;
+      if (item.price !== undefined) updates.price = item.price;
       
-      // Always update the timestamp
-      updateObj.updatedAt = new Date();
-
+      // Handle expiryDate specially
+      if (item.expiryDate !== undefined) {
+        const expiryDateValue = item.expiryDate instanceof Date
+          ? item.expiryDate.toISOString().split('T')[0]
+          : item.expiryDate;
+        updates.expiryDate = expiryDateValue;
+      }
+      
+      // Set updatedAt using SQL
+      updates.updatedAt = sql`CURRENT_TIMESTAMP`;
+      
+      // Apply the updates and return the result
       const [result] = await db
         .update(foodItems)
-        .set(updateObj)
+        .set(updates)
         .where(eq(foodItems.id, id))
         .returning();
       return result;
