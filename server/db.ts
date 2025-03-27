@@ -31,25 +31,62 @@ export const db = drizzle(pool, { schema });
 
 // Function to test database connection and ensure tables exist
 async function testConnection() {
-  let retries = 5; // Reduced from 10 to 5
-  const retryDelay = 2000; // Reduced from 5000 to 2000ms
+  let retries = 5;
+  const retryDelay = 2000;
 
   while (retries) {
     try {
       const client = await pool.connect();
       console.log('Database connection successful:', (await client.query('SELECT NOW()')).rows[0].now);
 
-      // Execute initial migration
-      const migrationPath = path.join(process.cwd(), 'server', 'migrations', '001_initial.sql');
-      const migrationSQL = fs.readFileSync(migrationPath, 'utf8');
+      try {
+        // Execute initial migration with proper error handling
+        const migrationPath = path.join(process.cwd(), 'server', 'migrations', '001_initial.sql');
+        if (!fs.existsSync(migrationPath)) {
+          console.error('Migration file not found:', migrationPath);
+          throw new Error('Migration file not found');
+        }
 
-      await client.query(migrationSQL);
-      console.log('Database tables verified');
+        const migrationSQL = fs.readFileSync(migrationPath, 'utf8');
+        await client.query(migrationSQL);
+        console.log('Database tables and migration scripts executed successfully');
+        
+        // Check for session table (critical for authentication)
+        const sessionTableCheck = await client.query(`
+          SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            AND table_name = 'session'
+          );
+        `);
+        
+        if (!sessionTableCheck.rows[0].exists) {
+          console.log('Session table does not exist, will be created by session store');
+        }
 
-      await seedRolesAndPermissions();
-
-      client.release();
-      return true;
+        await seedRolesAndPermissions();
+        client.release();
+        return true;
+      } catch (error) {
+        const migrationError = error as Error;
+        console.error('Database migration error:', migrationError);
+        
+        // If it's a column-related error, try to recover by recreating the session
+        if (migrationError.message && (
+            migrationError.message.includes('column') || 
+            migrationError.message.includes('deserialize'))) {
+          console.log('Attempting session table recreation to resolve schema issues...');
+          try {
+            await client.query('DROP TABLE IF EXISTS session');
+            console.log('Session table dropped, will be recreated on startup');
+          } catch (sessionError) {
+            console.error('Error dropping session table:', sessionError);
+          }
+        }
+        
+        client.release();
+        throw migrationError;
+      }
     } catch (err) {
       console.error('Database connection/migration attempt failed:', err);
       retries -= 1;
@@ -100,7 +137,12 @@ async function seedRolesAndPermissions() {
 
     // Map permissions to roles
     if (insertedRoles.length > 0 && insertedPermissions.length > 0) {
-      const rolePermissionMappings = [];
+      type RolePermissionMapping = {
+        roleId: number;
+        permissionId: number;
+      };
+      
+      const rolePermissionMappings: RolePermissionMapping[] = [];
 
       const superadminRole = insertedRoles.find(r => r.name === 'Superadmin');
       const adminRole = insertedRoles.find(r => r.name === 'Admin');
