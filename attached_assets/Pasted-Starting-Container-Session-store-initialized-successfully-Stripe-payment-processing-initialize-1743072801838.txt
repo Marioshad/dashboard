@@ -1,0 +1,123 @@
+Starting Container
+
+Session store initialized successfully
+
+Stripe payment processing initialized successfully
+
+10:47:50 AM [express] Starting server in production mode
+
+10:47:50 AM [express] Starting application initialization...
+
+10:47:50 AM [express] Testing database connection...
+
+10:47:50 AM [[object Object]] Database connection failed:
+
+10:47:50 AM [express] Startup error: Error: Failed to connect to the database
+
+npm warn config production Use `--omit=dev` instead.
+
+ 
+
+> rest-express@1.0.0 start
+
+> NODE_ENV=production node dist/index.js
+
+ 
+
+npm warn config production Use `--omit=dev` instead.
+
+ 
+
+> rest-express@1.0.0 start
+
+> NODE_ENV=production node dist/index.js
+
+ 
+
+Session store initialized successfully
+
+Stripe payment processing initialized successfully
+
+10:47:52 AM [express] Starting application initialization...
+
+10:47:52 AM [express] Testing database connection...
+
+10:47:52 AM [express] Starting server in production mode
+
+10:47:52 AM [[object Object]] Database connection failed:
+
+10:47:52 AM [express] Startup error: Error: Failed to connect to the database
+
+npm warn config production Use `--omit=dev` instead.
+
+ 
+
+> rest-express@1.0.0 start
+
+> NODE_ENV=production node dist/index.js
+
+ 
+
+Session store initialized successfully
+
+Stripe payment processing initialized successfully
+
+10:47:55 AM [express] Starting server in production mode
+
+10:47:55 AM [express] Starting application initialization...
+
+10:47:55 AM [express] Testing database connection...
+
+10:47:55 AM [[object Object]] Database connection failed:
+
+10:47:55 AM [express] Startup error: Error: Failed to connect to the database
+
+npm warn config production Use `--omit=dev` instead.
+
+ 
+
+> rest-express@1.0.0 start
+
+> NODE_ENV=production node dist/index.js
+
+ 
+
+Session store initialized successfully
+
+Stripe payment processing initialized successfully
+
+10:47:57 AM [express] Starting server in production mode
+
+10:47:57 AM [express] Starting application initialization...
+
+10:47:57 AM [express] Testing database connection...
+
+10:47:57 AM [[object Object]] Database connection failed:
+
+10:47:57 AM [express] Startup error: Error: Failed to connect to the database
+
+npm warn config production Use `--omit=dev` instead.
+
+ 
+
+> rest-express@1.0.0 start
+
+> NODE_ENV=production node dist/index.js
+
+ 
+
+Session store initialized successfully
+
+Stripe payment processing initialized successfully
+
+10:47:59 AM [express] Starting server in production mode
+
+10:47:59 AM [express] Starting application initialization...
+
+10:47:59 AM [express] Testing database connection...
+
+10:47:59 AM [[object Object]] Database connection failed:
+
+10:47:59 AM [express] Startup error: Error: Failed to connect to the database
+
+npm warn config production Use `--omit=dev` instead.
