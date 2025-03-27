@@ -9,13 +9,21 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 export function NotificationSettings() {
   const { user } = useAuth();
   const { toast } = useToast();
+  
+  // Helper function to safely convert nullable boolean to required boolean
+  const safeBoolean = (value: boolean | null | undefined): boolean => value === true;
 
   const updateSettingsMutation = useMutation({
     mutationFn: async (data: {
       [key: string]: boolean;
     }) => {
-      const response = await apiRequest("PATCH", "/api/profile", data);
-      return response.json();
+      return await apiRequest("/api/profile", {
+        method: "PATCH",
+        body: JSON.stringify(data),
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/user"] });
@@ -57,7 +65,7 @@ export function NotificationSettings() {
           </div>
           <Switch
             id="email-notifications"
-            checked={user?.emailNotifications}
+            checked={user?.emailNotifications === true}
             onCheckedChange={(checked) =>
               updateSetting("emailNotifications", checked)
             }
@@ -72,7 +80,7 @@ export function NotificationSettings() {
           </div>
           <Switch
             id="web-notifications"
-            checked={user?.webNotifications}
+            checked={user?.webNotifications === true}
             onCheckedChange={(checked) =>
               updateSetting("webNotifications", checked)
             }
@@ -87,7 +95,7 @@ export function NotificationSettings() {
           </div>
           <Switch
             id="mention-notifications"
-            checked={user?.mentionNotifications}
+            checked={user?.mentionNotifications === true}
             onCheckedChange={(checked) =>
               updateSetting("mentionNotifications", checked)
             }
@@ -102,7 +110,7 @@ export function NotificationSettings() {
           </div>
           <Switch
             id="follow-notifications"
-            checked={user?.followNotifications}
+            checked={user?.followNotifications === true}
             onCheckedChange={(checked) =>
               updateSetting("followNotifications", checked)
             }

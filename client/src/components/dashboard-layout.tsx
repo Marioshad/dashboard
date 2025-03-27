@@ -9,6 +9,12 @@ import {
   Key,
   BarChart3,
   UserCircle,
+  Warehouse,
+  ShoppingCart,
+  Apple,
+  CalendarClock,
+  LineChart,
+  Receipt,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import {
@@ -23,9 +29,10 @@ import { Navbar } from "@/components/navbar"; // Assuming Navbar component exist
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, logoutMutation } = useAuth();
   const [location] = useLocation();
-  const [openMenus, setOpenMenus] = useState<string[]>(['users', 'home']);
+  const [openMenus, setOpenMenus] = useState<string[]>(['users', 'home', 'food']);
 
-  const isAdmin = user?.roleId === 1 || user?.roleId === 2; // Superadmin or Admin
+  // Check role ID for admin status
+  const isAdmin = (user?.roleId === 1 || user?.roleId === 2); // Superadmin or Admin
 
   const isMenuOpen = (menu: string) => openMenus.includes(menu);
   const toggleMenu = (menu: string) => {
@@ -91,6 +98,87 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                     Premium Subscription
                   </Button>
                 </Link>
+
+                {/* Food Inventory Section */}
+                <Collapsible
+                  open={isMenuOpen('food')}
+                  onOpenChange={() => toggleMenu('food')}
+                >
+                  <CollapsibleTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      className={cn(
+                        "w-full justify-between",
+                        isMenuOpen('food') && "bg-accent"
+                      )}
+                    >
+                      <span className="flex items-center">
+                        <Apple className="mr-2 h-4 w-4" />
+                        Food Inventory
+                      </span>
+                      <span className={cn(
+                        "transition-transform",
+                        isMenuOpen('food') && "rotate-90"
+                      )}>›</span>
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="pl-6 space-y-1">
+                    <Link href="/inventory">
+                      <Button
+                        variant={location === "/inventory" ? "secondary" : "ghost"}
+                        className="w-full justify-start"
+                      >
+                        <Apple className="mr-2 h-4 w-4" />
+                        All Items
+                      </Button>
+                    </Link>
+                    <Link href="/locations">
+                      <Button
+                        variant={location === "/locations" ? "secondary" : "ghost"}
+                        className="w-full justify-start"
+                      >
+                        <Warehouse className="mr-2 h-4 w-4" />
+                        Locations
+                      </Button>
+                    </Link>
+                    <Link href="/shopping-list">
+                      <Button
+                        variant={location === "/shopping-list" ? "secondary" : "ghost"}
+                        className="w-full justify-start"
+                      >
+                        <ShoppingCart className="mr-2 h-4 w-4" />
+                        Shopping List
+                      </Button>
+                    </Link>
+                    <Link href="/receipts">
+                      <Button
+                        variant={location === "/receipts" ? "secondary" : "ghost"}
+                        className="w-full justify-start"
+                      >
+                        <Receipt className="mr-2 h-4 w-4" />
+                        Receipt Upload
+                      </Button>
+                    </Link>
+                    <Link href="/expiry-tracker">
+                      <Button
+                        variant={location === "/expiry-tracker" ? "secondary" : "ghost"}
+                        className="w-full justify-start"
+                      >
+                        <CalendarClock className="mr-2 h-4 w-4" />
+                        Expiry Dates
+                      </Button>
+                    </Link>
+                    <Link href="/analytics">
+                      <Button
+                        variant={location === "/analytics" ? "secondary" : "ghost"}
+                        className="w-full justify-start"
+                      >
+                        <LineChart className="mr-2 h-4 w-4" />
+                        Analytics
+                      </Button>
+                    </Link>
+                  </CollapsibleContent>
+                </Collapsible>
 
                 {/* Users Section - Only visible to admins */}
                 {isAdmin && (

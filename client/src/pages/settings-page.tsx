@@ -15,6 +15,7 @@ import { Shield } from "lucide-react";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { NotificationSettings } from "@/components/notification-settings";
+import { FoodTrackerTest } from "@/components/food-tracker-test";
 
 interface AdminSettings {
   require2FA: boolean;
@@ -23,7 +24,8 @@ interface AdminSettings {
 export default function SettingsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const isAdmin = user?.roleId === 1 || user?.roleId === 2; // Superadmin or Admin
+  // Check role ID for admin status
+  const isAdmin = (user?.roleId === 1 || user?.roleId === 2); // Superadmin or Admin
 
   const { data: adminSettings } = useQuery<AdminSettings>({
     queryKey: ["/api/settings/admin"],
@@ -167,6 +169,9 @@ export default function SettingsPage() {
 
         {/* Add the NotificationSettings component */}
         <NotificationSettings />
+        
+        {/* Food Tracker Test Component */}
+        <FoodTrackerTest />
       </div>
     </DashboardLayout>
   );
