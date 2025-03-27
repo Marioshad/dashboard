@@ -22,6 +22,17 @@ CREATE TABLE IF NOT EXISTS users (
     deleted_at TIMESTAMP
 );
 
+-- Handle potential schema changes (safely remove email_verified column if it exists)
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'users' AND column_name = 'email_verified'
+    ) THEN
+        ALTER TABLE users DROP COLUMN email_verified;
+    END IF;
+END $$;
+
 -- Create notifications table if not exists
 CREATE TABLE IF NOT EXISTS notifications (
     id SERIAL PRIMARY KEY,
