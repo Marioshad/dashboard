@@ -112,31 +112,31 @@ export function Navbar() {
   }, [notifications]);
 
   return (
-    <div className="border-b">
+    <div className="fruity-navbar-gradient shadow-md z-10">
       <div className="flex h-16 items-center px-4">
         <nav className="flex-1">
           <Link href="/">
-            <span className="text-2xl font-bold cursor-pointer">App</span>
+            <span className="text-2xl font-bold cursor-pointer text-white">FoodVault</span>
           </Link>
         </nav>
         <div className="flex items-center gap-4">
           <Link href="/profile">
-            <Button variant="ghost" size="sm" className="flex items-center gap-1">
+            <Button variant="ghost" size="sm" className="flex items-center gap-1 fruity-currency-button">
               <Coins className="h-4 w-4" />
               <span>{currencySymbol}</span>
-              <span className="text-xs text-muted-foreground ml-1">{currency}</span>
+              <span className="text-xs ml-1">{currency}</span>
             </Button>
           </Link>
           
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="relative">
+              <Button variant="ghost" size="icon" className="relative fruity-notification-button">
                 <Bell className={cn("h-5 w-5", isConnecting && "animate-pulse")} />
                 {unreadCount > 0 && (
                   <Badge
                     variant="destructive"
                     className={cn(
-                      "absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs",
+                      "absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs fruity-notification-badge",
                     )}
                   >
                     {unreadCount}
