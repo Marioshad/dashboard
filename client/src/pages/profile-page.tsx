@@ -49,13 +49,21 @@ export default function ProfilePage() {
 
   const updateProfileMutation = useMutation({
     mutationFn: async (data: z.infer<typeof updateProfileSchema>) => {
-      return await apiRequest("/api/profile", {
-        method: "PATCH",
-        body: JSON.stringify(data),
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
+      console.log("Updating profile with data:", data);
+      try {
+        const result = await apiRequest("/api/profile", {
+          method: "PATCH",
+          body: JSON.stringify(data),
+          headers: {
+            "Content-Type": "application/json",
+          },
+        });
+        console.log("Profile update result:", result);
+        return result;
+      } catch (error) {
+        console.error("Profile update error:", error);
+        throw error;
+      }
     },
     onSuccess: (updatedUser) => {
       queryClient.setQueryData(["/api/user"], updatedUser);
