@@ -13,12 +13,13 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
+  FormDescription,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/use-auth";
-import { updateProfileSchema } from "@shared/schema";
+import { SUPPORTED_CURRENCIES, updateProfileSchema } from "@shared/schema";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -27,6 +28,7 @@ import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useRef } from "react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function ProfilePage() {
   const { user } = useAuth();
@@ -41,6 +43,7 @@ export default function ProfilePage() {
       email: user?.email || "",
       bio: user?.bio || "",
       avatarUrl: user?.avatarUrl || "",
+      currency: user?.currency || "USD",
     },
   });
 
@@ -214,6 +217,41 @@ export default function ProfilePage() {
                           {...field}
                         />
                       </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="currency"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Preferred Currency</FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        defaultValue={field.value}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select your preferred currency" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {SUPPORTED_CURRENCIES.map((currency) => (
+                            <SelectItem key={currency.code} value={currency.code}>
+                              <span className="flex items-center">
+                                <span className="mr-2">{currency.symbol}</span>
+                                <span>{currency.name}</span>
+                                <span className="ml-1 text-muted-foreground">({currency.code})</span>
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>
+                        This will be used to display prices throughout the application
+                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}

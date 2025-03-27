@@ -3,6 +3,22 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
 
+// A list of supported currencies
+export const SUPPORTED_CURRENCIES = [
+  { code: "USD", symbol: "$", name: "US Dollar" },
+  { code: "EUR", symbol: "€", name: "Euro" },
+  { code: "GBP", symbol: "£", name: "British Pound" },
+  { code: "JPY", symbol: "¥", name: "Japanese Yen" },
+  { code: "CAD", symbol: "$", name: "Canadian Dollar" },
+  { code: "AUD", symbol: "$", name: "Australian Dollar" },
+  { code: "CNY", symbol: "¥", name: "Chinese Yuan" },
+  { code: "INR", symbol: "₹", name: "Indian Rupee" },
+  { code: "BRL", symbol: "R$", name: "Brazilian Real" },
+  { code: "MXN", symbol: "$", name: "Mexican Peso" },
+] as const;
+
+export type CurrencyCode = typeof SUPPORTED_CURRENCIES[number]['code'];
+
 // Add new table for global settings
 export const appSettings = pgTable("app_settings", {
   id: serial("id").primaryKey(),
@@ -30,6 +46,7 @@ export const users = pgTable("users", {
   bio: text("bio"),
   avatarUrl: text("avatar_url"),
   roleId: integer("role_id"),
+  currency: text("currency").default("USD"), // Default currency is USD
   twoFactorEnabled: boolean("two_factor_enabled").default(false),
   twoFactorSecret: text("two_factor_secret"),
   emailNotifications: boolean("email_notifications").default(true),
@@ -173,12 +190,13 @@ export const insertUserSchema = createInsertSchema(users).pick({
   fullName: z.string().min(2, "Full name must be at least 2 characters")
 });
 
-// Update the profile schema to include notification settings
+// Update the profile schema to include notification settings and currency
 export const updateProfileSchema = createInsertSchema(users).pick({
   fullName: true,
   email: true,
   bio: true,
   avatarUrl: true,
+  currency: true,
   emailNotifications: true,
   webNotifications: true,
   mentionNotifications: true,
@@ -188,6 +206,7 @@ export const updateProfileSchema = createInsertSchema(users).pick({
   fullName: z.string().min(2, "Full name must be at least 2 characters"),
   bio: z.string().max(500, "Bio must be less than 500 characters").optional(),
   avatarUrl: z.string().url("Invalid URL format").optional(),
+  currency: z.enum([...SUPPORTED_CURRENCIES.map(c => c.code)] as [string, ...string[]]).optional(),
   emailNotifications: z.boolean().optional(),
   webNotifications: z.boolean().optional(),
   mentionNotifications: z.boolean().optional(),

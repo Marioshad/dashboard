@@ -8,6 +8,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
+import { useCurrency } from "@/hooks/use-currency";
 
 interface Price {
   id: string;
@@ -26,6 +27,7 @@ export default function SubscribePage() {
   const [loading, setLoading] = useState<string>();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
+  const { formatPrice, currencySymbol } = useCurrency();
 
   const { data: prices, isLoading: isPricesLoading, error: pricesError } = useQuery<Price[]>({
     queryKey: ["/api/subscription/prices"],
@@ -176,7 +178,7 @@ export default function SubscribePage() {
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div className="text-2xl font-bold">
-                    ${(price.unit_amount / 100).toFixed(2)}/{price.recurring.interval}
+                    {formatPrice(price.unit_amount)}/{price.recurring.interval}
                   </div>
                   <ul className="space-y-2 text-sm">
                     <li className="flex items-center">
