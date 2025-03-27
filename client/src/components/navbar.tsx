@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link } from "wouter";
-import { Bell } from "lucide-react";
+import { Bell, Coins } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -17,12 +17,14 @@ import { cn } from "@/lib/utils";
 import { Notification } from "@shared/schema";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useCurrency } from "@/hooks/use-currency";
 
 export function Navbar() {
   const [socket, setSocket] = useState<WebSocket | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const { toast } = useToast();
+  const { currency, currencySymbol } = useCurrency();
 
   const { data: notifications } = useQuery<Notification[]>({
     queryKey: ["/api/notifications"],
@@ -118,6 +120,14 @@ export function Navbar() {
           </Link>
         </nav>
         <div className="flex items-center gap-4">
+          <Link href="/profile">
+            <Button variant="ghost" size="sm" className="flex items-center gap-1">
+              <Coins className="h-4 w-4" />
+              <span>{currencySymbol}</span>
+              <span className="text-xs text-muted-foreground ml-1">{currency}</span>
+            </Button>
+          </Link>
+          
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="relative">
