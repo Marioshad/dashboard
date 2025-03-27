@@ -255,7 +255,7 @@ export const insertFoodItemSchema = createInsertSchema(foodItems).pick({
   price: true,
 }).extend({
   name: z.string().min(2, "Food name must be at least 2 characters"),
-  quantity: z.number().min(1, "Quantity must be at least 1"),
+  quantity: z.number().positive("Quantity must be a positive number"),
   unit: z.string().min(1, "Unit is required"),
   locationId: z.number().min(1, "Location is required"),
   expiryDate: z.date().or(z.string()),
