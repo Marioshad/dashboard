@@ -11,7 +11,7 @@ import { db } from "./db";
 import { roles, permissions, rolePermissions, users, appSettings, notifications } from "@shared/schema";
 import { eq, and, isNull, sql, desc } from "drizzle-orm";
 import Stripe from "stripe";
-import { WebSocketServer } from 'ws';
+import { WebSocketServer, WebSocket as WsWebSocket } from 'ws';
 
 // Make Stripe integration optional
 let stripe: Stripe | null = null;
@@ -31,7 +31,7 @@ if (!fs.existsSync(uploadsDir)) {
 }
 
 interface MulterRequest extends Request {
-  file: Express.Multer.File;
+  file?: Express.Multer.File;
 }
 
 const multerStorage = multer.diskStorage({
@@ -58,7 +58,7 @@ const upload = multer({
 });
 
 // Store WebSocket clients
-const clients = new Map<number, WebSocket>();
+const clients = new Map<number, WsWebSocket>();
 
 async function sendNotification(userId: number, type: string, message: string, actorId?: number) {
   try {
@@ -73,7 +73,8 @@ async function sendNotification(userId: number, type: string, message: string, a
       .returning();
 
     const ws = clients.get(userId);
-    if (ws?.readyState === WebSocket.OPEN) {
+    // WsWebSocket.OPEN is 1 (same constant as browser WebSocket.OPEN)
+    if (ws?.readyState === 1) {
       ws.send(JSON.stringify({
         type: 'notification',
         data: notification
@@ -105,7 +106,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const avatarUrl = `/uploads/${req.file.filename}`;
-      const updatedUser = await storage.updateProfile(req.user.id, { avatarUrl });
+      // Get current user data to ensure we maintain required fields
+      const currentUser = await storage.getUser(req.user.id);
+      if (!currentUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // Check if user has required fields (should always be true, but let's be safe)
+      const userFullName = currentUser.fullName || '';
+      const userEmail = currentUser.email || '';
+      
+      if (!userFullName || !userEmail) {
+        return res.status(400).json({ message: "User profile is missing required fields" });
+      }
+      
+      // Update only the avatarUrl while preserving other required fields
+      const updatedUser = await storage.updateProfile(req.user.id, {
+        fullName: userFullName,
+        email: userEmail,
+        avatarUrl
+      });
       res.json(updatedUser);
     } catch (error) {
       next(error);
@@ -403,7 +423,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         where: eq(roles.id, req.user.roleId as number),
       });
 
-      if (!req.body.enabled && settings?.require2FA && !['Superadmin', 'Admin'].includes(userRole?.name)) {
+      // Safely check if user role includes admin roles, handling the case where userRole might be undefined
+      const isAdmin = userRole && ['Superadmin', 'Admin'].includes(userRole.name);
+      
+      if (!req.body.enabled && settings?.require2FA && !isAdmin) {
         return res.status(403).json({ message: "2FA is required by administrator" });
       }
 
@@ -650,7 +673,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     path: '/api/ws'
   });
 
-  wss.on('connection', (ws, request) => {
+  wss.on('connection', (ws: WsWebSocket, request) => {
     const userId = (request as any).userId;
     console.log('WebSocket connected for user:', userId);
 
@@ -695,7 +718,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           (request as any).userId = session.passport.user;
           console.log('WebSocket upgrade authenticated for user:', session.passport.user);
 
-          wss.handleUpgrade(request, socket, head, (ws) => {
+          wss.handleUpgrade(request, socket, head, (ws: WsWebSocket) => {
             wss.emit('connection', ws, request);
           });
         } catch (error) {
