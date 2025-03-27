@@ -3,7 +3,9 @@
   --fruity-red: #FF8383;
   --fruity-yellow: #FFF574;
   --fruity-teal: #A1D6CB;
+  --fruity-green: #87D987;  /* Adding a green instead of so much purple */
   --fruity-purple: #A19AD3;
+  --fruity-orange: #FFBE7A;  /* Adding an orange for more variety */
 }
 
 /* Card headers with fruity colors */
@@ -100,11 +102,11 @@
 
 /* Menu and sidebar customization */
 .fruity-sidebar-gradient {
-  background: linear-gradient(180deg, #A19AD3, #A1D6CB);
+  background: linear-gradient(180deg, var(--fruity-teal), var(--fruity-green));
 }
 
 .fruity-navbar-gradient {
-  background: linear-gradient(90deg, #FF8383, #A19AD3);
+  background: linear-gradient(90deg, var(--fruity-red), var(--fruity-orange));
   border-bottom: none;
 }
 
@@ -125,7 +127,7 @@
 }
 
 .fruity-profile-card {
-  background: linear-gradient(90deg, var(--fruity-teal), var(--fruity-purple));
+  background: linear-gradient(90deg, var(--fruity-teal), var(--fruity-green));
   border: none;
 }
 
@@ -159,7 +161,7 @@
 }
 
 .fruity-main-content h1 {
-  color: var(--fruity-purple);
+  color: var(--fruity-orange);
   font-weight: bold;
   margin-bottom: 24px;
   position: relative;
@@ -177,10 +179,10 @@
 
 /* Button styling inside main content */
 .fruity-main-content button.btn-primary {
-  background: linear-gradient(90deg, var(--fruity-teal), var(--fruity-purple));
+  background: linear-gradient(90deg, var(--fruity-teal), var(--fruity-green));
   border: none;
 }
 
 .fruity-main-content .table th {
-  background-color: rgba(161, 154, 211, 0.1);
+  background-color: rgba(161, 214, 203, 0.1); /* More teal, less purple */
 }
