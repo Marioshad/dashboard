@@ -1,0 +1,125 @@
+npm warn config production Use `--omit=dev` instead.
+
+ 
+
+> rest-express@1.0.0 start
+
+> NODE_ENV=production node dist/index.js
+
+ 
+
+file:///app/dist/index.js:398
+
+import { Pool } from "pg";
+
+         ^^^^
+
+SyntaxError: Named export 'Pool' not found. The requested module 'pg' is a CommonJS module, which may not support all module.exports as named exports.
+
+CommonJS modules can always be imported via the default export, for example using:
+
+ 
+
+import pkg from 'pg';
+
+const { Pool } = pkg;
+
+ 
+
+    at ModuleJob._instantiate (node:internal/modules/esm/module_job:123:21)
+
+    at async ModuleJob.run (node:internal/modules/esm/module_job:191:5)
+
+    at async ModuleLoader.import (node:internal/modules/esm/loader:337:24)
+
+    at async loadESM (node:internal/process/esm_loader:34:7)
+
+    at async handleMainPromise (node:internal/modules/run_main:106:12)
+
+ 
+
+Node.js v18.20.5
+
+npm warn config production Use `--omit=dev` instead.
+
+ 
+
+> rest-express@1.0.0 start
+
+> NODE_ENV=production node dist/index.js
+
+ 
+
+file:///app/dist/index.js:398
+
+import { Pool } from "pg";
+
+         ^^^^
+
+SyntaxError: Named export 'Pool' not found. The requested module 'pg' is a CommonJS module, which may not support all module.exports as named exports.
+
+CommonJS modules can always be imported via the default export, for example using:
+
+ 
+
+import pkg from 'pg';
+
+const { Pool } = pkg;
+
+ 
+
+    at ModuleJob._instantiate (node:internal/modules/esm/module_job:123:21)
+
+    at async ModuleJob.run (node:internal/modules/esm/module_job:191:5)
+
+    at async ModuleLoader.import (node:internal/modules/esm/loader:337:24)
+
+    at async loadESM (node:internal/process/esm_loader:34:7)
+
+    at async handleMainPromise (node:internal/modules/run_main:106:12)
+
+ 
+
+Node.js v18.20.5
+
+npm warn config production Use `--omit=dev` instead.
+
+ 
+
+> rest-express@1.0.0 start
+
+> NODE_ENV=production node dist/index.js
+
+ 
+
+file:///app/dist/index.js:398
+
+import { Pool } from "pg";
+
+         ^^^^
+
+SyntaxError: Named export 'Pool' not found. The requested module 'pg' is a CommonJS module, which may not support all module.exports as named exports.
+
+CommonJS modules can always be imported via the default export, for example using:
+
+ 
+
+import pkg from 'pg';
+
+const { Pool } = pkg;
+
+ 
+
+    at ModuleJob._instantiate (node:internal/modules/esm/module_job:123:21)
+
+    at async ModuleJob.run (node:internal/modules/esm/module_job:191:5)
+
+    at async ModuleLoader.import (node:internal/modules/esm/loader:337:24)
+
+    at async loadESM (node:internal/process/esm_loader:34:7)
+
+    at async handleMainPromise (node:internal/modules/run_main:106:12)
+
+ 
+
+Node.js v18.20.5
