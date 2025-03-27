@@ -4,12 +4,27 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Upload, FileImage, Check, X, RotateCw } from "lucide-react";
+import { Upload, FileImage, Check, X, RotateCw, AlertTriangle } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useAuth } from "@/hooks/use-auth";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { InsertFoodItem } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
+
+interface ExtractedItem {
+  name: string;
+  quantity: number;
+  unit: string;
+  price: number | null;
+  expiryDate: string;
+}
+
+interface ReceiptResponse {
+  receiptUrl: string;
+  message: string;
+  items: ExtractedItem[];
+  error?: string;
+}
 
 export function ReceiptUpload() {
   const { toast } = useToast();
@@ -19,7 +34,7 @@ export function ReceiptUpload() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [processingStage, setProcessingStage] = useState<"idle" | "uploading" | "processing" | "complete" | "error">("idle");
-  const [extractedItems, setExtractedItems] = useState<Partial<InsertFoodItem>[]>([]);
+  const [extractedItems, setExtractedItems] = useState<ExtractedItem[]>([]);
   const [selectedItems, setSelectedItems] = useState<{[key: string]: boolean}>({});
   const [processingError, setProcessingError] = useState<string | null>(null);
   const [openDialog, setOpenDialog] = useState(false);
@@ -77,58 +92,46 @@ export function ReceiptUpload() {
         throw new Error("Failed to upload receipt");
       }
 
-      const data = await response.json();
+      const data: ReceiptResponse = await response.json();
       
       setProcessingStage("processing");
       
-      // In a real application, this is where the server would process the receipt
-      // and return extracted items. For now, we'll simulate this with mock data.
+      // Add a small delay to show the processing state to the user
+      await new Promise(resolve => setTimeout(resolve, 500));
       
-      // Simulate server processing delay
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // For demonstration, create sample items
-      // In a real app, these would come from the server's analysis
-      const mockItems: Partial<InsertFoodItem>[] = [
-        {
-          name: "Milk",
-          quantity: 1,
-          unit: "liters",
-          price: 299, // $2.99
-          expiryDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString().split('T')[0], // 7 days from now
-        },
-        {
-          name: "Eggs",
-          quantity: 12,
-          unit: "pieces",
-          price: 399, // $3.99
-          expiryDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 14).toISOString().split('T')[0], // 14 days from now
-        },
-        {
-          name: "Bread",
-          quantity: 1,
-          unit: "pieces",
-          price: 249, // $2.49
-          expiryDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 5).toISOString().split('T')[0], // 5 days from now
-        }
-      ];
-      
-      setExtractedItems(mockItems);
-      
-      // Initialize all items as selected
-      const initialSelection = mockItems.reduce((acc, _, index) => {
-        acc[index.toString()] = true;
-        return acc;
-      }, {} as {[key: string]: boolean});
-      
-      setSelectedItems(initialSelection);
-      setProcessingStage("complete");
-      setOpenDialog(true);
-      
-      toast({
-        title: "Receipt uploaded",
-        description: `Found ${mockItems.length} items on your receipt`,
-      });
+      if (data.error) {
+        setProcessingStage("error");
+        setProcessingError(data.error);
+        toast({
+          title: "Processing error",
+          description: data.error,
+          variant: "destructive",
+        });
+      } else if (data.items && data.items.length > 0) {
+        setExtractedItems(data.items);
+        
+        // Initialize all items as selected
+        const initialSelection = data.items.reduce((acc, _, index) => {
+          acc[index.toString()] = true;
+          return acc;
+        }, {} as {[key: string]: boolean});
+        
+        setSelectedItems(initialSelection);
+        setProcessingStage("complete");
+        setOpenDialog(true);
+        
+        toast({
+          title: "Receipt analyzed",
+          description: `Found ${data.items.length} items on your receipt`,
+        });
+      } else {
+        // No items found but not an error
+        setProcessingStage("complete");
+        toast({
+          title: "Receipt uploaded",
+          description: data.message || "No items could be extracted from this receipt",
+        });
+      }
     } catch (error: any) {
       console.error("Upload error:", error);
       setProcessingStage("error");
@@ -155,14 +158,19 @@ export function ReceiptUpload() {
       setUploading(true);
       
       // Get locations to find default location
-      const locationsResponse = await apiRequest('/api/locations', { method: 'GET' });
+      const locationsResponse = await fetch('/api/locations');
+      if (!locationsResponse.ok) {
+        throw new Error('Failed to fetch locations');
+      }
+      const locations = await locationsResponse.json();
+      
       let defaultLocationId: number | undefined;
       
-      if (Array.isArray(locationsResponse) && locationsResponse.length > 0) {
-        defaultLocationId = locationsResponse[0].id;
+      if (Array.isArray(locations) && locations.length > 0) {
+        defaultLocationId = locations[0].id;
       } else {
         // If no location exists, create a default one
-        const newLocation = await apiRequest('/api/locations', {
+        const newLocationResponse = await fetch('/api/locations', {
           method: 'POST',
           body: JSON.stringify({
             name: 'My Kitchen',
@@ -172,6 +180,10 @@ export function ReceiptUpload() {
             'Content-Type': 'application/json',
           },
         });
+        if (!newLocationResponse.ok) {
+          throw new Error('Failed to create default location');
+        }
+        const newLocation = await newLocationResponse.json();
         defaultLocationId = newLocation.id;
       }
       
@@ -188,13 +200,16 @@ export function ReceiptUpload() {
         });
       
       for (const item of itemsToAdd) {
-        await apiRequest('/api/food-items', {
+        const response = await fetch('/api/food-items', {
           method: 'POST',
           body: JSON.stringify(item),
           headers: {
             'Content-Type': 'application/json',
           },
         });
+        if (!response.ok) {
+          throw new Error(`Failed to add item: ${item.name}`);
+        }
       }
       
       toast({
