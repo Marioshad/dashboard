@@ -90,6 +90,10 @@ export class DatabaseStorage implements IStorage {
 
   async updateProfile(userId: number, profile: UpdateProfile): Promise<User> {
     try {
+      console.log('STORAGE: updateProfile called with userId:', userId);
+      console.log('STORAGE: profile data:', JSON.stringify(profile));
+      
+      console.log('STORAGE: executing update query...');
       const [user] = await db
         .update(users)
         .set({
@@ -98,9 +102,15 @@ export class DatabaseStorage implements IStorage {
         })
         .where(eq(users.id, userId))
         .returning();
+      
+      console.log('STORAGE: update successful, returned user:', JSON.stringify(user));
       return user;
     } catch (error) {
-      console.error('Error updating user profile:', error);
+      console.error('STORAGE: Error updating user profile:', error);
+      if (error instanceof Error) {
+        console.error('STORAGE: Error message:', error.message);
+        console.error('STORAGE: Error stack:', error.stack);
+      }
       throw error;
     }
   }

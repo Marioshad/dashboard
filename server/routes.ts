@@ -140,18 +140,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch('/api/profile', async (req, res, next) => {
     try {
+      console.log('=== PROFILE UPDATE API ===');
+      console.log('Request body:', req.body);
+      
       if (!req.isAuthenticated()) {
+        console.log('Profile update failed: User not authenticated');
         return res.sendStatus(401);
       }
+      
+      console.log('User authenticated, ID:', req.user.id);
+      console.log('Username:', req.user.username);
 
       const result = updateProfileSchema.safeParse(req.body);
       if (!result.success) {
-        return res.status(400).json({ message: "Invalid profile data" });
+        console.log('Profile update validation failed:', result.error);
+        return res.status(400).json({ message: "Invalid profile data", errors: result.error.format() });
       }
+      
+      console.log('Validation successful, parsed data:', result.data);
+      console.log('Calling storage.updateProfile with data:', JSON.stringify(result.data));
 
       const updatedUser = await storage.updateProfile(req.user.id, result.data);
+      console.log('Profile updated successfully, returning user:', JSON.stringify(updatedUser));
+      
       res.json(updatedUser);
     } catch (error) {
+      console.error('Profile update ERROR:', error);
       next(error);
     }
   });
