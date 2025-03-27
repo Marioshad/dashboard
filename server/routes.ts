@@ -949,15 +949,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "No file uploaded" });
       }
 
-      // In a real app, we would process the receipt image here to extract food items
-      // For now, we'll just return the upload path so the frontend can display it
       const receiptUrl = `/uploads/${req.file.filename}`;
+      const fullFilePath = path.join(uploadsDir, req.file.filename);
       
-      // Return a successful response with the receipt URL
-      res.json({ 
-        receiptUrl,
-        message: "Receipt uploaded successfully. Processing will be implemented in a future update."
-      });
+      // Return immediately with the receipt URL if OpenAI API key is not configured
+      if (!process.env.OPENAI_API_KEY) {
+        return res.json({ 
+          receiptUrl,
+          message: "Receipt uploaded successfully but OCR processing is disabled (no OpenAI API key).",
+          items: []
+        });
+      }
+      
+      try {
+        // Dynamically import OpenAI service
+        const { processReceiptImage } = await import('./services/openai');
+        
+        // Process the receipt image with OpenAI OCR
+        const extractedItems = await processReceiptImage(fullFilePath);
+        
+        // Return a successful response with the receipt URL and extracted items
+        res.json({ 
+          receiptUrl,
+          message: "Receipt processed successfully with OpenAI OCR.",
+          items: extractedItems
+        });
+      } catch (ocrError: any) {
+        console.error("OCR processing error:", ocrError);
+        // Still return success with the receipt URL but indicate OCR failed
+        res.json({ 
+          receiptUrl,
+          message: `Receipt uploaded successfully but OCR processing failed: ${ocrError.message}`,
+          items: [],
+          error: ocrError.message
+        });
+      }
     } catch (error) {
       next(error);
     }
