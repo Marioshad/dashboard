@@ -1,7 +1,7 @@
+@import url('./styles/fruity-colors.css');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-@import url('./styles/fruity-colors.css');
 
 @layer base {
   * {
@@ -16,6 +16,8 @@
     --fruity-red: #FF8383;
     --fruity-yellow: #FFF574;
     --fruity-teal: #A1D6CB;
+    --fruity-green: #87D987;
     --fruity-purple: #A19AD3;
+    --fruity-orange: #FFBE7A;
   }
 }
