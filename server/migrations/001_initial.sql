@@ -22,14 +22,84 @@ CREATE TABLE IF NOT EXISTS users (
     deleted_at TIMESTAMP
 );
 
--- Handle potential schema changes (safely remove email_verified column if it exists)
+-- Handle potential schema changes
 DO $$
 BEGIN
+    -- Safely remove email_verified column if it exists
     IF EXISTS (
         SELECT 1 FROM information_schema.columns 
         WHERE table_name = 'users' AND column_name = 'email_verified'
     ) THEN
         ALTER TABLE users DROP COLUMN email_verified;
+    END IF;
+
+    -- Add two_factor_enabled column if it doesn't exist
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'users' AND column_name = 'two_factor_enabled'
+    ) THEN
+        ALTER TABLE users ADD COLUMN two_factor_enabled BOOLEAN DEFAULT FALSE;
+    END IF;
+
+    -- Add two_factor_secret column if it doesn't exist
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'users' AND column_name = 'two_factor_secret'
+    ) THEN
+        ALTER TABLE users ADD COLUMN two_factor_secret TEXT;
+    END IF;
+
+    -- Add stripe_customer_id column if it doesn't exist
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'users' AND column_name = 'stripe_customer_id'
+    ) THEN
+        ALTER TABLE users ADD COLUMN stripe_customer_id TEXT;
+    END IF;
+
+    -- Add stripe_subscription_id column if it doesn't exist
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'users' AND column_name = 'stripe_subscription_id'
+    ) THEN
+        ALTER TABLE users ADD COLUMN stripe_subscription_id TEXT;
+    END IF;
+
+    -- Add subscription_status column if it doesn't exist
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'users' AND column_name = 'subscription_status'
+    ) THEN
+        ALTER TABLE users ADD COLUMN subscription_status TEXT DEFAULT 'inactive';
+    END IF;
+
+    -- Add notification preferences columns if they don't exist
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'users' AND column_name = 'email_notifications'
+    ) THEN
+        ALTER TABLE users ADD COLUMN email_notifications BOOLEAN DEFAULT TRUE;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'users' AND column_name = 'web_notifications'
+    ) THEN
+        ALTER TABLE users ADD COLUMN web_notifications BOOLEAN DEFAULT TRUE;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'users' AND column_name = 'mention_notifications'
+    ) THEN
+        ALTER TABLE users ADD COLUMN mention_notifications BOOLEAN DEFAULT TRUE;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'users' AND column_name = 'follow_notifications'
+    ) THEN
+        ALTER TABLE users ADD COLUMN follow_notifications BOOLEAN DEFAULT TRUE;
     END IF;
 END $$;
 
