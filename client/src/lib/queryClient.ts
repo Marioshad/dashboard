@@ -13,7 +13,7 @@ export async function apiRequest(
     method?: string;
     body?: string;
     headers?: Record<string, string>;
-  },
+  }
 ): Promise<any> {
   const res = await fetch(url, {
     method: options?.method || 'GET',

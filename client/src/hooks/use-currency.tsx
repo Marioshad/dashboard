@@ -29,8 +29,13 @@ export function useCurrency() {
   // Mutation to update user's currency
   const updateCurrency = useMutation({
     mutationFn: async (currency: CurrencyCode) => {
-      const response = await apiRequest('PATCH', '/api/profile', { currency });
-      return await response.json();
+      return await apiRequest('/api/profile', {
+        method: 'PATCH',
+        body: JSON.stringify({ currency }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
     },
     onSuccess: () => {
       // Invalidate user query to refresh the user data
