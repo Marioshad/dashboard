@@ -46,7 +46,15 @@ app.use((req, res, next) => {
     log("Testing database connection...");
     const dbConnectionStatus = await testDatabaseConnection();
     if (!dbConnectionStatus) {
-      throw new Error("Failed to connect to the database");
+      log("Database connection test failed - check logs above for detailed error information");
+      // Add variables check to help debugging
+      log(`DATABASE_URL available: ${Boolean(process.env.DATABASE_URL)}`);
+      log(`DATABASE_URL length: ${process.env.DATABASE_URL ? process.env.DATABASE_URL.length : 0}`);
+      log(`PGHOST available: ${Boolean(process.env.PGHOST)}`);
+      log(`PGUSER available: ${Boolean(process.env.PGUSER)}`);
+      log(`PGDATABASE available: ${Boolean(process.env.PGDATABASE)}`);
+      log(`PGPORT available: ${Boolean(process.env.PGPORT)}`);
+      throw new Error("Failed to connect to the database - check server logs for details");
     }
 
 
