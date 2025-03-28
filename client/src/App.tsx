@@ -23,6 +23,7 @@ import ExpiryTrackerPage from "@/pages/expiry-tracker-page";
 import StoresPage from "@/pages/stores";
 import StoreDetailsPage from "@/pages/stores/store-details";
 import ReceiptsPage from "@/pages/receipts";
+import TagsPage from "@/pages/tags";
 // Import receipt detail page component directly 
 import { ReceiptDetailPage } from "./pages/receipts/receipt-detail";
 
@@ -47,6 +48,7 @@ function Router() {
       <ProtectedRoute path="/expiry-tracker" component={ExpiryTrackerPage} />
       <ProtectedRoute path="/stores" component={StoresPage} />
       <ProtectedRoute path="/stores/:storeId" component={StoreDetailsPage} />
+      <ProtectedRoute path="/tags" component={TagsPage} />
       <Route path="/auth" component={AuthPage} />
       <Route component={NotFound} />
     </Switch>
