@@ -5,8 +5,15 @@ import { fileURLToPath } from 'url';
 import { log } from './vite';
 
 // Get the current directory for ES modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+let __dirname;
+try {
+  // For ES modules environment
+  const __filename = fileURLToPath(import.meta.url);
+  __dirname = path.dirname(__filename);
+} catch (e) {
+  // For CommonJS environment
+  __dirname = path.dirname(new URL(import.meta.url).pathname);
+}
 
 const { Pool } = pg;
 

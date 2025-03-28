@@ -456,7 +456,7 @@ export function ReceiptUpload({ onSuccess }: ReceiptUploadProps = {}) {
                   <div className="space-y-1">
                     <div className="font-medium">{item.name}</div>
                     <div className="text-sm text-muted-foreground">
-                      {item.quantity} {item.unit} · {item.price ? formatPrice(item.price * 100) : formatPrice(0)}
+                      {item.quantity} {item.unit} · {item.price ? formatPrice(item.price) : formatPrice(0)}
                     </div>
                     <div className="text-xs text-muted-foreground">
                       Expires: {new Date(item.expiryDate || '').toLocaleDateString()}
