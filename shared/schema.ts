@@ -145,8 +145,8 @@ export const foodItems = pgTable("food_items", {
   storeId: integer("store_id").references(() => stores.id), // Where the item was purchased
   receiptId: integer("receiptId").references(() => receipts.id), // Add relation to receipts
   expiryDate: date("expiry_date").notNull(),
-  price: integer("price"), // in cents
-  pricePerUnit: integer("price_per_unit"), // in cents per unit (for weight-based items)
+  price: decimal("price", { precision: 10, scale: 2 }), // direct price value
+  pricePerUnit: decimal("price_per_unit", { precision: 10, scale: 2 }), // direct price per unit
   isWeightBased: boolean("is_weight_based").default(false), // Flag to identify weight-based items vs. piece-based
   purchased: timestamp("purchased").notNull(),
   userId: integer("user_id").notNull().references(() => users.id),

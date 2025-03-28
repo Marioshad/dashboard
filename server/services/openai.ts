@@ -73,8 +73,8 @@ export async function processReceiptImage(filePath: string): Promise<ExtractedIt
           - name: The product name
           - quantity: The numeric quantity
           - unit: The unit of measurement (pieces, grams, kg, oz, etc.)
-          - price: The total price in cents (numeric)
-          - pricePerUnit: If the item is sold by weight, include the price per unit (in cents per kg, g, lb, etc.)
+          - price: The total price as shown on the receipt (numeric, e.g., 2.99)
+          - pricePerUnit: If the item is sold by weight, include the price per unit (e.g., 1.99 per kg, g, lb, etc.)
           - isWeightBased: true if the item is sold by weight (kg, g, lb), false if sold by count
           - expiryDate: Estimated expiry date based on typical shelf life (YYYY-MM-DD format)
 
@@ -331,9 +331,9 @@ export async function extractReceiptDetails(filePath: string): Promise<ReceiptDe
             "time": "Transaction time in HH:MM:SS format",
             "cashier": "Name of the cashier if available",
             "paymentMethod": "Method of payment (CASH, VISA, MASTERCARD, etc.)",
-            "totalAmount": Total amount in cents (numeric),
+            "totalAmount": Total amount as shown on the receipt (numeric, e.g., 24.99),
             "vatBreakdown": [
-              { "rate": VAT rate as a number (e.g., 5 for 5%), "amount": amount in cents }
+              { "rate": VAT rate as a number (e.g., 5 for 5%), "amount": amount as shown on receipt }
             ],
             "language": "The language of the receipt (e.g., English, French, German, etc.)"
           }

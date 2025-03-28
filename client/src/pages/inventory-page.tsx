@@ -366,7 +366,7 @@ export default function InventoryPage() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            {item.price ? formatPrice(item.price) : "N/A"}
+                            {item.price !== undefined && item.price !== null ? formatPrice(Number(item.price)) : "N/A"}
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">
@@ -426,7 +426,7 @@ export default function InventoryPage() {
                   type="number"
                   min="1"
                   value={newItem.quantity}
-                  onChange={(e) => setNewItem({ ...newItem, quantity: parseInt(e.target.value) })}
+                  onChange={(e) => setNewItem({ ...newItem, quantity: Number(e.target.value) })}
                 />
               </div>
               
@@ -504,17 +504,18 @@ export default function InventoryPage() {
             </div>
             
             <div className="grid gap-2">
-              <Label htmlFor="price">Price (cents)</Label>
+              <Label htmlFor="price">Price</Label>
               <Input
                 id="price"
                 type="number"
                 min="0"
+                step="0.01"
                 value={newItem.price}
-                onChange={(e) => setNewItem({ ...newItem, price: parseInt(e.target.value) })}
+                onChange={(e) => setNewItem({ ...newItem, price: Number(e.target.value) })}
                 placeholder="Optional"
               />
               <p className="text-sm text-muted-foreground">
-                Enter price in cents (e.g. 299 for {formatPrice(299)})
+                Enter price (e.g. 2.99 for {formatPrice(2.99)})
                 <br />Current currency: {currencySymbol}
               </p>
             </div>
@@ -563,7 +564,7 @@ export default function InventoryPage() {
                     type="number"
                     min="1"
                     value={itemToEdit.quantity}
-                    onChange={(e) => setItemToEdit({ ...itemToEdit, quantity: e.target.value })}
+                    onChange={(e) => setItemToEdit({ ...itemToEdit, quantity: e.target.value ? e.target.value : "0" })}
                   />
                 </div>
                 
@@ -643,16 +644,17 @@ export default function InventoryPage() {
               </div>
               
               <div className="grid gap-2">
-                <Label htmlFor="edit-price">Price (cents)</Label>
+                <Label htmlFor="edit-price">Price</Label>
                 <Input
                   id="edit-price"
                   type="number"
                   min="0"
+                  step="0.01"
                   value={itemToEdit.price || 0}
-                  onChange={(e) => setItemToEdit({ ...itemToEdit, price: parseInt(e.target.value) })}
+                  onChange={(e) => setItemToEdit({ ...itemToEdit, price: e.target.value ? e.target.value : "0" })}
                 />
                 <p className="text-sm text-muted-foreground">
-                  Enter price in cents (e.g. 299 for {formatPrice(299)})
+                  Enter price (e.g. 2.99 for {formatPrice(2.99)})
                   <br />Current currency: {currencySymbol}
                 </p>
               </div>
