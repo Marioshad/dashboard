@@ -292,7 +292,7 @@ export default function StoresPage() {
             </Button>
             <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
               <DialogTrigger asChild>
-                <Button className="btn-gradient-primary">
+                <Button>
                   <Plus className="h-4 w-4 mr-2" />
                   Add Store
                 </Button>
@@ -401,7 +401,6 @@ export default function StoresPage() {
                       <Button 
                         type="submit" 
                         disabled={createStoreMutation.isPending}
-                        className="btn-gradient-primary"
                       >
                         {createStoreMutation.isPending ? "Adding..." : "Add Store"}
                       </Button>
@@ -437,7 +436,7 @@ export default function StoresPage() {
                   Get started by adding your first store or upload a receipt to auto-detect stores.
                 </p>
                 <Button
-                  className="mt-4 btn-gradient-primary"
+                  className="mt-4"
                   onClick={() => setIsAddDialogOpen(true)}
                 >
                   <Plus className="h-4 w-4 mr-2" />
@@ -498,7 +497,7 @@ export default function StoresPage() {
                                 <AlertDialogFooter>
                                   <AlertDialogCancel>Cancel</AlertDialogCancel>
                                   <AlertDialogAction
-                                    className="btn-gradient-destructive"
+                                    variant="destructive"
                                     onClick={() => handleDelete(store.id)}
                                   >
                                     Delete
@@ -624,7 +623,6 @@ export default function StoresPage() {
                 <Button 
                   type="submit" 
                   disabled={updateStoreMutation.isPending}
-                  className="btn-gradient-primary"
                 >
                   {updateStoreMutation.isPending ? "Updating..." : "Update Store"}
                 </Button>
