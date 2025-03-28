@@ -203,25 +203,48 @@ export function ReceiptUpload({ onSuccess }: ReceiptUploadProps = {}) {
             ? new Date(receiptDetails.date).toISOString().split('T')[0] 
             : new Date().toISOString().split('T')[0];
           
-          return {
-            ...item,
+          // Ensure item data meets schema requirements by cleaning null values
+          const cleanedItem = {
+            name: item.name,
+            quantity: item.quantity || 1, // Default to 1 if quantity is null
+            unit: item.unit || "pc", // Default to pieces if unit is null
+            price: item.price || 0, // Default to 0 if price is null
+            expiryDate: item.expiryDate, // This should always be present
             locationId: defaultLocationId,
             purchased: purchaseDate,
-            receiptId: receiptId // Link the item to the receipt using the stored receipt ID
+            receiptId: receiptId, // Link the item to the receipt using the stored receipt ID
+            
+            // Optional fields - convert null to undefined
+            pricePerUnit: item.pricePerUnit || undefined,
+            isWeightBased: item.isWeightBased || undefined
           };
+          
+          return cleanedItem;
         });
       
-      for (const item of itemsToAdd) {
-        const response = await fetch('/api/food-items', {
-          method: 'POST',
-          body: JSON.stringify(item),
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        });
-        if (!response.ok) {
-          throw new Error(`Failed to add item: ${item.name}`);
+      try {
+        for (const item of itemsToAdd) {
+          const response = await fetch('/api/food-items', {
+            method: 'POST',
+            body: JSON.stringify(item),
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          });
+          
+          if (!response.ok) {
+            // If we get a 400 error, try to extract more detailed error information
+            if (response.status === 400) {
+              const errorData = await response.json();
+              console.error('Validation error:', errorData);
+              throw new Error(`Failed to add item: ${item.name}. Validation error: ${JSON.stringify(errorData.errors || errorData)}`);
+            }
+            throw new Error(`Failed to add item: ${item.name}`);
+          }
         }
+      } catch (error: any) {
+        console.error('Error adding items:', error);
+        throw error; // Re-throw to be caught by the outer try/catch
       }
       
       toast({
