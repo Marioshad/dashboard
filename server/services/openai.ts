@@ -19,6 +19,7 @@ export interface ExtractedItem {
   unit: string;
   price: number | null;
   expiryDate: string;
+  purchaseDate?: string; // Add optional purchase date field
 }
 
 export interface ExtractedStore {
@@ -28,6 +29,19 @@ export interface ExtractedStore {
   fax?: string;
   vatNumber?: string;
   taxId?: string;
+}
+
+export interface ReceiptDetails {
+  receiptNumber?: string;
+  date?: string;
+  time?: string;
+  cashier?: string;
+  paymentMethod?: string;
+  totalAmount?: number;
+  vatBreakdown?: {
+    rate: number;
+    amount: number;
+  }[];
 }
 
 /**
@@ -123,6 +137,7 @@ export async function processReceiptImage(filePath: string): Promise<ExtractedIt
  * @param items Extracted items from receipt
  * @param locationId Storage location ID
  * @param userId User ID
+ * @param storeId Optional store ID
  * @returns Array of food items ready for database insertion
  */
 export function convertToFoodItems(
@@ -133,17 +148,22 @@ export function convertToFoodItems(
 ): Partial<InsertFoodItem>[] {
   const today = new Date();
   
-  return items.map(item => ({
-    name: item.name,
-    quantity: item.quantity,
-    unit: item.unit,
-    price: item.price !== null ? item.price : undefined,
-    expiryDate: item.expiryDate,
-    locationId,
-    userId,
-    storeId,
-    purchased: format(today, "yyyy-MM-dd")
-  }));
+  return items.map(item => {
+    // Use purchase date from receipt if available, otherwise use today's date
+    const purchaseDate = (item as any).purchaseDate || format(today, "yyyy-MM-dd");
+    
+    return {
+      name: item.name,
+      quantity: item.quantity,
+      unit: item.unit,
+      price: item.price !== null ? item.price : undefined,
+      expiryDate: item.expiryDate,
+      locationId,
+      userId,
+      storeId,
+      purchased: purchaseDate
+    };
+  });
 }
 
 /**
@@ -251,6 +271,126 @@ export async function extractStoreFromReceipt(filePath: string): Promise<Extract
       name: "Unknown Store",
       location: "Unknown Location"
     };
+  }
+}
+
+/**
+ * Extract receipt details from a receipt image using OpenAI's Vision API
+ * @param filePath Path to the uploaded receipt image
+ * @returns Receipt details extracted from the receipt
+ */
+export async function extractReceiptDetails(filePath: string): Promise<ReceiptDetails> {
+  try {
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error("OpenAI API key not configured");
+    }
+
+    const absolutePath = path.resolve(filePath);
+    const fileBuffer = fs.readFileSync(absolutePath);
+    const base64Image = fileBuffer.toString("base64");
+
+    // Call OpenAI API with the receipt image
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: `You are a specialized receipt analyzer. Extract detailed transaction information from the receipt.
+          Look for receipt number, transaction date, transaction time, cashier name, payment method, and total amount.
+          Also extract VAT breakdown information if available.
+          Format your response as a JSON object with the following structure:
+          {
+            "receiptNumber": "Receipt or transaction ID",
+            "date": "Transaction date in YYYY-MM-DD format",
+            "time": "Transaction time in HH:MM:SS format",
+            "cashier": "Name of the cashier if available",
+            "paymentMethod": "Method of payment (CASH, VISA, MASTERCARD, etc.)",
+            "totalAmount": Total amount in cents (numeric),
+            "vatBreakdown": [
+              { "rate": VAT rate as a number (e.g., 5 for 5%), "amount": amount in cents }
+            ]
+          }
+          All fields are optional but provide as many as you can identify.
+          Response should be valid JSON only, no explanations or text.`
+        },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Extract the transaction details from this receipt." },
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:image/jpeg;base64,${base64Image}`,
+              },
+            },
+          ],
+        },
+      ],
+      max_tokens: 2000,
+      temperature: 0,
+    });
+
+    // Extract and parse the JSON response
+    const content = response.choices[0].message.content;
+    if (!content) {
+      throw new Error("No content in OpenAI response");
+    }
+
+    // Try to extract JSON from the response
+    let jsonStr = content;
+    // If response has markdown code blocks, extract the JSON part
+    if (content.includes("```")) {
+      jsonStr = content.split("```json")[1]?.split("```")[0] || 
+               content.split("```")[1]?.split("```")[0] || content;
+    }
+    
+    // Clean up any explanatory text before or after the JSON
+    jsonStr = jsonStr.trim();
+    
+    // Parse the JSON response
+    try {
+      const receiptDetails = JSON.parse(jsonStr) as ReceiptDetails;
+      
+      // Format date if present but not in YYYY-MM-DD format
+      if (receiptDetails.date && !receiptDetails.date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        try {
+          // Try to parse the date and convert to YYYY-MM-DD
+          const dateParts = receiptDetails.date.split(/[\/.-]/);
+          // Handle various date formats (DD/MM/YYYY, MM/DD/YYYY, etc.)
+          if (dateParts.length === 3) {
+            // If the year is 2 digits, assume it's 20XX
+            let year = dateParts[2].length === 2 ? `20${dateParts[2]}` : dateParts[2];
+            // Check if the first part is likely a day (1-31) and second part is likely a month (1-12)
+            const isFirstPartDay = parseInt(dateParts[0]) > 12 && parseInt(dateParts[0]) <= 31;
+            
+            if (isFirstPartDay) {
+              // Format is DD/MM/YYYY
+              const day = dateParts[0].padStart(2, '0');
+              const month = dateParts[1].padStart(2, '0');
+              receiptDetails.date = `${year}-${month}-${day}`;
+            } else {
+              // Assume format is MM/DD/YYYY
+              const month = dateParts[0].padStart(2, '0');
+              const day = dateParts[1].padStart(2, '0');
+              receiptDetails.date = `${year}-${month}-${day}`;
+            }
+          }
+        } catch (error) {
+          console.error("Error formatting date:", error);
+          // Keep the original date string if formatting fails
+        }
+      }
+      
+      return receiptDetails;
+    } catch (error) {
+      console.error("Failed to parse receipt details:", error);
+      // Return empty details if parsing fails
+      return {};
+    }
+  } catch (error: any) {
+    console.error("Error extracting receipt details with OpenAI:", error);
+    // Return empty details if API call fails
+    return {};
   }
 }
 

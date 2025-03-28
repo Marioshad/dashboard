@@ -4,12 +4,14 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Upload, FileImage, Check, X, RotateCw, AlertTriangle } from "lucide-react";
+import { Upload, FileImage, Check, X, RotateCw, Receipt, CreditCard, CalendarClock, User } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useAuth } from "@/hooks/use-auth";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { InsertFoodItem } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
+import { useCurrency } from "@/hooks/use-currency";
+import { Separator } from "@/components/ui/separator";
 
 interface ExtractedItem {
   name: string;
@@ -19,16 +21,34 @@ interface ExtractedItem {
   expiryDate: string;
 }
 
+interface VatBreakdown {
+  rate: number;
+  amount: number;
+}
+
+interface ReceiptDetails {
+  receiptNumber?: string;
+  date?: string;
+  time?: string;
+  cashier?: string;
+  paymentMethod?: string;
+  totalAmount?: number;
+  vatBreakdown?: VatBreakdown[];
+}
+
 interface ReceiptResponse {
   receiptUrl: string;
   message: string;
   items: ExtractedItem[];
+  store: any;
+  receiptDetails?: ReceiptDetails;
   error?: string;
 }
 
 export function ReceiptUpload() {
   const { toast } = useToast();
   const { user } = useAuth();
+  const { formatPrice } = useCurrency();
   const isMobile = useIsMobile();
   const [receipt, setReceipt] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -37,6 +57,8 @@ export function ReceiptUpload() {
   const [extractedItems, setExtractedItems] = useState<ExtractedItem[]>([]);
   const [selectedItems, setSelectedItems] = useState<{[key: string]: boolean}>({});
   const [processingError, setProcessingError] = useState<string | null>(null);
+  const [storeInfo, setStoreInfo] = useState<any>(null);
+  const [receiptDetails, setReceiptDetails] = useState<ReceiptDetails | undefined>(undefined);
   const [openDialog, setOpenDialog] = useState(false);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -62,6 +84,8 @@ export function ReceiptUpload() {
     setProcessingError(null);
     setExtractedItems([]);
     setSelectedItems({});
+    setStoreInfo(null);
+    setReceiptDetails(undefined);
   };
 
   const handleUpload = async () => {
@@ -95,6 +119,10 @@ export function ReceiptUpload() {
       const data: ReceiptResponse = await response.json();
       
       setProcessingStage("processing");
+      
+      // Store receipt details and store information
+      setReceiptDetails(data.receiptDetails);
+      setStoreInfo(data.store);
       
       // Add a small delay to show the processing state to the user
       await new Promise(resolve => setTimeout(resolve, 500));
@@ -192,10 +220,15 @@ export function ReceiptUpload() {
         .filter(([_, selected]) => selected)
         .map(([index]) => {
           const item = extractedItems[parseInt(index)];
+          // Use receipt date if available, otherwise use current date
+          const purchaseDate = receiptDetails?.date 
+            ? new Date(receiptDetails.date).toISOString().split('T')[0] 
+            : new Date().toISOString().split('T')[0];
+          
           return {
             ...item,
             locationId: defaultLocationId,
-            purchased: new Date().toISOString().split('T')[0]
+            purchased: purchaseDate
           };
         });
       
@@ -224,6 +257,8 @@ export function ReceiptUpload() {
       setProcessingStage("idle");
       setExtractedItems([]);
       setSelectedItems({});
+      setStoreInfo(null);
+      setReceiptDetails(undefined);
     } catch (error: any) {
       console.error("Add to inventory error:", error);
       toast({
@@ -349,6 +384,80 @@ export function ReceiptUpload() {
             </DialogDescription>
           </DialogHeader>
           
+          {/* Receipt Details Section */}
+          {(receiptDetails || storeInfo) && (
+            <div className="bg-muted/30 p-3 rounded-md mb-4">
+              <h3 className="text-sm font-semibold mb-2">Receipt Information</h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                {/* Store Information */}
+                {storeInfo && (
+                  <div className="space-y-1">
+                    <div className="font-medium">{storeInfo.name}</div>
+                    {storeInfo.location && <div>{storeInfo.location}</div>}
+                    {storeInfo.phone && <div>Phone: {storeInfo.phone}</div>}
+                    {storeInfo.vatNumber && <div>VAT: {storeInfo.vatNumber}</div>}
+                  </div>
+                )}
+                
+                {/* Receipt Details */}
+                {receiptDetails && (
+                  <div className="space-y-1 ml-auto text-right">
+                    {receiptDetails.receiptNumber && (
+                      <div className="flex items-center justify-end gap-1">
+                        <Receipt className="h-3 w-3" />
+                        <span>#{receiptDetails.receiptNumber}</span>
+                      </div>
+                    )}
+                    
+                    {receiptDetails.date && (
+                      <div className="flex items-center justify-end gap-1">
+                        <CalendarClock className="h-3 w-3" />
+                        <span>{receiptDetails.date} {receiptDetails.time}</span>
+                      </div>
+                    )}
+                    
+                    {receiptDetails.cashier && (
+                      <div className="flex items-center justify-end gap-1">
+                        <User className="h-3 w-3" />
+                        <span>Cashier: {receiptDetails.cashier}</span>
+                      </div>
+                    )}
+                    
+                    {receiptDetails.paymentMethod && (
+                      <div className="flex items-center justify-end gap-1">
+                        <CreditCard className="h-3 w-3" />
+                        <span>{receiptDetails.paymentMethod}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              
+              {/* VAT Breakdown */}
+              {receiptDetails?.vatBreakdown && receiptDetails.vatBreakdown.length > 0 && (
+                <div className="mt-2 pt-2 border-t border-border/30 text-xs">
+                  <div className="flex justify-between">
+                    <span>VAT Breakdown:</span>
+                    {receiptDetails.totalAmount !== undefined && (
+                      <span className="font-semibold">
+                        Total: {formatPrice(receiptDetails.totalAmount * 100)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-1">
+                    {receiptDetails.vatBreakdown.map((vat, idx) => (
+                      <div key={idx} className="flex justify-between text-muted-foreground">
+                        <span>{vat.rate}%</span>
+                        <span>{formatPrice(vat.amount * 100)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          
           <div className="max-h-[60vh] overflow-auto p-1">
             <div className="space-y-4">
               {extractedItems.map((item, index) => (
@@ -361,7 +470,7 @@ export function ReceiptUpload() {
                   <div className="space-y-1">
                     <div className="font-medium">{item.name}</div>
                     <div className="text-sm text-muted-foreground">
-                      {item.quantity} {item.unit} · ${item.price ? (item.price / 100).toFixed(2) : '0.00'}
+                      {item.quantity} {item.unit} · {item.price ? formatPrice(item.price) : formatPrice(0)}
                     </div>
                     <div className="text-xs text-muted-foreground">
                       Expires: {new Date(item.expiryDate || '').toLocaleDateString()}
