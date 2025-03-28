@@ -1,0 +1,39 @@
+receipt-upload.tsx:110 
+            
+            
+           POST https://414db6ca-3556-4208-a0ce-8313d30e4f78-00-324813i7gbvxk.kirk.replit.dev/api/receipts/upload 500 (Internal Server Error)
+handleUpload @ receipt-upload.tsx:110
+callCallback2 @ chunk-RPCDYKBN.js?v=f9f09eb4:3674
+invokeGuardedCallbackDev @ chunk-RPCDYKBN.js?v=f9f09eb4:3699
+invokeGuardedCallback @ chunk-RPCDYKBN.js?v=f9f09eb4:3733
+invokeGuardedCallbackAndCatchFirstError @ chunk-RPCDYKBN.js?v=f9f09eb4:3736
+executeDispatch @ chunk-RPCDYKBN.js?v=f9f09eb4:7014
+processDispatchQueueItemsInOrder @ chunk-RPCDYKBN.js?v=f9f09eb4:7034
+processDispatchQueue @ chunk-RPCDYKBN.js?v=f9f09eb4:7043
+dispatchEventsForPlugins @ chunk-RPCDYKBN.js?v=f9f09eb4:7051
+(anonymous) @ chunk-RPCDYKBN.js?v=f9f09eb4:7174
+batchedUpdates$1 @ chunk-RPCDYKBN.js?v=f9f09eb4:18913
+batchedUpdates @ chunk-RPCDYKBN.js?v=f9f09eb4:3579
+dispatchEventForPluginEventSystem @ chunk-RPCDYKBN.js?v=f9f09eb4:7173
+dispatchEventWithEnableCapturePhaseSelectiveHydrationWithoutDiscreteEventReplay @ chunk-RPCDYKBN.js?v=f9f09eb4:5478
+dispatchEvent @ chunk-RPCDYKBN.js?v=f9f09eb4:5472
+dispatchDiscreteEvent @ chunk-RPCDYKBN.js?v=f9f09eb4:5449
+receipt-upload.tsx:164 Upload error: Error: Failed to upload receipt
+    at handleUpload (receipt-upload.tsx:116:15)
+handleUpload @ receipt-upload.tsx:164
+await in handleUpload
+callCallback2 @ chunk-RPCDYKBN.js?v=f9f09eb4:3674
+invokeGuardedCallbackDev @ chunk-RPCDYKBN.js?v=f9f09eb4:3699
+invokeGuardedCallback @ chunk-RPCDYKBN.js?v=f9f09eb4:3733
+invokeGuardedCallbackAndCatchFirstError @ chunk-RPCDYKBN.js?v=f9f09eb4:3736
+executeDispatch @ chunk-RPCDYKBN.js?v=f9f09eb4:7014
+processDispatchQueueItemsInOrder @ chunk-RPCDYKBN.js?v=f9f09eb4:7034
+processDispatchQueue @ chunk-RPCDYKBN.js?v=f9f09eb4:7043
+dispatchEventsForPlugins @ chunk-RPCDYKBN.js?v=f9f09eb4:7051
+(anonymous) @ chunk-RPCDYKBN.js?v=f9f09eb4:7174
+batchedUpdates$1 @ chunk-RPCDYKBN.js?v=f9f09eb4:18913
+batchedUpdates @ chunk-RPCDYKBN.js?v=f9f09eb4:3579
+dispatchEventForPluginEventSystem @ chunk-RPCDYKBN.js?v=f9f09eb4:7173
+dispatchEventWithEnableCapturePhaseSelectiveHydrationWithoutDiscreteEventReplay @ chunk-RPCDYKBN.js?v=f9f09eb4:5478
+dispatchEvent @ chunk-RPCDYKBN.js?v=f9f09eb4:5472
+dispatchDiscreteEvent @ chunk-RPCDYKBN.js?v=f9f09eb4:5449

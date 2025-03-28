@@ -1,8 +1,10 @@
 import { 
-  users, locations, foodItems, 
+  users, locations, foodItems, stores, receipts,
   type User, type InsertUser, type UpdateProfile,
   type Location, type InsertLocation, type UpdateLocation,
-  type FoodItem, type InsertFoodItem, type UpdateFoodItem 
+  type Store, type InsertStore, type UpdateStore,
+  type FoodItem, type InsertFoodItem, type UpdateFoodItem,
+  type Receipt, type InsertReceipt, type UpdateReceipt
 } from "@shared/schema";
 import { db, pool } from "./db";
 import session from "express-session";
@@ -26,12 +28,28 @@ export interface IStorage {
   updateLocation(id: number, location: UpdateLocation): Promise<Location>;
   deleteLocation(id: number): Promise<void>;
   
+  // Store methods
+  createStore(store: InsertStore & { userId: number }): Promise<Store>;
+  getStores(userId: number): Promise<Store[]>;
+  findStoreByNameAndLocation(name: string, location: string, userId: number): Promise<Store | undefined>;
+  getStore(id: number): Promise<Store | undefined>;
+  updateStore(id: number, store: UpdateStore): Promise<Store>;
+  deleteStore(id: number): Promise<void>;
+  
   // Food item methods
   createFoodItem(item: InsertFoodItem & { userId: number }): Promise<FoodItem>;
   getFoodItems(userId: number, locationId?: number): Promise<FoodItem[]>;
   getFoodItem(id: number): Promise<FoodItem | undefined>;
   updateFoodItem(id: number, item: UpdateFoodItem): Promise<FoodItem>;
   deleteFoodItem(id: number): Promise<void>;
+  
+  // Receipt methods
+  createReceipt(receipt: InsertReceipt & { userId: number }): Promise<Receipt>;
+  getReceipts(userId: number): Promise<Receipt[]>;
+  getReceipt(id: number): Promise<Receipt | undefined>;
+  updateReceipt(id: number, receipt: UpdateReceipt): Promise<Receipt>;
+  deleteReceipt(id: number): Promise<void>;
+  getFoodItemsByReceiptId(receiptId: number): Promise<FoodItem[]>;
   
   sessionStore: session.Store;
 }
@@ -212,6 +230,98 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  // Store methods
+  async createStore(store: InsertStore & { userId: number }): Promise<Store> {
+    try {
+      const [result] = await db
+        .insert(stores)
+        .values({
+          ...store,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .returning();
+      return result;
+    } catch (error) {
+      console.error('Error creating store:', error);
+      throw error;
+    }
+  }
+
+  async getStores(userId: number): Promise<Store[]> {
+    try {
+      return await db
+        .select()
+        .from(stores)
+        .where(eq(stores.userId, userId));
+    } catch (error) {
+      console.error('Error getting stores:', error);
+      throw error;
+    }
+  }
+
+  async findStoreByNameAndLocation(name: string, location: string, userId: number): Promise<Store | undefined> {
+    try {
+      const result = await db
+        .select()
+        .from(stores)
+        .where(
+          and(
+            eq(stores.name, name),
+            eq(stores.location, location),
+            eq(stores.userId, userId)
+          )
+        )
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error('Error finding store by name and location:', error);
+      throw error;
+    }
+  }
+
+  async getStore(id: number): Promise<Store | undefined> {
+    try {
+      const result = await db
+        .select()
+        .from(stores)
+        .where(eq(stores.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error('Error getting store:', error);
+      throw error;
+    }
+  }
+
+  async updateStore(id: number, store: UpdateStore): Promise<Store> {
+    try {
+      const [result] = await db
+        .update(stores)
+        .set({
+          ...store,
+          updatedAt: new Date(),
+        })
+        .where(eq(stores.id, id))
+        .returning();
+      return result;
+    } catch (error) {
+      console.error('Error updating store:', error);
+      throw error;
+    }
+  }
+
+  async deleteStore(id: number): Promise<void> {
+    try {
+      await db
+        .delete(stores)
+        .where(eq(stores.id, id));
+    } catch (error) {
+      console.error('Error deleting store:', error);
+      throw error;
+    }
+  }
+
   // Food item methods
   async createFoodItem(item: InsertFoodItem & { userId: number }): Promise<FoodItem> {
     try {
@@ -318,6 +428,168 @@ export class DatabaseStorage implements IStorage {
         .where(eq(foodItems.id, id));
     } catch (error) {
       console.error('Error deleting food item:', error);
+      throw error;
+    }
+  }
+
+  // Receipt methods
+  async createReceipt(receipt: InsertReceipt & { userId: number, uploadDate?: Date, receiptDate?: Date, paymentMethod?: string, extractedData?: any }): Promise<Receipt> {
+    try {
+      // Column names must match exactly what's in the database (camelCase)
+      const values: any = {
+        userId: receipt.userId,
+        filePath: receipt.filePath,
+        fileName: receipt.fileName,
+        fileSize: receipt.fileSize,
+        mimeType: receipt.mimeType
+      };
+      
+      if (receipt.storeId) values.storeId = receipt.storeId;
+      if (receipt.totalAmount) values.totalAmount = String(receipt.totalAmount);
+      if (receipt.receiptNumber) values.receiptNumber = receipt.receiptNumber;
+      if (receipt.uploadDate) values.uploadDate = receipt.uploadDate;
+      if (receipt.receiptDate) values.receiptDate = receipt.receiptDate;
+      if (receipt.paymentMethod) values.paymentMethod = receipt.paymentMethod;
+      if (receipt.extractedData) values.extractedData = receipt.extractedData;
+      
+      if (!values.uploadDate) {
+        values.uploadDate = new Date();
+      }
+      
+      // For debugging
+      console.log('Creating receipt with values:', Object.keys(values));
+      
+      const [result] = await db
+        .insert(receipts)
+        .values(values)
+        .returning();
+      
+      return result;
+    } catch (error) {
+      console.error('Error creating receipt:', error);
+      throw error;
+    }
+  }
+
+  async getReceipts(userId: number): Promise<Receipt[]> {
+    try {
+      // First get the receipts
+      const receiptList = await db
+        .select()
+        .from(receipts)
+        .where(eq(receipts.userId, userId))
+        .orderBy(sql`receipts."uploadDate" DESC`);
+      
+      // For each receipt with a storeId, fetch the associated store
+      const receiptsWithStores = await Promise.all(
+        receiptList.map(async (receipt) => {
+          if (receipt.storeId) {
+            const [storeData] = await db
+              .select()
+              .from(stores)
+              .where(eq(stores.id, receipt.storeId));
+              
+            // Return receipt with store information
+            return {
+              ...receipt,
+              store: storeData
+            };
+          }
+          return receipt;
+        })
+      );
+      
+      return receiptsWithStores;
+    } catch (error) {
+      console.error('Error getting receipts:', error);
+      throw error;
+    }
+  }
+
+  async getReceipt(id: number): Promise<Receipt | undefined> {
+    try {
+      // Get the receipt
+      const [receipt] = await db
+        .select()
+        .from(receipts)
+        .where(eq(receipts.id, id))
+        .limit(1);
+      
+      if (!receipt) return undefined;
+      
+      // If receipt has a storeId, fetch the associated store
+      if (receipt.storeId) {
+        const [storeData] = await db
+          .select()
+          .from(stores)
+          .where(eq(stores.id, receipt.storeId));
+          
+        if (storeData) {
+          // Return receipt with store information
+          return {
+            ...receipt,
+            store: storeData
+          };
+        }
+      }
+      
+      return receipt;
+    } catch (error) {
+      console.error('Error getting receipt:', error);
+      throw error;
+    }
+  }
+
+  async updateReceipt(id: number, receipt: UpdateReceipt): Promise<Receipt> {
+    try {
+      const values: any = {};
+      
+      if (receipt.filePath) values.filePath = receipt.filePath;
+      if (receipt.fileName) values.fileName = receipt.fileName;
+      if (receipt.fileSize) values.fileSize = receipt.fileSize;
+      if (receipt.mimeType) values.mimeType = receipt.mimeType;
+      if (receipt.storeId) values.storeId = receipt.storeId;
+      if (receipt.totalAmount !== undefined) values.totalAmount = String(receipt.totalAmount);
+      if (receipt.receiptNumber) values.receiptNumber = receipt.receiptNumber;
+      
+      const [result] = await db
+        .update(receipts)
+        .set({
+          ...values,
+          updatedAt: new Date()
+        })
+        .where(eq(receipts.id, id))
+        .returning();
+      
+      return result;
+    } catch (error) {
+      console.error('Error updating receipt:', error);
+      throw error;
+    }
+  }
+
+  async deleteReceipt(id: number): Promise<void> {
+    try {
+      await db
+        .delete(receipts)
+        .where(eq(receipts.id, id));
+    } catch (error) {
+      console.error('Error deleting receipt:', error);
+      throw error;
+    }
+  }
+
+  async getFoodItemsByReceiptId(receiptId: number): Promise<FoodItem[]> {
+    try {
+      const result = await db
+        .select()
+        .from(foodItems)
+        .where(eq(foodItems.receiptId, receiptId))
+        .orderBy(foodItems.name);
+      
+      return result;
+    } catch (error) {
+      console.error('Error getting food items by receipt ID:', error);
       throw error;
     }
   }

@@ -18,8 +18,13 @@ import CheckoutPage from "@/pages/checkout-page";
 // Import food tracking pages
 import InventoryPage from "@/pages/inventory-page";
 import LocationsPage from "@/pages/locations-page";
-import ReceiptsPage from "@/pages/receipts-page";
 import ExpiryTrackerPage from "@/pages/expiry-tracker-page";
+// Import from organized folders
+import StoresPage from "@/pages/stores";
+import StoreDetailsPage from "@/pages/stores/store-details";
+import ReceiptsPage from "@/pages/receipts";
+// Import receipt detail page component directly 
+import { ReceiptDetailPage } from "./pages/receipts/receipt-detail";
 
 function Router() {
   return (
@@ -38,7 +43,10 @@ function Router() {
       <ProtectedRoute path="/inventory" component={InventoryPage} />
       <ProtectedRoute path="/locations" component={LocationsPage} />
       <ProtectedRoute path="/receipts" component={ReceiptsPage} />
+      <ProtectedRoute path="/receipts/:id" component={ReceiptDetailPage} />
       <ProtectedRoute path="/expiry-tracker" component={ExpiryTrackerPage} />
+      <ProtectedRoute path="/stores" component={StoresPage} />
+      <ProtectedRoute path="/stores/:storeId" component={StoreDetailsPage} />
       <Route path="/auth" component={AuthPage} />
       <Route component={NotFound} />
     </Switch>

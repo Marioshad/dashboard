@@ -10,8 +10,8 @@ import express from 'express';
 import { db } from "./db";
 import { 
   roles, permissions, rolePermissions, users, appSettings, notifications,
-  locations, foodItems, insertLocationSchema, updateLocationSchema,
-  insertFoodItemSchema, updateFoodItemSchema
+  locations, foodItems, stores, insertLocationSchema, updateLocationSchema,
+  insertFoodItemSchema, updateFoodItemSchema, insertStoreSchema, updateStoreSchema
 } from "@shared/schema";
 import { eq, and, isNull, sql, desc } from "drizzle-orm";
 import Stripe from "stripe";
@@ -64,16 +64,24 @@ const upload = multer({
 // Store WebSocket clients
 const clients = new Map<number, WsWebSocket>();
 
-async function sendNotification(userId: number, type: string, message: string, actorId?: number) {
+async function sendNotification(userId: number, type: string, message: string, actorId?: number, metadata?: any) {
   try {
+    // Create a notification object with the metadata included in the message
+    const notificationData = {
+      userId,
+      type,
+      message,
+      actorId
+    };
+    
+    // If metadata is provided, convert it to JSON string and attach to message
+    if (metadata) {
+      notificationData.message = `${message}|${JSON.stringify(metadata)}`;
+    }
+    
     const [notification] = await db
       .insert(notifications)
-      .values({
-        userId,
-        type,
-        message,
-        actorId
-      })
+      .values(notificationData)
       .returning();
 
     const ws = clients.get(userId);
@@ -953,6 +961,114 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Receipt upload endpoint
+  // Store endpoints
+  app.get('/api/stores', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      const storesList = await storage.getStores(req.user.id);
+      res.json(storesList);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/api/stores/:id', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      const store = await storage.getStore(parseInt(req.params.id));
+      if (!store || store.userId !== req.user.id) {
+        return res.status(404).json({ message: "Store not found" });
+      }
+
+      res.json(store);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/stores', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      const result = insertStoreSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ 
+          message: "Invalid store data", 
+          errors: result.error.format() 
+        });
+      }
+
+      const newStore = await storage.createStore({
+        ...result.data,
+        userId: req.user.id
+      });
+
+      await sendNotification(
+        req.user.id,
+        'store_created',
+        `New store "${newStore.name}" added to your account.`,
+        undefined,  // No actor ID
+        { storeId: newStore.id }
+      );
+
+      res.status(201).json(newStore);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch('/api/stores/:id', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      const store = await storage.getStore(parseInt(req.params.id));
+      if (!store || store.userId !== req.user.id) {
+        return res.status(404).json({ message: "Store not found" });
+      }
+
+      const result = updateStoreSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ 
+          message: "Invalid store data", 
+          errors: result.error.format() 
+        });
+      }
+
+      const updatedStore = await storage.updateStore(store.id, result.data);
+      res.json(updatedStore);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete('/api/stores/:id', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      const store = await storage.getStore(parseInt(req.params.id));
+      if (!store || store.userId !== req.user.id) {
+        return res.status(404).json({ message: "Store not found" });
+      }
+
+      await storage.deleteStore(store.id);
+      res.status(200).json({ success: true, message: "Store deleted successfully" });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.post('/api/receipts/upload', upload.single('receipt'), async (req: MulterRequest, res, next) => {
     try {
       if (!req.isAuthenticated()) {
@@ -966,38 +1082,240 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const receiptUrl = `/uploads/${req.file.filename}`;
       const fullFilePath = path.join(uploadsDir, req.file.filename);
       
-      // Return immediately with the receipt URL if OpenAI API key is not configured
-      if (!process.env.OPENAI_API_KEY) {
-        return res.json({ 
-          receiptUrl,
-          message: "Receipt uploaded successfully but OCR processing is disabled (no OpenAI API key).",
-          items: []
-        });
+      let extractedItems: any[] = [];
+      let extractedStore: any = null;
+      let receiptDetails: any = {};
+      let storeId: number | undefined = undefined;
+      let storeData = null;
+      let errorMessage: string | null = null;
+      
+      // Try to process with OpenAI if API key is configured
+      if (process.env.OPENAI_API_KEY) {
+        try {
+          // Dynamically import OpenAI service
+          const { 
+            processReceiptImage, 
+            extractStoreFromReceipt, 
+            extractReceiptDetails, 
+            convertToStore 
+          } = await import('./services/openai');
+          
+          // Process the receipt image with OpenAI OCR to extract items
+          extractedItems = await processReceiptImage(fullFilePath);
+          
+          // Extract store information from the receipt
+          extractedStore = await extractStoreFromReceipt(fullFilePath);
+          
+          // Extract receipt transaction details
+          receiptDetails = await extractReceiptDetails(fullFilePath);
+          
+          // Check if store already exists
+          if (extractedStore.name !== "Unknown Store") {
+            const existingStore = await storage.findStoreByNameAndLocation(
+              extractedStore.name,
+              extractedStore.location,
+              req.user.id
+            );
+            
+            if (existingStore) {
+              // Use existing store
+              storeId = existingStore.id;
+              storeData = existingStore;
+            } else {
+              // Create new store
+              const storeToCreate = convertToStore(extractedStore, req.user.id);
+              const newStore = await storage.createStore(storeToCreate);
+              storeId = newStore.id;
+              storeData = newStore;
+              
+              // Send notification about the new store
+              await sendNotification(
+                req.user.id,
+                'store_created',
+                `New store "${newStore.name}" detected from your receipt.`,
+                undefined, // No actor ID
+                { storeId: newStore.id }
+              );
+            }
+          }
+        } catch (ocrError: any) {
+          console.error("OCR processing error:", ocrError);
+          errorMessage = ocrError.message;
+        }
+      } else {
+        errorMessage = "OCR processing is disabled (no OpenAI API key)";
+      }
+
+      // Save receipt to database regardless of OCR success
+      const receipt = await storage.createReceipt({
+        userId: req.user.id,
+        storeId: storeId,
+        filePath: receiptUrl,
+        fileName: req.file.originalname,
+        fileSize: req.file.size,
+        mimeType: req.file.mimetype,
+        uploadDate: new Date(),
+        receiptDate: receiptDetails.date ? new Date(receiptDetails.date) : undefined,
+        receiptNumber: receiptDetails.receiptNumber,
+        totalAmount: receiptDetails.totalAmount,
+        paymentMethod: receiptDetails.paymentMethod,
+        extractedData: errorMessage ? undefined : {
+          store: extractedStore,
+          receiptDetails: receiptDetails
+        }
+      });
+      
+      // Send notification about the new receipt
+      const storeName = storeData ? storeData.name : "Unknown Store";
+      await sendNotification(
+        req.user.id,
+        'receipt_created',
+        `Receipt from "${storeName}" uploaded successfully.`,
+        undefined, // No actor ID
+        { receiptId: receipt.id }
+      );
+      
+      // Return response with receipt ID and extracted data
+      res.json({ 
+        receiptId: receipt.id,
+        receiptUrl,
+        message: errorMessage 
+          ? `Receipt uploaded successfully but OCR processing failed: ${errorMessage}`
+          : "Receipt processed successfully with OpenAI OCR.",
+        items: extractedItems,
+        store: storeData,
+        receiptDetails,
+        error: errorMessage
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+  
+  // Receipt API endpoints
+  app.get('/api/receipts', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
       }
       
-      try {
-        // Dynamically import OpenAI service
-        const { processReceiptImage } = await import('./services/openai');
-        
-        // Process the receipt image with OpenAI OCR
-        const extractedItems = await processReceiptImage(fullFilePath);
-        
-        // Return a successful response with the receipt URL and extracted items
-        res.json({ 
-          receiptUrl,
-          message: "Receipt processed successfully with OpenAI OCR.",
-          items: extractedItems
-        });
-      } catch (ocrError: any) {
-        console.error("OCR processing error:", ocrError);
-        // Still return success with the receipt URL but indicate OCR failed
-        res.json({ 
-          receiptUrl,
-          message: `Receipt uploaded successfully but OCR processing failed: ${ocrError.message}`,
-          items: [],
-          error: ocrError.message
-        });
+      const receipts = await storage.getReceipts(req.user.id);
+      res.json(receipts);
+    } catch (error) {
+      next(error);
+    }
+  });
+  
+  app.get('/api/receipts/:id', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
       }
+      
+      const receiptId = parseInt(req.params.id);
+      if (isNaN(receiptId)) {
+        return res.status(400).json({ message: "Invalid receipt ID" });
+      }
+      
+      const receipt = await storage.getReceipt(receiptId);
+      if (!receipt) {
+        return res.status(404).json({ message: "Receipt not found" });
+      }
+      
+      // Verify ownership
+      if (receipt.userId !== req.user.id) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
+      res.json(receipt);
+    } catch (error) {
+      next(error);
+    }
+  });
+  
+  // Get food items for a specific receipt
+  app.get('/api/receipts/:id/items', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      const receiptId = parseInt(req.params.id);
+      if (isNaN(receiptId)) {
+        return res.status(400).json({ message: "Invalid receipt ID" });
+      }
+      
+      // First check if receipt exists and belongs to user
+      const receipt = await storage.getReceipt(receiptId);
+      if (!receipt) {
+        return res.status(404).json({ message: "Receipt not found" });
+      }
+      
+      // Verify ownership
+      if (receipt.userId !== req.user.id) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
+      // Get food items for this receipt
+      const foodItems = await storage.getFoodItemsByReceiptId(receiptId);
+      res.json(foodItems);
+    } catch (error) {
+      next(error);
+    }
+  });
+  
+  app.delete('/api/receipts/:id', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      const receiptId = parseInt(req.params.id);
+      if (isNaN(receiptId)) {
+        return res.status(400).json({ message: "Invalid receipt ID" });
+      }
+      
+      const receipt = await storage.getReceipt(receiptId);
+      if (!receipt) {
+        return res.status(404).json({ message: "Receipt not found" });
+      }
+      
+      // Verify ownership
+      if (receipt.userId !== req.user.id) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
+      // Delete the receipt
+      await storage.deleteReceipt(receiptId);
+      
+      res.status(200).json({ message: "Receipt deleted successfully" });
+    } catch (error) {
+      next(error);
+    }
+  });
+  
+  app.get('/api/foodItems', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      const receiptId = req.query.receiptId ? parseInt(req.query.receiptId as string) : undefined;
+      
+      if (receiptId) {
+        // First verify receipt ownership
+        const receipt = await storage.getReceipt(receiptId);
+        if (!receipt || receipt.userId !== req.user.id) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+        
+        const items = await storage.getFoodItemsByReceiptId(receiptId);
+        return res.json(items);
+      }
+      
+      const locationId = req.query.locationId ? parseInt(req.query.locationId as string) : undefined;
+      const items = await storage.getFoodItems(req.user.id, locationId);
+      res.json(items);
     } catch (error) {
       next(error);
     }
@@ -1071,4 +1389,4 @@ export async function registerRoutes(app: Express): Promise<Server> {
   return httpServer;
 }
 
-export type SendNotificationFn = (userId: number, type: string, message: string, actorId?: number) => Promise<any>;
+export type SendNotificationFn = (userId: number, type: string, message: string, actorId?: number, metadata?: any) => Promise<any>;
