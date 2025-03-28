@@ -76,7 +76,14 @@ export async function processReceiptImage(filePath: string): Promise<ExtractedIt
           - price: The total price as shown on the receipt (numeric, e.g., 2.99)
           - pricePerUnit: If the item is sold by weight, include the price per unit (e.g., 1.99 per kg, g, lb, etc.)
           - isWeightBased: true if the item is sold by weight (kg, g, lb), false if sold by count
-          - expiryDate: Estimated expiry date based on typical shelf life (YYYY-MM-DD format)
+          - expiryDate: Estimated expiry date based on TODAY'S DATE (${format(new Date(), "yyyy-MM-dd")}) and typical shelf life of the product. Use YYYY-MM-DD format. 
+            - Fresh produce like leafy greens: 5-7 days from today
+            - Fruits like apples, oranges: 1-2 weeks from today
+            - Dairy: 1-2 weeks from today
+            - Meat/Fish: 3-5 days from today if fresh, 3-6 months if frozen
+            - Bread: 4-7 days from today
+            - Dry goods (pasta, rice): 1 year from today
+            - Frozen goods: 3 months from today
 
           For weight-based items (fruits, vegetables, meat), make sure to include both the total price and price per unit.
           Use 'pieces' as the default unit if not specified.
@@ -122,7 +129,44 @@ export async function processReceiptImage(filePath: string): Promise<ExtractedIt
       // Map and validate the extracted items
       const processedItems: ExtractedItem[] = extractedItems.map(item => {
         const today = new Date();
-        const defaultExpiryDate = format(addDays(today, 7), "yyyy-MM-dd"); // Default to a week
+        
+        // Set default expiry based on food category
+        let defaultExpiryDays = 7; // Default to a week
+        const itemNameLower = String(item.name || "").toLowerCase();
+        
+        // Determine default expiry based on food type
+        if (itemNameLower.includes("milk") || itemNameLower.includes("yogurt") || itemNameLower.includes("cheese") || 
+            itemNameLower.includes("butter") || itemNameLower.includes("cream")) {
+          // Dairy products
+          defaultExpiryDays = 10;
+        } else if (itemNameLower.includes("meat") || itemNameLower.includes("chicken") || 
+                   itemNameLower.includes("fish") || itemNameLower.includes("beef") || 
+                   itemNameLower.includes("pork") || itemNameLower.includes("lamb")) {
+          // Meat products
+          defaultExpiryDays = 4;
+        } else if (itemNameLower.includes("bread") || itemNameLower.includes("bagel") || 
+                   itemNameLower.includes("bun") || itemNameLower.includes("roll")) {
+          // Bread products
+          defaultExpiryDays = 5;
+        } else if (itemNameLower.includes("apple") || itemNameLower.includes("orange") || 
+                   itemNameLower.includes("banana") || itemNameLower.includes("fruit")) {
+          // Fruits
+          defaultExpiryDays = 10;
+        } else if (itemNameLower.includes("vegetable") || itemNameLower.includes("lettuce") || 
+                   itemNameLower.includes("spinach") || itemNameLower.includes("kale") || 
+                   itemNameLower.includes("salad")) {
+          // Leafy vegetables
+          defaultExpiryDays = 5;
+        } else if (itemNameLower.includes("frozen")) {
+          // Frozen foods
+          defaultExpiryDays = 90;
+        } else if (itemNameLower.includes("pasta") || itemNameLower.includes("rice") || 
+                   itemNameLower.includes("cereal") || itemNameLower.includes("can")) {
+          // Dry goods
+          defaultExpiryDays = 365;
+        }
+        
+        const defaultExpiryDate = format(addDays(today, defaultExpiryDays), "yyyy-MM-dd");
         
         // Check if the item is weight-based by examining the unit
         const weightUnits = ['kg', 'g', 'gram', 'grams', 'kilogram', 'kilograms', 'lb', 'lbs', 'pound', 'pounds', 'oz', 'ounce', 'ounces'];
