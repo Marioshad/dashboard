@@ -292,7 +292,7 @@ export default function StoresPage() {
             </Button>
             <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
               <DialogTrigger asChild>
-                <Button>
+                <Button className="btn-gradient-primary">
                   <Plus className="h-4 w-4 mr-2" />
                   Add Store
                 </Button>
@@ -401,7 +401,7 @@ export default function StoresPage() {
                       <Button 
                         type="submit" 
                         disabled={createStoreMutation.isPending}
-                        className="bg-primary text-primary-foreground hover:bg-primary/90"
+                        className="btn-gradient-primary"
                       >
                         {createStoreMutation.isPending ? "Adding..." : "Add Store"}
                       </Button>
@@ -437,8 +437,7 @@ export default function StoresPage() {
                   Get started by adding your first store or upload a receipt to auto-detect stores.
                 </p>
                 <Button
-                  variant="outline"
-                  className="mt-4"
+                  className="mt-4 btn-gradient-primary"
                   onClick={() => setIsAddDialogOpen(true)}
                 >
                   <Plus className="h-4 w-4 mr-2" />
@@ -499,7 +498,7 @@ export default function StoresPage() {
                                 <AlertDialogFooter>
                                   <AlertDialogCancel>Cancel</AlertDialogCancel>
                                   <AlertDialogAction
-                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                    className="btn-gradient-destructive"
                                     onClick={() => handleDelete(store.id)}
                                   >
                                     Delete
@@ -625,7 +624,7 @@ export default function StoresPage() {
                 <Button 
                   type="submit" 
                   disabled={updateStoreMutation.isPending}
-                  className="bg-primary text-primary-foreground hover:bg-primary/90"
+                  className="btn-gradient-primary"
                 >
                   {updateStoreMutation.isPending ? "Updating..." : "Update Store"}
                 </Button>
