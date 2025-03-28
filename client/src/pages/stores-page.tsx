@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useParams } from "wouter";
+import { useParams, useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { Button } from "@/components/ui/button";
@@ -114,6 +114,7 @@ export default function StoresPage() {
   const queryClient = useQueryClient();
   const params = useParams();
   const storeIdFromUrl = params.storeId ? parseInt(params.storeId) : null;
+  const [, navigate] = useLocation();
 
   // Fetch all stores
   const storesQuery = useQuery({
@@ -508,7 +509,7 @@ export default function StoresPage() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={() => openViewDialog(store)}
+                              onClick={() => navigate(`/stores/${store.id}`)}
                               className="text-blue-500"
                             >
                               <EyeIcon className="h-4 w-4" />
@@ -517,7 +518,7 @@ export default function StoresPage() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={() => openEditDialog(store)}
+                              onClick={() => navigate(`/stores/${store.id}`)}
                             >
                               <PenSquare className="h-4 w-4" />
                               <span className="sr-only">Edit</span>

@@ -212,7 +212,7 @@ export function Navbar() {
                         // Mark notification as read
                         markAsReadMutation.mutate();
                         
-                        // Navigate to stores page with ID parameter which will trigger edit dialog
+                        // Navigate directly to the store details page
                         if (storeId) {
                           navigate(`/stores/${storeId}`);
                         } else {
