@@ -18,10 +18,11 @@ import CheckoutPage from "@/pages/checkout-page";
 // Import food tracking pages
 import InventoryPage from "@/pages/inventory-page";
 import LocationsPage from "@/pages/locations-page";
-import ReceiptsPage from "@/pages/receipts-page";
 import ExpiryTrackerPage from "@/pages/expiry-tracker-page";
-import StoresPage from "@/pages/stores-page";
-import StoreDetailsPage from "@/pages/store-details-page";
+// Import from organized folders
+import StoresPage from "@/pages/stores";
+import StoreDetailsPage from "@/pages/stores/[storeId]";
+import ReceiptsPage from "@/pages/receipts";
 
 function Router() {
   return (
