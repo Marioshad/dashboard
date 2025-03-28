@@ -16,8 +16,8 @@ import {
   Loader2 
 } from 'lucide-react';
 
-// Import Receipt interface from receipts-page
-import { Receipt as ReceiptType } from './receipts-page';
+// Import shared types
+import { Receipt as ReceiptType, ExtractedItem, VatBreakdown, ReceiptDetails } from '@/types/receipt';
 
 import { DashboardLayout } from '@/components/dashboard-layout';
 import { Button } from '@/components/ui/button';
@@ -25,29 +25,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { useCurrency } from '@/hooks/use-currency';
-
-interface ExtractedItem {
-  name: string;
-  quantity: number;
-  unit: string;
-  price: number | null;
-  expiryDate: string;
-}
-
-interface VatBreakdown {
-  rate: number;
-  amount: number;
-}
-
-interface ReceiptDetails {
-  receiptNumber?: string;
-  date?: string;
-  time?: string;
-  cashier?: string;
-  paymentMethod?: string;
-  totalAmount?: number;
-  vatBreakdown?: VatBreakdown[];
-}
 
 export function ReceiptDetailPage() {
   const [, setLocation] = useLocation();
@@ -148,7 +125,8 @@ export function ReceiptDetailPage() {
                     <div className="font-medium">
                       {receiptDetails.date ? receiptDetails.date : 
                         (receipt.receiptDate ? format(new Date(receipt.receiptDate), 'PPP') : 
-                          format(new Date(receipt.uploadDate), 'PPP'))}
+                          (receipt.uploadDate ? format(new Date(receipt.uploadDate), 'PPP') : 
+                            format(new Date(receipt.createdAt), 'PPP')))}
                     </div>
                   </div>
 
@@ -211,9 +189,11 @@ export function ReceiptDetailPage() {
                     <div className="font-medium">
                       {receipt.fileName}
                     </div>
-                    <div className="text-sm text-muted-foreground">
-                      {(receipt.fileSize / 1024).toFixed(2)} KB
-                    </div>
+                    {receipt.fileSize && (
+                      <div className="text-sm text-muted-foreground">
+                        {(receipt.fileSize / 1024).toFixed(2)} KB
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -222,11 +202,11 @@ export function ReceiptDetailPage() {
                 <div className="mt-6">
                   <h3 className="text-sm font-medium mb-2">VAT Breakdown</h3>
                   <div className="bg-muted rounded-md p-3">
-                    {receiptDetails.vatBreakdown.map((vat, index) => {
+                    {receiptDetails.vatBreakdown.map((vat: VatBreakdown, index: number) => {
                       return (
                         <div key={index} className="flex justify-between text-sm">
-                          <span>VAT {((vat as any).rate * 100).toFixed(0)}%</span>
-                          <span>{formatCurrency((vat as any).amount)}</span>
+                          <span>VAT {(vat.rate * 100).toFixed(0)}%</span>
+                          <span>{formatCurrency(vat.amount)}</span>
                         </div>
                       );
                     })}

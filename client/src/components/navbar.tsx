@@ -177,52 +177,73 @@ export function Navbar() {
                   </div>
                 ) : (
                   notifications?.map((notification) => {
+                    // Check notification type
                     const isStoreNotification = notification.type === 'store_created';
+                    const isReceiptNotification = notification.type === 'receipt_created';
+                    const isClickable = isStoreNotification || isReceiptNotification;
                     
-                    // Extract store name and metadata from notification message when it's a store notification
-                    let storeName = null;
+                    // Extract metadata from notification message
+                    let itemName = null;
                     let storeId = null;
+                    let receiptId = null;
                     
-                    if (isStoreNotification) {
-                      // Check if the message contains metadata
-                      const messageParts = notification.message.split('|');
-                      const displayMessage = messageParts[0]; // The actual message part
-                      
-                      // Extract store name from the display message
-                      const match = displayMessage.match(/"([^"]+)"/);
-                      if (match && match[1]) {
-                        storeName = match[1];
-                      }
-                      
-                      // If we have metadata in JSON format
-                      if (messageParts.length > 1) {
-                        try {
-                          const metadata = JSON.parse(messageParts[1]);
-                          if (metadata.storeId) {
-                            storeId = metadata.storeId;
-                          }
-                        } catch (error) {
-                          console.error('Failed to parse notification metadata:', error);
+                    // Check if the message contains metadata
+                    const messageParts = notification.message.split('|');
+                    const displayMessage = messageParts[0]; // The actual message part
+                    
+                    // Extract name from the display message
+                    const match = displayMessage.match(/"([^"]+)"/);
+                    if (match && match[1]) {
+                      itemName = match[1];
+                    }
+                    
+                    // If we have metadata in JSON format
+                    if (messageParts.length > 1) {
+                      try {
+                        const metadata = JSON.parse(messageParts[1]);
+                        if (metadata.storeId) {
+                          storeId = metadata.storeId;
                         }
+                        if (metadata.receiptId) {
+                          receiptId = metadata.receiptId;
+                        }
+                      } catch (error) {
+                        console.error('Failed to parse notification metadata:', error);
                       }
                     }
                     
                     const handleClick = () => {
-                      if (isStoreNotification) {
-                        // Mark notification as read
-                        markAsReadMutation.mutate();
-                        
-                        // Navigate directly to the store details page
-                        if (storeId) {
-                          navigate(`/stores/${storeId}`);
-                        } else {
-                          navigate('/stores');
-                        }
-                        
-                        // Close dropdown by clicking outside
-                        document.body.click();
+                      if (!isClickable) return;
+                      
+                      // Mark notification as read
+                      markAsReadMutation.mutate();
+                      
+                      // Navigate based on notification type
+                      if (isStoreNotification && storeId) {
+                        navigate(`/stores/${storeId}`);
+                      } else if (isReceiptNotification && receiptId) {
+                        navigate(`/receipts/${receiptId}`);
+                      } else if (isStoreNotification) {
+                        navigate('/stores');
+                      } else if (isReceiptNotification) {
+                        navigate('/receipts');
                       }
+                      
+                      // Close dropdown by clicking outside
+                      document.body.click();
                     };
+                    
+                    // Determine notification title and action text
+                    let notificationTitle = notification.type;
+                    let actionText = '';
+                    
+                    if (isStoreNotification) {
+                      notificationTitle = 'New Store';
+                      actionText = 'Click to view store details';
+                    } else if (isReceiptNotification) {
+                      notificationTitle = 'New Receipt';
+                      actionText = 'Click to view receipt details';
+                    }
                     
                     return (
                       <DropdownMenuItem 
@@ -230,29 +251,29 @@ export function Navbar() {
                         className={cn(
                           "flex flex-col items-start gap-1 p-3 border-b border-gray-100 last:border-0",
                           !notification.read && "bg-primary/5",
-                          isStoreNotification ? "cursor-pointer hover:bg-gray-50" : "cursor-default"
+                          isClickable ? "cursor-pointer hover:bg-gray-50" : "cursor-default"
                         )}
                         onClick={handleClick}
                       >
                         <div className="flex w-full items-center mb-1">
                           <span className={`w-2 h-2 rounded-full mr-2 flex-shrink-0 ${notification.read ? 'bg-gray-300' : 'bg-primary'}`}></span>
                           <div className="font-medium text-sm flex-1 text-gray-800">
-                            {isStoreNotification ? 'New Store' : notification.type}
+                            {notificationTitle}
                           </div>
                           <div className="text-xs text-gray-500 flex-shrink-0">
                             {new Date(notification.createdAt).toLocaleDateString()}
                           </div>
                         </div>
                         <div className="text-sm text-gray-600 pl-4">
-                          {isStoreNotification ? (
+                          {isClickable ? (
                             <div className="flex flex-col">
                               <span>
                                 {/* Display only the message part without metadata */}
-                                {notification.message.split('|')[0]}
+                                {displayMessage}
                               </span>
                               {!notification.read && (
                                 <div className="mt-1 flex items-center text-xs text-primary font-medium">
-                                  <span className="inline-block mr-1">→</span> Click to edit store details
+                                  <span className="inline-block mr-1">→</span> {actionText}
                                 </div>
                               )}
                             </div>

@@ -13,37 +13,8 @@ import { apiRequest } from "@/lib/queryClient";
 import { useCurrency } from "@/hooks/use-currency";
 import { Separator } from "@/components/ui/separator";
 
-interface ExtractedItem {
-  name: string;
-  quantity: number;
-  unit: string;
-  price: number | null;
-  expiryDate: string;
-}
-
-interface VatBreakdown {
-  rate: number;
-  amount: number;
-}
-
-interface ReceiptDetails {
-  receiptNumber?: string;
-  date?: string;
-  time?: string;
-  cashier?: string;
-  paymentMethod?: string;
-  totalAmount?: number;
-  vatBreakdown?: VatBreakdown[];
-}
-
-interface ReceiptResponse {
-  receiptUrl: string;
-  message: string;
-  items: ExtractedItem[];
-  store: any;
-  receiptDetails?: ReceiptDetails;
-  error?: string;
-}
+// Import from shared types
+import { ExtractedItem, VatBreakdown, ReceiptDetails, ReceiptResponse } from "@/types/receipt";
 
 interface ReceiptUploadProps {
   onSuccess?: () => void;
