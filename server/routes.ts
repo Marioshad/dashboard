@@ -1165,6 +1165,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       });
       
+      // Send notification about the new receipt
+      const storeName = storeData ? storeData.name : "Unknown Store";
+      await sendNotification(
+        req.user.id,
+        'receipt_created',
+        `Receipt from "${storeName}" uploaded successfully.`,
+        undefined, // No actor ID
+        { receiptId: receipt.id }
+      );
+      
       // Return response with receipt ID and extracted data
       res.json({ 
         receiptId: receipt.id,
