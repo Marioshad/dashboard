@@ -21,7 +21,7 @@ import LocationsPage from "@/pages/locations-page";
 import ExpiryTrackerPage from "@/pages/expiry-tracker-page";
 // Import from organized folders
 import StoresPage from "@/pages/stores";
-import StoreDetailsPage from "@/pages/stores/[storeId]";
+import StoreDetailsPage from "@/pages/stores/store-details";
 import ReceiptsPage from "@/pages/receipts";
 
 function Router() {

@@ -1,3 +1,3 @@
-import { ReceiptUploadPage } from './receipt-upload-page';
+import { ReceiptsPage } from './receipts-page';
 
-export default ReceiptUploadPage;
+export default ReceiptsPage;

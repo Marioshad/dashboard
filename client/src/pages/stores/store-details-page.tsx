@@ -1,17 +1,18 @@
-import { useState, useEffect } from "react";
-import { useParams, useLocation } from "wouter";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
-import { DashboardLayout } from "@/components/dashboard-layout";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { useState, useEffect } from 'react';
+import { useRoute, useLocation } from 'wouter';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { DashboardLayout } from '@/components/dashboard-layout';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { 
+  Card, 
+  CardContent, 
+  CardDescription, 
+  CardFooter, 
+  CardHeader, 
+  CardTitle 
+} from '@/components/ui/card';
 import {
   Form,
   FormControl,
@@ -21,29 +22,25 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
-import { Building, ArrowLeft, Save, Trash2 } from "lucide-react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { useToast } from "@/hooks/use-toast";
-import { format } from "date-fns";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { Skeleton } from "@/components/ui/skeleton";
+import { 
+  ArrowLeft, 
+  Save, 
+  Trash2,
+  Store as StoreIcon,
+  MapPin,
+  Phone,
+  Printer,
+  FileText,
+  Building
+} from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import { queryClient } from '@/lib/queryClient';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
 
-// Store type definition
-interface Store {
+// Define Store type locally until we fix the import
+type Store = {
   id: number;
   name: string;
   location: string;
@@ -54,483 +51,379 @@ interface Store {
   userId: number;
   createdAt: string;
   updatedAt: string;
-}
+};
 
-// Form schema for editing a store
 const storeFormSchema = z.object({
-  name: z.string()
-    .min(1, "Store name is required")
-    .min(2, "Store name must be at least 2 characters")
-    .max(100, "Store name cannot exceed 100 characters"),
-  location: z.string()
-    .min(1, "Store location is required")
-    .min(2, "Store location must be at least 2 characters")
-    .max(200, "Location cannot exceed 200 characters"),
-  phone: z.string()
-    .max(30, "Phone number cannot exceed 30 characters")
-    .regex(/^[0-9+\-\s()]*$/, "Invalid phone number format")
-    .optional()
-    .or(z.literal("")),
-  fax: z.string()
-    .max(30, "Fax number cannot exceed 30 characters")
-    .regex(/^[0-9+\-\s()]*$/, "Invalid fax number format")
-    .optional()
-    .or(z.literal("")),
-  vatNumber: z.string()
-    .max(50, "VAT number cannot exceed 50 characters")
-    .optional()
-    .or(z.literal("")),
-  taxId: z.string()
-    .max(50, "Tax ID cannot exceed 50 characters")
-    .optional()
-    .or(z.literal("")),
+  name: z.string().min(1, 'Store name is required'),
+  location: z.string().min(1, 'Location is required'),
+  phone: z.string().optional(),
+  fax: z.string().optional(),
+  vatNumber: z.string().optional(),
+  taxId: z.string().optional(),
 });
 
 type StoreFormValues = z.infer<typeof storeFormSchema>;
 
 export function StoreDetailsPage() {
-  const params = useParams();
-  const storeId = params.storeId ? parseInt(params.storeId) : null;
+  const [, params] = useRoute<{ storeId: string }>('/stores/:storeId');
   const [, navigate] = useLocation();
   const { toast } = useToast();
-  const queryClient = useQueryClient();
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
+  const storeId = params?.storeId ? parseInt(params.storeId) : null;
+  const [deleteConfirmation, setDeleteConfirmation] = useState(false);
 
-  // Fetch store details
-  const storeQuery = useQuery({
-    queryKey: ["/api/stores", storeId],
-    queryFn: async () => {
-      if (!storeId) throw new Error("Store ID is required");
-      const store = await apiRequest(`/api/stores/${storeId}`);
-      return store as Store;
-    },
+  const { data: store, isLoading } = useQuery<Store>({ 
+    queryKey: [`/api/stores/${storeId}`],
     enabled: !!storeId,
-    meta: {
-      errorMessage: "Failed to load store details",
-    },
   });
 
-  // Update store
-  const updateStoreMutation = useMutation({
-    mutationFn: (data: StoreFormValues) => {
-      if (!storeId) throw new Error("Store ID is required");
-      return apiRequest(`/api/stores/${storeId}`, {
-        method: "PATCH",
-        body: JSON.stringify(data),
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-    },
-    onSuccess: () => {
-      toast({
-        title: "Store updated",
-        description: "The store has been updated successfully.",
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/stores", storeId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/stores"] });
-      setIsEditing(false);
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to update store.",
-        variant: "destructive",
-      });
-    },
-  });
-
-  // Delete store
-  const deleteStoreMutation = useMutation({
-    mutationFn: async () => {
-      if (!storeId) throw new Error("Store ID is required");
-      const response = await apiRequest(`/api/stores/${storeId}`, {
-        method: "DELETE",
-      });
-      return response;
-    },
-    onSuccess: (data) => {
-      toast({
-        title: "Store deleted",
-        description: data.message || "The store has been deleted successfully.",
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/stores"] });
-      navigate('/stores');
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to delete store.",
-        variant: "destructive",
-      });
-    },
-  });
-
-  // Edit store form
-  const storeForm = useForm<StoreFormValues>({
+  const form = useForm<StoreFormValues>({
     resolver: zodResolver(storeFormSchema),
     defaultValues: {
-      name: "",
-      location: "",
-      phone: "",
-      fax: "",
-      vatNumber: "",
-      taxId: "",
+      name: '',
+      location: '',
+      phone: '',
+      fax: '',
+      vatNumber: '',
+      taxId: '',
     },
   });
 
   // Update form values when store data is loaded
   useEffect(() => {
-    if (storeQuery.data) {
-      storeForm.reset({
-        name: storeQuery.data.name,
-        location: storeQuery.data.location,
-        phone: storeQuery.data.phone || "",
-        fax: storeQuery.data.fax || "",
-        vatNumber: storeQuery.data.vatNumber || "",
-        taxId: storeQuery.data.taxId || "",
+    if (store) {
+      form.reset({
+        name: store.name,
+        location: store.location,
+        phone: store.phone || '',
+        fax: store.fax || '',
+        vatNumber: store.vatNumber || '',
+        taxId: store.taxId || '',
       });
     }
-  }, [storeQuery.data, storeForm]);
+  }, [store, form]);
 
-  function handleSubmit(data: StoreFormValues) {
-    updateStoreMutation.mutate(data);
-  }
-
-  function handleDelete() {
-    deleteStoreMutation.mutate();
-  }
-
-  // Toggle between view and edit modes
-  function toggleEditMode() {
-    setIsEditing(!isEditing);
-    
-    // If canceling edit, reset form to original values
-    if (isEditing && storeQuery.data) {
-      storeForm.reset({
-        name: storeQuery.data.name,
-        location: storeQuery.data.location,
-        phone: storeQuery.data.phone || "",
-        fax: storeQuery.data.fax || "",
-        vatNumber: storeQuery.data.vatNumber || "",
-        taxId: storeQuery.data.taxId || "",
+  const updateStoreMutation = useMutation({
+    mutationFn: async (values: StoreFormValues) => {
+      if (!storeId) throw new Error('Store ID is required');
+      
+      const response = await fetch(`/api/stores/${storeId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(values),
       });
-    }
-  }
+      
+      if (!response.ok) {
+        throw new Error('Failed to update store');
+      }
+      
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/stores/${storeId}`] });
+      queryClient.invalidateQueries({ queryKey: ['/api/stores'] });
+      toast({
+        title: 'Store updated',
+        description: 'The store has been updated successfully',
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
 
-  const store = storeQuery.data;
-  const isLoading = storeQuery.isLoading;
+  const deleteStoreMutation = useMutation({
+    mutationFn: async () => {
+      if (!storeId) throw new Error('Store ID is required');
+      
+      const response = await fetch(`/api/stores/${storeId}`, {
+        method: 'DELETE',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to delete store');
+      }
+      
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/stores'] });
+      toast({
+        title: 'Store deleted',
+        description: 'The store has been deleted successfully',
+      });
+      navigate('/stores');
+    },
+    onError: (error) => {
+      toast({
+        title: 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const onSubmit = (values: StoreFormValues) => {
+    updateStoreMutation.mutate(values);
+  };
+
+  const handleDelete = () => {
+    if (deleteConfirmation) {
+      deleteStoreMutation.mutate();
+    } else {
+      setDeleteConfirmation(true);
+      setTimeout(() => setDeleteConfirmation(false), 3000);
+    }
+  };
+
+  if (isLoading || !store) {
+    return (
+      <DashboardLayout>
+        <div className="container mx-auto p-4">
+          <div className="flex items-center mb-6">
+            <Button 
+              variant="ghost" 
+              onClick={() => navigate('/stores')}
+              className="mr-2"
+            >
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back
+            </Button>
+            <h1 className="text-2xl font-bold">Loading Store Details...</h1>
+          </div>
+          <div className="p-12 text-center">Loading store details...</div>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout>
-      <div className="container mx-auto py-6">
+      <div className="container mx-auto p-4">
         <div className="flex justify-between items-center mb-6">
-          <div>
+          <div className="flex items-center">
             <Button 
-              variant="outline" 
+              variant="ghost" 
               onClick={() => navigate('/stores')}
-              className="mb-4"
+              className="mr-2"
             >
               <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Stores
+              Back
             </Button>
-            <h1 className="text-3xl font-bold tracking-tight">
-              {isLoading ? (
-                <Skeleton className="h-9 w-48" />
-              ) : (
-                <>
-                  {isEditing ? "Edit Store" : "Store Details"}
-                </>
-              )}
-            </h1>
-            {!isLoading && store && (
-              <p className="text-muted-foreground">
-                {isEditing ? `Editing "${store.name}"` : store.name}
-              </p>
-            )}
+            <h1 className="text-2xl font-bold">{store.name}</h1>
           </div>
-          <div className="flex gap-2">
-            {!isEditing ? (
-              <>
-                <Button onClick={toggleEditMode}>
-                  Edit Store
-                </Button>
-                <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-                  <AlertDialogTrigger asChild>
-                    <Button variant="destructive">
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Delete
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Delete Store</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        Are you sure you want to delete this store? This action cannot be undone.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={handleDelete}
-                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                      >
-                        Delete
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              </>
-            ) : (
-              <Button variant="outline" onClick={toggleEditMode}>
-                Cancel
-              </Button>
-            )}
+          <div className="flex space-x-2">
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleteStoreMutation.isPending}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              {deleteConfirmation 
+                ? 'Confirm Delete' 
+                : deleteStoreMutation.isPending 
+                  ? 'Deleting...' 
+                  : 'Delete Store'
+              }
+            </Button>
           </div>
         </div>
 
-        {isLoading ? (
-          <Card>
-            <CardHeader>
-              <Skeleton className="h-6 w-32 mb-2" />
-              <Skeleton className="h-4 w-48" />
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Skeleton className="h-4 w-24" />
-                  <Skeleton className="h-10 w-full" />
-                </div>
-                <div className="space-y-2">
-                  <Skeleton className="h-4 w-24" />
-                  <Skeleton className="h-10 w-full" />
-                </div>
-                <div className="space-y-2">
-                  <Skeleton className="h-4 w-24" />
-                  <Skeleton className="h-10 w-full" />
-                </div>
-                <div className="space-y-2">
-                  <Skeleton className="h-4 w-24" />
-                  <Skeleton className="h-10 w-full" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ) : store ? (
-          isEditing ? (
+        <div className="grid md:grid-cols-3 gap-6">
+          <div className="md:col-span-2">
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center text-xl">
-                  <Building className="h-5 w-5 mr-2" />
-                  Edit Store Information
-                </CardTitle>
+                <CardTitle>Store Details</CardTitle>
                 <CardDescription>
-                  Update the details for this store. Fields marked with <span className="text-destructive">*</span> are required.
+                  Update information about this store
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <Form {...storeForm}>
-                  <form onSubmit={storeForm.handleSubmit(handleSubmit)} className="space-y-6">
-                    <div className="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-2">
+                <Form {...form}>
+                  <form 
+                    onSubmit={form.handleSubmit(onSubmit)} 
+                    className="space-y-6"
+                  >
+                    <div className="grid md:grid-cols-2 gap-4">
                       <FormField
-                        control={storeForm.control}
+                        control={form.control}
                         name="name"
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>
-                              Store Name <span className="text-destructive">*</span>
+                              Store Name <span className="text-red-500">*</span>
                             </FormLabel>
                             <FormControl>
-                              <Input {...field} placeholder="Supermarket name" required />
+                              <div className="flex items-center space-x-2">
+                                <StoreIcon className="h-4 w-4 text-gray-400" />
+                                <Input {...field} />
+                              </div>
                             </FormControl>
                             <FormMessage />
                           </FormItem>
                         )}
                       />
                       <FormField
-                        control={storeForm.control}
+                        control={form.control}
                         name="location"
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>
-                              Location <span className="text-destructive">*</span>
+                              Location <span className="text-red-500">*</span>
                             </FormLabel>
                             <FormControl>
-                              <Input {...field} placeholder="Address or location of the store" required />
+                              <div className="flex items-center space-x-2">
+                                <MapPin className="h-4 w-4 text-gray-400" />
+                                <Input {...field} />
+                              </div>
                             </FormControl>
                             <FormMessage />
                           </FormItem>
                         )}
                       />
+                    </div>
+
+                    <div className="grid md:grid-cols-2 gap-4">
                       <FormField
-                        control={storeForm.control}
+                        control={form.control}
                         name="phone"
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Phone Number</FormLabel>
                             <FormControl>
-                              <Input {...field} placeholder="Store phone number (optional)" />
+                              <div className="flex items-center space-x-2">
+                                <Phone className="h-4 w-4 text-gray-400" />
+                                <Input {...field} />
+                              </div>
                             </FormControl>
                             <FormMessage />
                           </FormItem>
                         )}
                       />
                       <FormField
-                        control={storeForm.control}
+                        control={form.control}
                         name="fax"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Fax</FormLabel>
+                            <FormLabel>Fax Number</FormLabel>
                             <FormControl>
-                              <Input {...field} placeholder="Store fax number (optional)" />
+                              <div className="flex items-center space-x-2">
+                                <Printer className="h-4 w-4 text-gray-400" />
+                                <Input {...field} />
+                              </div>
                             </FormControl>
                             <FormMessage />
                           </FormItem>
                         )}
                       />
+                    </div>
+
+                    <div className="grid md:grid-cols-2 gap-4">
                       <FormField
-                        control={storeForm.control}
+                        control={form.control}
                         name="vatNumber"
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>VAT Number</FormLabel>
                             <FormControl>
-                              <Input {...field} placeholder="VAT registration (optional)" />
+                              <div className="flex items-center space-x-2">
+                                <FileText className="h-4 w-4 text-gray-400" />
+                                <Input {...field} />
+                              </div>
                             </FormControl>
                             <FormMessage />
                           </FormItem>
                         )}
                       />
                       <FormField
-                        control={storeForm.control}
+                        control={form.control}
                         name="taxId"
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Tax ID</FormLabel>
                             <FormControl>
-                              <Input {...field} placeholder="Tax identifier (optional)" />
+                              <div className="flex items-center space-x-2">
+                                <Building className="h-4 w-4 text-gray-400" />
+                                <Input {...field} />
+                              </div>
                             </FormControl>
                             <FormMessage />
                           </FormItem>
                         )}
                       />
                     </div>
-                    <div className="flex justify-end gap-2 mt-6">
-                      <Button 
-                        type="submit" 
-                        disabled={updateStoreMutation.isPending}
-                        className="bg-gradient-to-r from-primary/90 to-primary"
-                      >
-                        <Save className="h-4 w-4 mr-2" />
-                        {updateStoreMutation.isPending ? "Saving..." : "Save Changes"}
-                      </Button>
-                    </div>
+
+                    <Button 
+                      type="submit" 
+                      disabled={updateStoreMutation.isPending}
+                      className="w-full md:w-auto bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700"
+                    >
+                      <Save className="h-4 w-4 mr-2" />
+                      {updateStoreMutation.isPending ? 'Saving...' : 'Save Changes'}
+                    </Button>
                   </form>
                 </Form>
               </CardContent>
             </Card>
-          ) : (
+          </div>
+
+          <div>
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center text-xl">
-                  <Building className="h-5 w-5 mr-2" />
-                  {store.name}
-                </CardTitle>
+                <CardTitle>Store Information</CardTitle>
                 <CardDescription>
-                  Store details and information
+                  Additional details about this store
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <h3 className="text-sm font-medium text-muted-foreground">Store Name</h3>
-                    <p className="font-medium text-lg">{store.name}</p>
+              <CardContent>
+                <dl className="divide-y divide-gray-200">
+                  <div className="py-3 sm:grid sm:grid-cols-3 sm:gap-4">
+                    <dt className="text-sm font-medium text-gray-500">Created</dt>
+                    <dd className="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+                      {new Date(store.createdAt).toLocaleDateString()}
+                    </dd>
                   </div>
-                  
-                  <div className="space-y-2">
-                    <h3 className="text-sm font-medium text-muted-foreground">Location</h3>
-                    <p className="text-lg">{store.location}</p>
+                  <div className="py-3 sm:grid sm:grid-cols-3 sm:gap-4">
+                    <dt className="text-sm font-medium text-gray-500">Last Updated</dt>
+                    <dd className="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+                      {new Date(store.updatedAt).toLocaleDateString()}
+                    </dd>
                   </div>
-                
-                  {store.phone && (
-                    <div className="space-y-2">
-                      <h3 className="text-sm font-medium text-muted-foreground">Phone Number</h3>
-                      <p>{store.phone}</p>
-                    </div>
-                  )}
-                  
-                  {store.fax && (
-                    <div className="space-y-2">
-                      <h3 className="text-sm font-medium text-muted-foreground">Fax</h3>
-                      <p>{store.fax}</p>
-                    </div>
-                  )}
-                  
-                  {store.vatNumber && (
-                    <div className="space-y-2">
-                      <h3 className="text-sm font-medium text-muted-foreground">VAT Number</h3>
-                      <p>{store.vatNumber}</p>
-                    </div>
-                  )}
-                  
-                  {store.taxId && (
-                    <div className="space-y-2">
-                      <h3 className="text-sm font-medium text-muted-foreground">Tax ID</h3>
-                      <p>{store.taxId}</p>
-                    </div>
-                  )}
-                </div>
-                
-                <Separator />
-                
-                <div className="space-y-2">
-                  <h3 className="text-sm font-medium text-muted-foreground">Store History</h3>
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
-                    <div className="mb-2 sm:mb-0">
-                      <p className="text-sm text-muted-foreground">Added on</p>
-                      <p>{format(new Date(store.createdAt), "MMMM d, yyyy 'at' h:mm a")}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Last updated</p>
-                      <p>{format(new Date(store.updatedAt), "MMMM d, yyyy 'at' h:mm a")}</p>
-                    </div>
+                  <div className="py-3 sm:grid sm:grid-cols-3 sm:gap-4">
+                    <dt className="text-sm font-medium text-gray-500">Store ID</dt>
+                    <dd className="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+                      {store.id}
+                    </dd>
                   </div>
-                </div>
+                </dl>
               </CardContent>
-              <CardFooter className="border-t bg-gray-50 px-6 py-3">
-                <div className="flex justify-end w-full gap-2">
-                  <Button 
-                    variant="outline" 
-                    onClick={toggleEditMode}
-                    className="bg-white"
-                  >
-                    Edit Store Details
-                  </Button>
-                </div>
+              <CardFooter className="bg-gray-50 border-t border-gray-200">
+                <p className="text-xs text-gray-500">
+                  Store information is used to categorize and organize your food items.
+                </p>
               </CardFooter>
             </Card>
-          )
-        ) : (
-          <Card>
-            <CardHeader>
-              <CardTitle>Store Not Found</CardTitle>
-              <CardDescription>
-                The store you're looking for could not be found.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p>Please check the store ID and try again, or go back to the stores list.</p>
-              <Button 
-                onClick={() => navigate('/stores')}
-                className="mt-4"
-              >
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Back to Stores
-              </Button>
-            </CardContent>
-          </Card>
-        )}
+            
+            <Card className="mt-6">
+              <CardHeader>
+                <CardTitle>Related Items</CardTitle>
+                <CardDescription>
+                  Items purchased from this store
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="text-center p-4 text-gray-500">
+                  Related items feature coming soon.
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
       </div>
     </DashboardLayout>
   );
