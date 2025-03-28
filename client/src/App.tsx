@@ -21,6 +21,7 @@ import LocationsPage from "@/pages/locations-page";
 import ReceiptsPage from "@/pages/receipts-page";
 import ExpiryTrackerPage from "@/pages/expiry-tracker-page";
 import StoresPage from "@/pages/stores-page";
+import StoreDetailsPage from "@/pages/store-details-page";
 
 function Router() {
   return (
@@ -41,7 +42,7 @@ function Router() {
       <ProtectedRoute path="/receipts" component={ReceiptsPage} />
       <ProtectedRoute path="/expiry-tracker" component={ExpiryTrackerPage} />
       <ProtectedRoute path="/stores" component={StoresPage} />
-      <ProtectedRoute path="/stores/:storeId" component={StoresPage} />
+      <ProtectedRoute path="/stores/:storeId" component={StoreDetailsPage} />
       <Route path="/auth" component={AuthPage} />
       <Route component={NotFound} />
     </Switch>
