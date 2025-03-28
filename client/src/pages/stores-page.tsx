@@ -394,14 +394,18 @@ export default function StoresPage() {
                         </FormItem>
                       )}
                     />
-                    <DialogFooter>
+                    <div className="flex justify-end gap-2 mt-6">
                       <Button variant="outline" type="button" onClick={handleAddDialogClose}>
                         Cancel
                       </Button>
-                      <Button type="submit" disabled={createStoreMutation.isPending}>
+                      <Button 
+                        type="submit" 
+                        disabled={createStoreMutation.isPending}
+                        className="bg-primary text-primary-foreground hover:bg-primary/90"
+                      >
                         {createStoreMutation.isPending ? "Adding..." : "Add Store"}
                       </Button>
-                    </DialogFooter>
+                    </div>
                   </form>
                 </Form>
               </DialogContent>
@@ -614,14 +618,18 @@ export default function StoresPage() {
                   </FormItem>
                 )}
               />
-              <DialogFooter>
+              <div className="flex justify-end gap-2 mt-6">
                 <Button variant="outline" type="button" onClick={handleEditDialogClose}>
                   Cancel
                 </Button>
-                <Button type="submit" disabled={updateStoreMutation.isPending}>
-                  {updateStoreMutation.isPending ? "Saving..." : "Update Store"}
+                <Button 
+                  type="submit" 
+                  disabled={updateStoreMutation.isPending}
+                  className="bg-primary text-primary-foreground hover:bg-primary/90"
+                >
+                  {updateStoreMutation.isPending ? "Updating..." : "Update Store"}
                 </Button>
-              </DialogFooter>
+              </div>
             </form>
           </Form>
         </DialogContent>
