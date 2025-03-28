@@ -131,6 +131,7 @@ export const receipts = pgTable("receipts", {
   totalAmount: decimal("totalAmount", { precision: 10, scale: 2 }),
   receiptDate: timestamp("receiptDate"),
   receiptNumber: text("receiptNumber"),
+  language: text("language"), // Receipt language detected
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
@@ -145,6 +146,8 @@ export const foodItems = pgTable("food_items", {
   receiptId: integer("receiptId").references(() => receipts.id), // Add relation to receipts
   expiryDate: date("expiry_date").notNull(),
   price: integer("price"), // in cents
+  pricePerUnit: integer("price_per_unit"), // in cents per unit (for weight-based items)
+  isWeightBased: boolean("is_weight_based").default(false), // Flag to identify weight-based items vs. piece-based
   purchased: timestamp("purchased").notNull(),
   userId: integer("user_id").notNull().references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -367,16 +370,22 @@ export const insertFoodItemSchema = createInsertSchema(foodItems).pick({
   unit: true,
   locationId: true,
   storeId: true,
+  receiptId: true,
   expiryDate: true,
   price: true,
+  pricePerUnit: true,
+  isWeightBased: true,
 }).extend({
   name: z.string().min(2, "Food name must be at least 2 characters"),
   quantity: z.string().or(z.number()).pipe(z.coerce.number().positive("Quantity must be a positive number")),
   unit: z.string().min(1, "Unit is required"),
   locationId: z.number().min(1, "Location is required"),
   storeId: z.number().optional(), // Store is optional
+  receiptId: z.number().optional(), // Receipt is optional
   expiryDate: z.date().or(z.string()),
   price: z.number().optional(),
+  pricePerUnit: z.number().optional(), // Price per unit is optional
+  isWeightBased: z.boolean().optional().default(false), // Weight-based flag is optional
 });
 
 export const updateFoodItemSchema = insertFoodItemSchema;
@@ -390,6 +399,7 @@ export const insertReceiptSchema = createInsertSchema(receipts).pick({
   mimeType: true,
   totalAmount: true,
   receiptNumber: true,
+  language: true,
 }).extend({
   storeId: z.number().optional(),
   filePath: z.string().min(1, "File path is required"),
@@ -398,6 +408,7 @@ export const insertReceiptSchema = createInsertSchema(receipts).pick({
   mimeType: z.string().min(1, "MIME type is required"),
   totalAmount: z.number().optional(),
   receiptNumber: z.string().optional(),
+  language: z.string().optional(),
 });
 
 export const updateReceiptSchema = insertReceiptSchema;

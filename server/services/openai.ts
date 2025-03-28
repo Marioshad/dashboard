@@ -18,6 +18,8 @@ export interface ExtractedItem {
   quantity: number;
   unit: string;
   price: number | null;
+  pricePerUnit?: number | null; // Price per unit (kg, liter, etc.)
+  isWeightBased?: boolean; // Indicates if this is a weight-based item
   expiryDate: string;
   purchaseDate?: string; // Add optional purchase date field
 }
@@ -42,6 +44,7 @@ export interface ReceiptDetails {
     rate: number;
     amount: number;
   }[];
+  language?: string; // Detected language of the receipt
 }
 
 /**
@@ -65,10 +68,19 @@ export async function processReceiptImage(filePath: string): Promise<ExtractedIt
       messages: [
         {
           role: "system",
-          content: `You are a specialized receipt analyzer. Extract all food items from the receipt image. 
-          For each item, identify the name, quantity, unit, and price in cents. 
-          Format your response strictly as a JSON array with each food item having: name, quantity (numeric), unit (pieces, grams, oz, etc.), price (in cents, numeric).
-          Use 'pieces' as the default unit if not specified. Estimate expiry dates based on typical shelf life.
+          content: `You are a specialized receipt analyzer. Extract all food items from the receipt image with detailed information.
+          For each item, identify the following:
+          - name: The product name
+          - quantity: The numeric quantity
+          - unit: The unit of measurement (pieces, grams, kg, oz, etc.)
+          - price: The total price in cents (numeric)
+          - pricePerUnit: If the item is sold by weight, include the price per unit (in cents per kg, g, lb, etc.)
+          - isWeightBased: true if the item is sold by weight (kg, g, lb), false if sold by count
+          - expiryDate: Estimated expiry date based on typical shelf life (YYYY-MM-DD format)
+
+          For weight-based items (fruits, vegetables, meat), make sure to include both the total price and price per unit.
+          Use 'pieces' as the default unit if not specified.
+          Format your response strictly as a JSON array.
           Response should be valid JSON array only, no explanations or text.`
         },
         {
@@ -112,12 +124,19 @@ export async function processReceiptImage(filePath: string): Promise<ExtractedIt
         const today = new Date();
         const defaultExpiryDate = format(addDays(today, 7), "yyyy-MM-dd"); // Default to a week
         
+        // Check if the item is weight-based by examining the unit
+        const weightUnits = ['kg', 'g', 'gram', 'grams', 'kilogram', 'kilograms', 'lb', 'lbs', 'pound', 'pounds', 'oz', 'ounce', 'ounces'];
+        const unit = String(item.unit || "pieces").toLowerCase();
+        const isWeightBased = item.isWeightBased === true || weightUnits.some(wu => unit.includes(wu));
+        
         // Ensure proper types and defaults
         return {
           name: String(item.name || "Unknown Item").trim(),
           quantity: Number(item.quantity) || 1,
-          unit: String(item.unit || "pieces").toLowerCase(),
+          unit: unit,
           price: item.price !== undefined ? Number(item.price) : null,
+          pricePerUnit: isWeightBased && item.pricePerUnit ? Number(item.pricePerUnit) : null,
+          isWeightBased: isWeightBased,
           expiryDate: item.expiryDate || defaultExpiryDate
         };
       });
@@ -152,11 +171,18 @@ export function convertToFoodItems(
     // Use purchase date from receipt if available, otherwise use today's date
     const purchaseDate = (item as any).purchaseDate || format(today, "yyyy-MM-dd");
     
+    // Determine if the item is weight-based (by examining unit or other indicators)
+    const isWeightBased = 
+      item.isWeightBased || 
+      ['kg', 'g', 'gram', 'grams', 'kilogram', 'kilograms', 'lb', 'lbs', 'pound', 'pounds', 'oz', 'ounce', 'ounces'].includes(item.unit.toLowerCase());
+    
     return {
       name: item.name,
       quantity: item.quantity,
       unit: item.unit,
       price: item.price !== null ? item.price : undefined,
+      pricePerUnit: item.pricePerUnit || undefined,
+      isWeightBased: isWeightBased,
       expiryDate: item.expiryDate,
       locationId,
       userId,
@@ -308,9 +334,11 @@ export async function extractReceiptDetails(filePath: string): Promise<ReceiptDe
             "totalAmount": Total amount in cents (numeric),
             "vatBreakdown": [
               { "rate": VAT rate as a number (e.g., 5 for 5%), "amount": amount in cents }
-            ]
+            ],
+            "language": "The language of the receipt (e.g., English, French, German, etc.)"
           }
           All fields are optional but provide as many as you can identify.
+          For the language field, detect what language the receipt text is in.
           Response should be valid JSON only, no explanations or text.`
         },
         {
@@ -379,6 +407,11 @@ export async function extractReceiptDetails(filePath: string): Promise<ReceiptDe
           console.error("Error formatting date:", error);
           // Keep the original date string if formatting fails
         }
+      }
+      
+      // Default language to English if not detected
+      if (!receiptDetails.language) {
+        receiptDetails.language = "English";
       }
       
       return receiptDetails;
