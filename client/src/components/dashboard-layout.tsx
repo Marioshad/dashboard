@@ -46,7 +46,9 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="dashboard-layout">
-      <Navbar />
+      <div className="navbar-container">
+        <Navbar />
+      </div>
       
       {/* Sidebar */}
       <aside className="fruity-sidebar-gradient">
