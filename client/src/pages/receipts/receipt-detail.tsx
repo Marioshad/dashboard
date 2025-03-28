@@ -33,11 +33,25 @@ export function ReceiptDetailPage() {
   
   const { data: receipt, isLoading, error } = useQuery<ReceiptType>({
     queryKey: ['/api/receipts', id],
+    queryFn: async () => {
+      const response = await fetch(`/api/receipts/${id}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch receipt details');
+      }
+      return response.json();
+    },
     enabled: !!id
   });
 
   const { data: foodItems = [] } = useQuery<any[]>({
     queryKey: ['/api/receipts', id, 'items'],
+    queryFn: async () => {
+      const response = await fetch(`/api/receipts/${id}/items`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch receipt items');
+      }
+      return response.json();
+    },
     enabled: !!id
   });
 
@@ -124,8 +138,10 @@ export function ReceiptDetailPage() {
                     </div>
                     <div className="font-medium">
                       {receiptDetails.date ? receiptDetails.date : 
-                        (receipt.receiptDate ? format(new Date(receipt.receiptDate), 'PPP') : 
-                          (receipt.uploadDate ? format(new Date(receipt.uploadDate), 'PPP') : 
+                        (receipt.receiptDate ? 
+                          (typeof receipt.receiptDate === 'string' ? format(new Date(receipt.receiptDate), 'PPP') : 'N/A') : 
+                          (receipt.uploadDate ? 
+                            (typeof receipt.uploadDate === 'string' ? format(new Date(receipt.uploadDate), 'PPP') : 'N/A') : 
                             format(new Date(receipt.createdAt), 'PPP')))}
                     </div>
                   </div>
@@ -136,7 +152,9 @@ export function ReceiptDetailPage() {
                     </div>
                     <div className="font-medium">
                       {receiptDetails.time || 
-                        (receipt.receiptDate ? format(new Date(receipt.receiptDate), 'p') : 'N/A')}
+                        (receipt.receiptDate && typeof receipt.receiptDate === 'string' 
+                          ? format(new Date(receipt.receiptDate), 'p') 
+                          : 'N/A')}
                     </div>
                   </div>
 
@@ -257,7 +275,7 @@ export function ReceiptDetailPage() {
                       {item.expiryDate && (
                         <div className="mt-1">
                           <Badge variant="outline" className="text-xs">
-                            Expires: {format(new Date(item.expiryDate), 'PPP')}
+                            Expires: {typeof item.expiryDate === 'string' ? format(new Date(item.expiryDate), 'PPP') : 'Unknown'}
                           </Badge>
                         </div>
                       )}
