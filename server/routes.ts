@@ -1159,6 +1159,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         receiptNumber: receiptDetails.receiptNumber,
         totalAmount: receiptDetails.totalAmount,
         paymentMethod: receiptDetails.paymentMethod,
+        language: receiptDetails.language,
         extractedData: errorMessage ? undefined : {
           store: extractedStore,
           receiptDetails: receiptDetails

@@ -383,6 +383,12 @@ export function ReceiptUpload({ onSuccess }: ReceiptUploadProps = {}) {
                 {/* Receipt Details */}
                 {receiptDetails && (
                   <div className="space-y-1 ml-auto text-right">
+                    {receiptDetails.language && (
+                      <div className="flex items-center justify-end gap-1 font-medium text-primary mb-1">
+                        <span>Language: {receiptDetails.language}</span>
+                      </div>
+                    )}
+                    
                     {receiptDetails.receiptNumber && (
                       <div className="flex items-center justify-end gap-1">
                         <Receipt className="h-3 w-3" />
