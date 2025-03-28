@@ -143,16 +143,17 @@ export default function StoreDetailsPage() {
 
   // Delete store
   const deleteStoreMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       if (!storeId) throw new Error("Store ID is required");
-      return apiRequest(`/api/stores/${storeId}`, {
+      const response = await apiRequest(`/api/stores/${storeId}`, {
         method: "DELETE",
       });
+      return response;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast({
         title: "Store deleted",
-        description: "The store has been deleted successfully.",
+        description: data.message || "The store has been deleted successfully.",
       });
       queryClient.invalidateQueries({ queryKey: ["/api/stores"] });
       navigate('/stores');

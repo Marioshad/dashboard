@@ -1063,7 +1063,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       await storage.deleteStore(store.id);
-      res.sendStatus(204);
+      res.status(200).json({ success: true, message: "Store deleted successfully" });
     } catch (error) {
       next(error);
     }
