@@ -1084,13 +1084,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       try {
         // Dynamically import OpenAI service
-        const { processReceiptImage, extractStoreFromReceipt, convertToStore } = await import('./services/openai');
+        const { 
+          processReceiptImage, 
+          extractStoreFromReceipt, 
+          extractReceiptDetails, 
+          convertToStore 
+        } = await import('./services/openai');
         
         // Process the receipt image with OpenAI OCR to extract items
         const extractedItems = await processReceiptImage(fullFilePath);
         
         // Extract store information from the receipt
         const extractedStore = await extractStoreFromReceipt(fullFilePath);
+        
+        // Extract receipt transaction details
+        const receiptDetails = await extractReceiptDetails(fullFilePath);
         
         // Check if store already exists
         let storeId: number | undefined = undefined;
@@ -1123,12 +1131,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }
         
-        // Return a successful response with the receipt URL, extracted items and store info
+        // Update the purchased date for food items if receipt date is available
+        const purchaseDate = receiptDetails.date;
+        if (purchaseDate) {
+          for (const item of extractedItems) {
+            // Cast item to enable dynamic property access
+            (item as any).purchaseDate = purchaseDate;
+          }
+        }
+        
+        // Return a successful response with the receipt URL, extracted items, store info, and receipt details
         res.json({ 
           receiptUrl,
           message: "Receipt processed successfully with OpenAI OCR.",
           items: extractedItems,
-          store: storeData
+          store: storeData,
+          receiptDetails
         });
       } catch (ocrError: any) {
         console.error("OCR processing error:", ocrError);
@@ -1138,6 +1156,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           message: `Receipt uploaded successfully but OCR processing failed: ${ocrError.message}`,
           items: [],
           store: null,
+          receiptDetails: {},
           error: ocrError.message
         });
       }
