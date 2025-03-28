@@ -179,12 +179,31 @@ export function Navbar() {
                   notifications?.map((notification) => {
                     const isStoreNotification = notification.type === 'store_created';
                     
-                    // Extract store name from notification message when it's a store notification
+                    // Extract store name and metadata from notification message when it's a store notification
                     let storeName = null;
+                    let storeId = null;
+                    
                     if (isStoreNotification) {
-                      const match = notification.message.match(/"([^"]+)"/);
+                      // Check if the message contains metadata
+                      const messageParts = notification.message.split('|');
+                      const displayMessage = messageParts[0]; // The actual message part
+                      
+                      // Extract store name from the display message
+                      const match = displayMessage.match(/"([^"]+)"/);
                       if (match && match[1]) {
                         storeName = match[1];
+                      }
+                      
+                      // If we have metadata in JSON format
+                      if (messageParts.length > 1) {
+                        try {
+                          const metadata = JSON.parse(messageParts[1]);
+                          if (metadata.storeId) {
+                            storeId = metadata.storeId;
+                          }
+                        } catch (error) {
+                          console.error('Failed to parse notification metadata:', error);
+                        }
                       }
                     }
                     
@@ -193,8 +212,12 @@ export function Navbar() {
                         // Mark notification as read
                         markAsReadMutation.mutate();
                         
-                        // Navigate to stores page
-                        navigate('/stores');
+                        // Navigate to stores page with ID parameter which will trigger edit dialog
+                        if (storeId) {
+                          navigate(`/stores/${storeId}`);
+                        } else {
+                          navigate('/stores');
+                        }
                         
                         // Close dropdown by clicking outside
                         document.body.click();
@@ -223,10 +246,13 @@ export function Navbar() {
                         <div className="text-sm text-gray-600 pl-4">
                           {isStoreNotification ? (
                             <div className="flex flex-col">
-                              <span>{notification.message}</span>
+                              <span>
+                                {/* Display only the message part without metadata */}
+                                {notification.message.split('|')[0]}
+                              </span>
                               {!notification.read && (
                                 <div className="mt-1 flex items-center text-xs text-primary font-medium">
-                                  <span className="inline-block mr-1">→</span> Click to view store details
+                                  <span className="inline-block mr-1">→</span> Click to edit store details
                                 </div>
                               )}
                             </div>

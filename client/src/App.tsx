@@ -41,6 +41,7 @@ function Router() {
       <ProtectedRoute path="/receipts" component={ReceiptsPage} />
       <ProtectedRoute path="/expiry-tracker" component={ExpiryTrackerPage} />
       <ProtectedRoute path="/stores" component={StoresPage} />
+      <ProtectedRoute path="/stores/:storeId" component={StoresPage} />
       <Route path="/auth" component={AuthPage} />
       <Route component={NotFound} />
     </Switch>

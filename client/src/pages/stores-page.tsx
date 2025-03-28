@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useParams } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { Button } from "@/components/ui/button";
@@ -111,6 +112,8 @@ export default function StoresPage() {
   const [currentStore, setCurrentStore] = useState<Store | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const params = useParams();
+  const storeIdFromUrl = params.storeId ? parseInt(params.storeId) : null;
 
   // Fetch all stores
   const storesQuery = useQuery({
@@ -279,6 +282,25 @@ export default function StoresPage() {
     setIsViewDialogOpen(false);
     setCurrentStore(null);
   }
+
+  // Effect to handle opening the edit dialog when a store ID is provided in the URL
+  useEffect(() => {
+    if (storeIdFromUrl && storesQuery.data) {
+      const stores = storesQuery.data as Store[];
+      const storeToEdit = stores.find(store => store.id === storeIdFromUrl);
+      
+      if (storeToEdit) {
+        openEditDialog(storeToEdit);
+      } else {
+        // If store ID is invalid, show a toast message
+        toast({
+          title: "Store not found",
+          description: `Could not find a store with ID ${storeIdFromUrl}`,
+          variant: "destructive",
+        });
+      }
+    }
+  }, [storeIdFromUrl, storesQuery.data]);
 
   const stores = storesQuery.data as Store[] || [];
 
