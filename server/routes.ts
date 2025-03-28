@@ -64,16 +64,24 @@ const upload = multer({
 // Store WebSocket clients
 const clients = new Map<number, WsWebSocket>();
 
-async function sendNotification(userId: number, type: string, message: string, actorId?: number) {
+async function sendNotification(userId: number, type: string, message: string, actorId?: number, metadata?: any) {
   try {
+    // Create a notification object with the metadata included in the message
+    const notificationData = {
+      userId,
+      type,
+      message,
+      actorId
+    };
+    
+    // If metadata is provided, convert it to JSON string and attach to message
+    if (metadata) {
+      notificationData.message = `${message}|${JSON.stringify(metadata)}`;
+    }
+    
     const [notification] = await db
       .insert(notifications)
-      .values({
-        userId,
-        type,
-        message,
-        actorId
-      })
+      .values(notificationData)
       .returning();
 
     const ws = clients.get(userId);
@@ -1006,7 +1014,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await sendNotification(
         req.user.id,
         'store_created',
-        `New store "${newStore.name}" added to your account.`
+        `New store "${newStore.name}" added to your account.`,
+        undefined,  // No actor ID
+        { storeId: newStore.id }
       );
 
       res.status(201).json(newStore);
@@ -1126,7 +1136,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             await sendNotification(
               req.user.id,
               'store_created',
-              `New store "${newStore.name}" detected from your receipt.`
+              `New store "${newStore.name}" detected from your receipt.`,
+              undefined, // No actor ID
+              { storeId: newStore.id }
             );
           }
         }
@@ -1233,4 +1245,4 @@ export async function registerRoutes(app: Express): Promise<Server> {
   return httpServer;
 }
 
-export type SendNotificationFn = (userId: number, type: string, message: string, actorId?: number) => Promise<any>;
+export type SendNotificationFn = (userId: number, type: string, message: string, actorId?: number, metadata?: any) => Promise<any>;
