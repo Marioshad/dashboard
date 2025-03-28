@@ -1082,96 +1082,199 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const receiptUrl = `/uploads/${req.file.filename}`;
       const fullFilePath = path.join(uploadsDir, req.file.filename);
       
-      // Return immediately with the receipt URL if OpenAI API key is not configured
-      if (!process.env.OPENAI_API_KEY) {
-        return res.json({ 
-          receiptUrl,
-          message: "Receipt uploaded successfully but OCR processing is disabled (no OpenAI API key).",
-          items: [],
-          store: null
-        });
+      let extractedItems: any[] = [];
+      let extractedStore: any = null;
+      let receiptDetails: any = {};
+      let storeId: number | undefined = undefined;
+      let storeData = null;
+      let errorMessage: string | null = null;
+      
+      // Try to process with OpenAI if API key is configured
+      if (process.env.OPENAI_API_KEY) {
+        try {
+          // Dynamically import OpenAI service
+          const { 
+            processReceiptImage, 
+            extractStoreFromReceipt, 
+            extractReceiptDetails, 
+            convertToStore 
+          } = await import('./services/openai');
+          
+          // Process the receipt image with OpenAI OCR to extract items
+          extractedItems = await processReceiptImage(fullFilePath);
+          
+          // Extract store information from the receipt
+          extractedStore = await extractStoreFromReceipt(fullFilePath);
+          
+          // Extract receipt transaction details
+          receiptDetails = await extractReceiptDetails(fullFilePath);
+          
+          // Check if store already exists
+          if (extractedStore.name !== "Unknown Store") {
+            const existingStore = await storage.findStoreByNameAndLocation(
+              extractedStore.name,
+              extractedStore.location,
+              req.user.id
+            );
+            
+            if (existingStore) {
+              // Use existing store
+              storeId = existingStore.id;
+              storeData = existingStore;
+            } else {
+              // Create new store
+              const storeToCreate = convertToStore(extractedStore, req.user.id);
+              const newStore = await storage.createStore(storeToCreate);
+              storeId = newStore.id;
+              storeData = newStore;
+              
+              // Send notification about the new store
+              await sendNotification(
+                req.user.id,
+                'store_created',
+                `New store "${newStore.name}" detected from your receipt.`,
+                undefined, // No actor ID
+                { storeId: newStore.id }
+              );
+            }
+          }
+        } catch (ocrError: any) {
+          console.error("OCR processing error:", ocrError);
+          errorMessage = ocrError.message;
+        }
+      } else {
+        errorMessage = "OCR processing is disabled (no OpenAI API key)";
+      }
+
+      // Save receipt to database regardless of OCR success
+      const receipt = await storage.createReceipt({
+        userId: req.user.id,
+        storeId: storeId,
+        filePath: receiptUrl,
+        fileName: req.file.originalname,
+        fileSize: req.file.size,
+        mimeType: req.file.mimetype,
+        uploadDate: new Date(),
+        receiptDate: receiptDetails.date ? new Date(receiptDetails.date) : undefined,
+        receiptNumber: receiptDetails.receiptNumber,
+        totalAmount: receiptDetails.totalAmount,
+        paymentMethod: receiptDetails.paymentMethod,
+        extractedData: errorMessage ? undefined : {
+          store: extractedStore,
+          receiptDetails: receiptDetails
+        }
+      });
+      
+      // Return response with receipt ID and extracted data
+      res.json({ 
+        receiptId: receipt.id,
+        receiptUrl,
+        message: errorMessage 
+          ? `Receipt uploaded successfully but OCR processing failed: ${errorMessage}`
+          : "Receipt processed successfully with OpenAI OCR.",
+        items: extractedItems,
+        store: storeData,
+        receiptDetails,
+        error: errorMessage
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+  
+  // Receipt API endpoints
+  app.get('/api/receipts', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
       }
       
-      try {
-        // Dynamically import OpenAI service
-        const { 
-          processReceiptImage, 
-          extractStoreFromReceipt, 
-          extractReceiptDetails, 
-          convertToStore 
-        } = await import('./services/openai');
-        
-        // Process the receipt image with OpenAI OCR to extract items
-        const extractedItems = await processReceiptImage(fullFilePath);
-        
-        // Extract store information from the receipt
-        const extractedStore = await extractStoreFromReceipt(fullFilePath);
-        
-        // Extract receipt transaction details
-        const receiptDetails = await extractReceiptDetails(fullFilePath);
-        
-        // Check if store already exists
-        let storeId: number | undefined = undefined;
-        let storeData = null;
-        
-        if (extractedStore.name !== "Unknown Store") {
-          const existingStore = await storage.findStoreByNameAndLocation(
-            extractedStore.name,
-            extractedStore.location,
-            req.user.id
-          );
-          
-          if (existingStore) {
-            // Use existing store
-            storeId = existingStore.id;
-            storeData = existingStore;
-          } else {
-            // Create new store
-            const storeToCreate = convertToStore(extractedStore, req.user.id);
-            const newStore = await storage.createStore(storeToCreate);
-            storeId = newStore.id;
-            storeData = newStore;
-            
-            // Send notification about the new store
-            await sendNotification(
-              req.user.id,
-              'store_created',
-              `New store "${newStore.name}" detected from your receipt.`,
-              undefined, // No actor ID
-              { storeId: newStore.id }
-            );
-          }
-        }
-        
-        // Update the purchased date for food items if receipt date is available
-        const purchaseDate = receiptDetails.date;
-        if (purchaseDate) {
-          for (const item of extractedItems) {
-            // Cast item to enable dynamic property access
-            (item as any).purchaseDate = purchaseDate;
-          }
-        }
-        
-        // Return a successful response with the receipt URL, extracted items, store info, and receipt details
-        res.json({ 
-          receiptUrl,
-          message: "Receipt processed successfully with OpenAI OCR.",
-          items: extractedItems,
-          store: storeData,
-          receiptDetails
-        });
-      } catch (ocrError: any) {
-        console.error("OCR processing error:", ocrError);
-        // Still return success with the receipt URL but indicate OCR failed
-        res.json({ 
-          receiptUrl,
-          message: `Receipt uploaded successfully but OCR processing failed: ${ocrError.message}`,
-          items: [],
-          store: null,
-          receiptDetails: {},
-          error: ocrError.message
-        });
+      const receipts = await storage.getReceipts(req.user.id);
+      res.json(receipts);
+    } catch (error) {
+      next(error);
+    }
+  });
+  
+  app.get('/api/receipts/:id', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
       }
+      
+      const receiptId = parseInt(req.params.id);
+      if (isNaN(receiptId)) {
+        return res.status(400).json({ message: "Invalid receipt ID" });
+      }
+      
+      const receipt = await storage.getReceipt(receiptId);
+      if (!receipt) {
+        return res.status(404).json({ message: "Receipt not found" });
+      }
+      
+      // Verify ownership
+      if (receipt.userId !== req.user.id) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
+      res.json(receipt);
+    } catch (error) {
+      next(error);
+    }
+  });
+  
+  app.delete('/api/receipts/:id', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      const receiptId = parseInt(req.params.id);
+      if (isNaN(receiptId)) {
+        return res.status(400).json({ message: "Invalid receipt ID" });
+      }
+      
+      const receipt = await storage.getReceipt(receiptId);
+      if (!receipt) {
+        return res.status(404).json({ message: "Receipt not found" });
+      }
+      
+      // Verify ownership
+      if (receipt.userId !== req.user.id) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
+      // Delete the receipt
+      await storage.deleteReceipt(receiptId);
+      
+      res.status(200).json({ message: "Receipt deleted successfully" });
+    } catch (error) {
+      next(error);
+    }
+  });
+  
+  app.get('/api/foodItems', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      const receiptId = req.query.receiptId ? parseInt(req.query.receiptId as string) : undefined;
+      
+      if (receiptId) {
+        // First verify receipt ownership
+        const receipt = await storage.getReceipt(receiptId);
+        if (!receipt || receipt.userId !== req.user.id) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+        
+        const items = await storage.getFoodItemsByReceiptId(receiptId);
+        return res.json(items);
+      }
+      
+      const locationId = req.query.locationId ? parseInt(req.query.locationId as string) : undefined;
+      const items = await storage.getFoodItems(req.user.id, locationId);
+      res.json(items);
     } catch (error) {
       next(error);
     }
