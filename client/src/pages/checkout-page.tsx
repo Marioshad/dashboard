@@ -126,11 +126,33 @@ export default function CheckoutPage() {
       });
       setLocation('/subscribe');
     }, []);
-    return null;
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <Card className="w-full max-w-lg">
+          <CardHeader>
+            <CardTitle>Payment Service Unavailable</CardTitle>
+            <CardDescription>
+              The payment service is currently unavailable. Redirecting...
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+    );
   }
 
   if (!clientSecret || clientSecret === 'undefined') {
-    return null;
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <Card className="w-full max-w-lg">
+          <CardHeader>
+            <CardTitle>Missing Payment Information</CardTitle>
+            <CardDescription>
+              Missing payment information. Redirecting to plans page...
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+    );
   }
 
   return (

@@ -15,6 +15,7 @@ import {
   CalendarClock,
   LineChart,
   Receipt,
+  Building,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import {
@@ -111,7 +112,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               <CollapsibleTrigger asChild>
                 <div className={cn(
                   "nav-link cursor-pointer",
-                  ["/inventory", "/locations", "/shopping-list", "/receipts", "/expiry-tracker", "/analytics"].includes(location) && "active"
+                  ["/inventory", "/locations", "/shopping-list", "/receipts", "/expiry-tracker", "/analytics", "/stores"].includes(location) && "active"
                 )}>
                   <span className="flex items-center">
                     <Apple className="nav-link-icon" />
@@ -167,6 +168,15 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                   )}>
                     <CalendarClock className="nav-link-icon" />
                     Expiry Dates
+                  </div>
+                </Link>
+                <Link href="/stores">
+                  <div className={cn(
+                    "nav-link",
+                    location === "/stores" && "active"
+                  )}>
+                    <Building className="nav-link-icon" />
+                    Stores
                   </div>
                 </Link>
                 <Link href="/analytics">

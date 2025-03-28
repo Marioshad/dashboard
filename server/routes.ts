@@ -10,8 +10,8 @@ import express from 'express';
 import { db } from "./db";
 import { 
   roles, permissions, rolePermissions, users, appSettings, notifications,
-  locations, foodItems, insertLocationSchema, updateLocationSchema,
-  insertFoodItemSchema, updateFoodItemSchema
+  locations, foodItems, stores, insertLocationSchema, updateLocationSchema,
+  insertFoodItemSchema, updateFoodItemSchema, insertStoreSchema, updateStoreSchema
 } from "@shared/schema";
 import { eq, and, isNull, sql, desc } from "drizzle-orm";
 import Stripe from "stripe";
@@ -953,6 +953,112 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Receipt upload endpoint
+  // Store endpoints
+  app.get('/api/stores', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      const storesList = await storage.getStores(req.user.id);
+      res.json(storesList);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/api/stores/:id', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      const store = await storage.getStore(parseInt(req.params.id));
+      if (!store || store.userId !== req.user.id) {
+        return res.status(404).json({ message: "Store not found" });
+      }
+
+      res.json(store);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/stores', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      const result = insertStoreSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ 
+          message: "Invalid store data", 
+          errors: result.error.format() 
+        });
+      }
+
+      const newStore = await storage.createStore({
+        ...result.data,
+        userId: req.user.id
+      });
+
+      await sendNotification(
+        req.user.id,
+        'store_created',
+        `New store "${newStore.name}" added to your account.`
+      );
+
+      res.status(201).json(newStore);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch('/api/stores/:id', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      const store = await storage.getStore(parseInt(req.params.id));
+      if (!store || store.userId !== req.user.id) {
+        return res.status(404).json({ message: "Store not found" });
+      }
+
+      const result = updateStoreSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ 
+          message: "Invalid store data", 
+          errors: result.error.format() 
+        });
+      }
+
+      const updatedStore = await storage.updateStore(store.id, result.data);
+      res.json(updatedStore);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete('/api/stores/:id', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      const store = await storage.getStore(parseInt(req.params.id));
+      if (!store || store.userId !== req.user.id) {
+        return res.status(404).json({ message: "Store not found" });
+      }
+
+      await storage.deleteStore(store.id);
+      res.sendStatus(204);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.post('/api/receipts/upload', upload.single('receipt'), async (req: MulterRequest, res, next) => {
     try {
       if (!req.isAuthenticated()) {
@@ -971,22 +1077,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json({ 
           receiptUrl,
           message: "Receipt uploaded successfully but OCR processing is disabled (no OpenAI API key).",
-          items: []
+          items: [],
+          store: null
         });
       }
       
       try {
         // Dynamically import OpenAI service
-        const { processReceiptImage } = await import('./services/openai');
+        const { processReceiptImage, extractStoreFromReceipt, convertToStore } = await import('./services/openai');
         
-        // Process the receipt image with OpenAI OCR
+        // Process the receipt image with OpenAI OCR to extract items
         const extractedItems = await processReceiptImage(fullFilePath);
         
-        // Return a successful response with the receipt URL and extracted items
+        // Extract store information from the receipt
+        const extractedStore = await extractStoreFromReceipt(fullFilePath);
+        
+        // Check if store already exists
+        let storeId: number | undefined = undefined;
+        let storeData = null;
+        
+        if (extractedStore.name !== "Unknown Store") {
+          const existingStore = await storage.findStoreByNameAndLocation(
+            extractedStore.name,
+            extractedStore.location,
+            req.user.id
+          );
+          
+          if (existingStore) {
+            // Use existing store
+            storeId = existingStore.id;
+            storeData = existingStore;
+          } else {
+            // Create new store
+            const storeToCreate = convertToStore(extractedStore, req.user.id);
+            const newStore = await storage.createStore(storeToCreate);
+            storeId = newStore.id;
+            storeData = newStore;
+            
+            // Send notification about the new store
+            await sendNotification(
+              req.user.id,
+              'store_created',
+              `New store "${newStore.name}" detected from your receipt.`
+            );
+          }
+        }
+        
+        // Return a successful response with the receipt URL, extracted items and store info
         res.json({ 
           receiptUrl,
           message: "Receipt processed successfully with OpenAI OCR.",
-          items: extractedItems
+          items: extractedItems,
+          store: storeData
         });
       } catch (ocrError: any) {
         console.error("OCR processing error:", ocrError);
@@ -995,6 +1137,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           receiptUrl,
           message: `Receipt uploaded successfully but OCR processing failed: ${ocrError.message}`,
           items: [],
+          store: null,
           error: ocrError.message
         });
       }
