@@ -405,6 +405,18 @@ export default function InventoryPage() {
             <DialogDescription>
               Add a new item to your food inventory
             </DialogDescription>
+            <div className="mt-2 text-xs text-muted-foreground bg-muted/30 p-3 rounded-md">
+              <p className="font-medium mb-1">Expiration dates are calculated based on food type:</p>
+              <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5 list-disc list-inside">
+                <li>Fresh produce: 5-7 days</li>
+                <li>Fruits: 10-14 days</li>
+                <li>Dairy: 10-14 days</li>
+                <li>Meat/Fish: 3-5 days (fresh)</li>
+                <li>Meat/Fish: 3-6 months (frozen)</li>
+                <li>Bread: 4-7 days</li>
+                <li>Dry goods: 1 year</li>
+              </ul>
+            </div>
           </DialogHeader>
           
           <div className="grid gap-4 py-4">
@@ -544,6 +556,18 @@ export default function InventoryPage() {
               <DialogDescription>
                 Update the details of your food item
               </DialogDescription>
+              <div className="mt-2 text-xs text-muted-foreground bg-muted/30 p-3 rounded-md">
+                <p className="font-medium mb-1">Expiration dates are calculated based on food type:</p>
+                <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5 list-disc list-inside">
+                  <li>Fresh produce: 5-7 days</li>
+                  <li>Fruits: 10-14 days</li>
+                  <li>Dairy: 10-14 days</li>
+                  <li>Meat/Fish: 3-5 days (fresh)</li>
+                  <li>Meat/Fish: 3-6 months (frozen)</li>
+                  <li>Bread: 4-7 days</li>
+                  <li>Dry goods: 1 year</li>
+                </ul>
+              </div>
             </DialogHeader>
             
             <div className="grid gap-4 py-4">
