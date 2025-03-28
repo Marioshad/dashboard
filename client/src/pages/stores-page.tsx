@@ -51,7 +51,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Building, Package2, Plus, RefreshCw, PenSquare, Trash2 } from "lucide-react";
+import { Building, Package2, Plus, RefreshCw, PenSquare, Trash2, Eye, EyeIcon, Info } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -107,6 +107,7 @@ type StoreFormValues = z.infer<typeof storeFormSchema>;
 export default function StoresPage() {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [currentStore, setCurrentStore] = useState<Store | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -267,6 +268,16 @@ export default function StoresPage() {
 
   function handleDelete(storeId: number) {
     deleteStoreMutation.mutate(storeId);
+  }
+  
+  function openViewDialog(store: Store) {
+    setCurrentStore(store);
+    setIsViewDialogOpen(true);
+  }
+  
+  function handleViewDialogClose() {
+    setIsViewDialogOpen(false);
+    setCurrentStore(null);
   }
 
   const stores = storesQuery.data as Store[] || [];
@@ -475,6 +486,15 @@ export default function StoresPage() {
                             <Button
                               variant="ghost"
                               size="icon"
+                              onClick={() => openViewDialog(store)}
+                              className="text-blue-500"
+                            >
+                              <EyeIcon className="h-4 w-4" />
+                              <span className="sr-only">View</span>
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
                               onClick={() => openEditDialog(store)}
                             >
                               <PenSquare className="h-4 w-4" />
@@ -497,8 +517,8 @@ export default function StoresPage() {
                                 <AlertDialogFooter>
                                   <AlertDialogCancel>Cancel</AlertDialogCancel>
                                   <AlertDialogAction
-                                    variant="destructive"
                                     onClick={() => handleDelete(store.id)}
+                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                                   >
                                     Delete
                                   </AlertDialogAction>
@@ -629,6 +649,105 @@ export default function StoresPage() {
               </div>
             </form>
           </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Store Dialog */}
+      <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center space-x-2">
+              <Building className="h-5 w-5" />
+              <span>{currentStore?.name}</span>
+            </DialogTitle>
+            <DialogDescription>
+              Store details and information
+            </DialogDescription>
+          </DialogHeader>
+          
+          {currentStore && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <h3 className="text-sm font-medium text-muted-foreground">Store Name</h3>
+                  <p className="font-medium">{currentStore.name}</p>
+                </div>
+                
+                <div className="space-y-2">
+                  <h3 className="text-sm font-medium text-muted-foreground">Location</h3>
+                  <p>{currentStore.location}</p>
+                </div>
+              </div>
+
+              <Separator />
+              
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <h3 className="text-sm font-medium text-muted-foreground">Contact Information</h3>
+                  {currentStore.phone ? (
+                    <p>Phone: {currentStore.phone}</p>
+                  ) : (
+                    <p className="text-muted-foreground italic text-sm">No phone number</p>
+                  )}
+                  
+                  {currentStore.fax ? (
+                    <p>Fax: {currentStore.fax}</p>
+                  ) : (
+                    <p className="text-muted-foreground italic text-sm">No fax number</p>
+                  )}
+                </div>
+                
+                <div className="space-y-2">
+                  <h3 className="text-sm font-medium text-muted-foreground">Tax Information</h3>
+                  {currentStore.vatNumber ? (
+                    <p>VAT Number: {currentStore.vatNumber}</p>
+                  ) : (
+                    <p className="text-muted-foreground italic text-sm">No VAT number</p>
+                  )}
+                  
+                  {currentStore.taxId ? (
+                    <p>Tax ID: {currentStore.taxId}</p>
+                  ) : (
+                    <p className="text-muted-foreground italic text-sm">No tax ID</p>
+                  )}
+                </div>
+              </div>
+
+              <Separator />
+              
+              <div className="space-y-2">
+                <h3 className="text-sm font-medium text-muted-foreground">Store History</h3>
+                <div className="flex items-center space-x-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Added on</p>
+                    <p>{format(new Date(currentStore.createdAt), "MMMM d, yyyy 'at' h:mm a")}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Last updated</p>
+                    <p>{format(new Date(currentStore.updatedAt), "MMMM d, yyyy 'at' h:mm a")}</p>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex justify-end gap-2 mt-6">
+                <Button 
+                  variant="outline" 
+                  onClick={handleViewDialogClose}
+                >
+                  Close
+                </Button>
+                <Button 
+                  onClick={() => {
+                    handleViewDialogClose();
+                    openEditDialog(currentStore);
+                  }}
+                >
+                  <PenSquare className="h-4 w-4 mr-2" />
+                  Edit Store
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </DashboardLayout>
