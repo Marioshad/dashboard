@@ -1,9 +1,10 @@
 import { 
-  users, locations, foodItems, stores, 
+  users, locations, foodItems, stores, receipts,
   type User, type InsertUser, type UpdateProfile,
   type Location, type InsertLocation, type UpdateLocation,
   type Store, type InsertStore, type UpdateStore,
-  type FoodItem, type InsertFoodItem, type UpdateFoodItem 
+  type FoodItem, type InsertFoodItem, type UpdateFoodItem,
+  type Receipt, type InsertReceipt, type UpdateReceipt
 } from "@shared/schema";
 import { db, pool } from "./db";
 import session from "express-session";
@@ -41,6 +42,14 @@ export interface IStorage {
   getFoodItem(id: number): Promise<FoodItem | undefined>;
   updateFoodItem(id: number, item: UpdateFoodItem): Promise<FoodItem>;
   deleteFoodItem(id: number): Promise<void>;
+  
+  // Receipt methods
+  createReceipt(receipt: InsertReceipt & { userId: number }): Promise<Receipt>;
+  getReceipts(userId: number): Promise<Receipt[]>;
+  getReceipt(id: number): Promise<Receipt | undefined>;
+  updateReceipt(id: number, receipt: UpdateReceipt): Promise<Receipt>;
+  deleteReceipt(id: number): Promise<void>;
+  getFoodItemsByReceiptId(receiptId: number): Promise<FoodItem[]>;
   
   sessionStore: session.Store;
 }
@@ -419,6 +428,122 @@ export class DatabaseStorage implements IStorage {
         .where(eq(foodItems.id, id));
     } catch (error) {
       console.error('Error deleting food item:', error);
+      throw error;
+    }
+  }
+
+  // Receipt methods
+  async createReceipt(receipt: InsertReceipt & { userId: number, uploadDate?: Date, receiptDate?: Date, paymentMethod?: string, extractedData?: any }): Promise<Receipt> {
+    try {
+      const values: any = {
+        userId: receipt.userId,
+        filePath: receipt.filePath,
+        fileName: receipt.fileName,
+        fileSize: receipt.fileSize,
+        mimeType: receipt.mimeType
+      };
+      
+      if (receipt.storeId) values.storeId = receipt.storeId;
+      if (receipt.totalAmount) values.totalAmount = String(receipt.totalAmount);
+      if (receipt.receiptNumber) values.receiptNumber = receipt.receiptNumber;
+      if (receipt.uploadDate) values.uploadDate = receipt.uploadDate;
+      if (receipt.receiptDate) values.receiptDate = receipt.receiptDate;
+      if (receipt.paymentMethod) values.paymentMethod = receipt.paymentMethod;
+      if (receipt.extractedData) values.extractedData = receipt.extractedData;
+      
+      if (!values.uploadDate) {
+        values.uploadDate = new Date();
+      }
+      
+      const [result] = await db
+        .insert(receipts)
+        .values(values)
+        .returning();
+      
+      return result;
+    } catch (error) {
+      console.error('Error creating receipt:', error);
+      throw error;
+    }
+  }
+
+  async getReceipts(userId: number): Promise<Receipt[]> {
+    try {
+      return await db
+        .select()
+        .from(receipts)
+        .where(eq(receipts.userId, userId))
+        .orderBy(sql`receipts.upload_date DESC`);
+    } catch (error) {
+      console.error('Error getting receipts:', error);
+      throw error;
+    }
+  }
+
+  async getReceipt(id: number): Promise<Receipt | undefined> {
+    try {
+      const result = await db
+        .select()
+        .from(receipts)
+        .where(eq(receipts.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error('Error getting receipt:', error);
+      throw error;
+    }
+  }
+
+  async updateReceipt(id: number, receipt: UpdateReceipt): Promise<Receipt> {
+    try {
+      const values: any = {};
+      
+      if (receipt.filePath) values.filePath = receipt.filePath;
+      if (receipt.fileName) values.fileName = receipt.fileName;
+      if (receipt.fileSize) values.fileSize = receipt.fileSize;
+      if (receipt.mimeType) values.mimeType = receipt.mimeType;
+      if (receipt.storeId) values.storeId = receipt.storeId;
+      if (receipt.totalAmount !== undefined) values.totalAmount = String(receipt.totalAmount);
+      if (receipt.receiptNumber) values.receiptNumber = receipt.receiptNumber;
+      
+      const [result] = await db
+        .update(receipts)
+        .set({
+          ...values,
+          updatedAt: new Date()
+        })
+        .where(eq(receipts.id, id))
+        .returning();
+      
+      return result;
+    } catch (error) {
+      console.error('Error updating receipt:', error);
+      throw error;
+    }
+  }
+
+  async deleteReceipt(id: number): Promise<void> {
+    try {
+      await db
+        .delete(receipts)
+        .where(eq(receipts.id, id));
+    } catch (error) {
+      console.error('Error deleting receipt:', error);
+      throw error;
+    }
+  }
+
+  async getFoodItemsByReceiptId(receiptId: number): Promise<FoodItem[]> {
+    try {
+      const result = await db
+        .select()
+        .from(foodItems)
+        .where(eq(foodItems.receiptId, receiptId))
+        .orderBy(foodItems.name);
+      
+      return result;
+    } catch (error) {
+      console.error('Error getting food items by receipt ID:', error);
       throw error;
     }
   }

@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, date, decimal, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, date, decimal, uniqueIndex, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -117,6 +117,24 @@ export const stores = pgTable("stores", {
   }
 });
 
+// Receipts table for storing uploaded receipts
+export const receipts = pgTable("receipts", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  storeId: integer("store_id").references(() => stores.id),
+  filePath: text("file_path").notNull(),
+  fileName: text("file_name").notNull(),
+  fileSize: integer("file_size").notNull(),
+  mimeType: text("mime_type").notNull(),
+  uploadDate: timestamp("upload_date").defaultNow().notNull(),
+  extractedData: jsonb("extracted_data"),
+  totalAmount: decimal("total_amount", { precision: 10, scale: 2 }),
+  receiptDate: timestamp("receipt_date"),
+  receiptNumber: text("receipt_number"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const foodItems = pgTable("food_items", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
@@ -124,6 +142,7 @@ export const foodItems = pgTable("food_items", {
   unit: text("unit").notNull(), // g, kg, pieces, etc.
   locationId: integer("location_id").notNull().references(() => locations.id),
   storeId: integer("store_id").references(() => stores.id), // Where the item was purchased
+  receiptId: integer("receipt_id").references(() => receipts.id), // Add relation to receipts
   expiryDate: date("expiry_date").notNull(),
   price: integer("price"), // in cents
   purchased: timestamp("purchased").notNull(),
@@ -143,6 +162,7 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   locations: many(locations),
   foodItems: many(foodItems),
   stores: many(stores),
+  receipts: many(receipts),
 }));
 
 export const rolesRelations = relations(roles, ({ many }) => ({
@@ -198,6 +218,19 @@ export const storesRelations = relations(stores, ({ one, many }) => ({
     references: [users.id],
   }),
   foodItems: many(foodItems),
+  receipts: many(receipts),
+}));
+
+export const receiptsRelations = relations(receipts, ({ one, many }) => ({
+  user: one(users, {
+    fields: [receipts.userId],
+    references: [users.id],
+  }),
+  store: one(stores, {
+    fields: [receipts.storeId],
+    references: [stores.id],
+  }),
+  foodItems: many(foodItems),
 }));
 
 export const foodItemsRelations = relations(foodItems, ({ one }) => ({
@@ -208,6 +241,10 @@ export const foodItemsRelations = relations(foodItems, ({ one }) => ({
   store: one(stores, {
     fields: [foodItems.storeId],
     references: [stores.id],
+  }),
+  receipt: one(receipts, {
+    fields: [foodItems.receiptId],
+    references: [receipts.id],
   }),
   user: one(users, {
     fields: [foodItems.userId],
@@ -344,6 +381,27 @@ export const insertFoodItemSchema = createInsertSchema(foodItems).pick({
 
 export const updateFoodItemSchema = insertFoodItemSchema;
 
+// Receipt schema
+export const insertReceiptSchema = createInsertSchema(receipts).pick({
+  storeId: true,
+  filePath: true,
+  fileName: true,
+  fileSize: true,
+  mimeType: true,
+  totalAmount: true,
+  receiptNumber: true,
+}).extend({
+  storeId: z.number().optional(),
+  filePath: z.string().min(1, "File path is required"),
+  fileName: z.string().min(1, "File name is required"),
+  fileSize: z.number().int().positive("File size must be a positive integer"),
+  mimeType: z.string().min(1, "MIME type is required"),
+  totalAmount: z.number().optional(),
+  receiptNumber: z.string().optional(),
+});
+
+export const updateReceiptSchema = insertReceiptSchema;
+
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type UpdateProfile = z.infer<typeof updateProfileSchema>;
@@ -357,6 +415,8 @@ export type InsertStore = z.infer<typeof insertStoreSchema>;
 export type UpdateStore = z.infer<typeof updateStoreSchema>;
 export type InsertFoodItem = z.infer<typeof insertFoodItemSchema>;
 export type UpdateFoodItem = z.infer<typeof updateFoodItemSchema>;
+export type InsertReceipt = z.infer<typeof insertReceiptSchema>;
+export type UpdateReceipt = z.infer<typeof updateReceiptSchema>;
 export type User = typeof users.$inferSelect;
 export type Role = typeof roles.$inferSelect;
 export type Permission = typeof permissions.$inferSelect;
@@ -365,3 +425,4 @@ export type Notification = typeof notifications.$inferSelect;
 export type Location = typeof locations.$inferSelect;
 export type Store = typeof stores.$inferSelect;
 export type FoodItem = typeof foodItems.$inferSelect;
+export type Receipt = typeof receipts.$inferSelect;

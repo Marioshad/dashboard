@@ -1,3 +1,3 @@
-import { ReceiptsPage } from './receipts-page';
+import ReceiptsPage from "./receipts-page";
 
 export default ReceiptsPage;

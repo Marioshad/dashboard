@@ -147,6 +147,8 @@
   padding: 1.5rem;
   background-color: #f7fafc;
   overflow-y: auto;
+  margin: 80px auto;
+  width: 100%;
 }
 
 .fruity-main-content {
