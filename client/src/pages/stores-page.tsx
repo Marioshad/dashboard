@@ -189,15 +189,16 @@ export default function StoresPage() {
 
   // Delete a store
   const deleteStoreMutation = useMutation({
-    mutationFn: (storeId: number) => {
-      return apiRequest(`/api/stores/${storeId}`, {
+    mutationFn: async (storeId: number) => {
+      const response = await apiRequest(`/api/stores/${storeId}`, {
         method: "DELETE",
       });
+      return response;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast({
         title: "Store deleted",
-        description: "The store has been deleted successfully.",
+        description: data.message || "The store has been deleted successfully.",
       });
       queryClient.invalidateQueries({ queryKey: ["/api/stores"] });
     },
