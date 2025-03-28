@@ -26,6 +26,21 @@ export function useCurrency() {
     return getCurrencySymbol(userCurrency);
   }, [userCurrency]);
   
+  // Function to format a monetary value (not in cents) to display with currency
+  const formatCurrency = useCallback((value: number | string | null | undefined) => {
+    if (value === null || value === undefined) return 'N/A';
+    
+    // Convert string to number if needed
+    const numValue = typeof value === 'string' ? parseFloat(value) : value;
+    
+    if (isNaN(numValue)) return 'N/A';
+    
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: userCurrency,
+    }).format(numValue);
+  }, [userCurrency]);
+  
   // Mutation to update user's currency
   const updateCurrency = useMutation({
     mutationFn: async (currency: CurrencyCode) => {
@@ -46,6 +61,7 @@ export function useCurrency() {
   return {
     currency: userCurrency,
     formatPrice,
+    formatCurrency,
     currencySymbol,
     supportedCurrencies: SUPPORTED_CURRENCIES,
     updateCurrency: updateCurrency.mutate,

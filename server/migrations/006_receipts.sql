@@ -1,35 +1,41 @@
 -- Migration to add receipts table for storing uploaded receipt paths
 
--- Create receipts table
-CREATE TABLE IF NOT EXISTS "receipts" (
-  "id" SERIAL PRIMARY KEY,
-  "userId" INTEGER NOT NULL REFERENCES "users"("id"),
-  "storeId" INTEGER REFERENCES "stores"("id"),
-  "filePath" TEXT NOT NULL,
-  "fileName" TEXT NOT NULL,
-  "fileSize" INTEGER NOT NULL,
-  "mimeType" TEXT NOT NULL,
-  "uploadDate" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-  "extractedData" JSONB,
-  "totalAmount" DECIMAL(10, 2),
-  "receiptDate" TIMESTAMP WITH TIME ZONE,
-  "receiptNumber" TEXT,
-  "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-  "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-);
+-- Check if receipts table exists
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'receipts') THEN
+    -- Create receipts table if it doesn't exist
+    CREATE TABLE "receipts" (
+      "id" SERIAL PRIMARY KEY,
+      "userId" INTEGER NOT NULL REFERENCES "users"("id"),
+      "storeId" INTEGER REFERENCES "stores"("id"),
+      "filePath" TEXT NOT NULL,
+      "fileName" TEXT NOT NULL,
+      "fileSize" INTEGER NOT NULL,
+      "mimeType" TEXT NOT NULL,
+      "uploadDate" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+      "extractedData" JSONB,
+      "totalAmount" DECIMAL(10, 2),
+      "receiptDate" TIMESTAMP WITH TIME ZONE,
+      "receiptNumber" TEXT,
+      "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+      "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+    );
+    
+    -- Create indices for the new table
+    CREATE INDEX "receipts_userId_idx" ON "receipts"("userId");
+    CREATE INDEX "receipts_storeId_idx" ON "receipts"("storeId");
+    CREATE INDEX "receipts_uploadDate_idx" ON "receipts"("uploadDate");
+    CREATE INDEX "receipts_receiptDate_idx" ON "receipts"("receiptDate");
+  END IF;
+END $$;
 
--- Create index for faster lookup by user ID
-CREATE INDEX IF NOT EXISTS "receipts_userId_idx" ON "receipts"("userId");
-
--- Create index for faster lookup by store ID
-CREATE INDEX IF NOT EXISTS "receipts_storeId_idx" ON "receipts"("storeId");
-
--- Create index for faster date-based queries
-CREATE INDEX IF NOT EXISTS "receipts_uploadDate_idx" ON "receipts"("uploadDate");
-CREATE INDEX IF NOT EXISTS "receipts_receiptDate_idx" ON "receipts"("receiptDate");
-
--- Add receipts relation to food_items table
-ALTER TABLE "food_items" ADD COLUMN IF NOT EXISTS "receiptId" INTEGER REFERENCES "receipts"("id");
-
--- Add index for the new foreign key
-CREATE INDEX IF NOT EXISTS "food_items_receiptId_idx" ON "food_items"("receiptId");
+-- Add receipts relation to food_items table if the column doesn't exist
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                 WHERE table_name = 'food_items' AND column_name = 'receiptId') THEN
+    ALTER TABLE "food_items" ADD COLUMN "receiptId" INTEGER REFERENCES "receipts"("id");
+    CREATE INDEX "food_items_receiptId_idx" ON "food_items"("receiptId");
+  END IF;
+END $$;

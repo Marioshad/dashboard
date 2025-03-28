@@ -45,7 +45,11 @@ interface ReceiptResponse {
   error?: string;
 }
 
-export function ReceiptUpload() {
+interface ReceiptUploadProps {
+  onSuccess?: () => void;
+}
+
+export function ReceiptUpload({ onSuccess }: ReceiptUploadProps = {}) {
   const { toast } = useToast();
   const { user } = useAuth();
   const { formatPrice } = useCurrency();
@@ -259,6 +263,11 @@ export function ReceiptUpload() {
       setSelectedItems({});
       setStoreInfo(null);
       setReceiptDetails(undefined);
+      
+      // Call onSuccess callback if provided
+      if (onSuccess) {
+        onSuccess();
+      }
     } catch (error: any) {
       console.error("Add to inventory error:", error);
       toast({

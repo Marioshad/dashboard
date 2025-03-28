@@ -435,6 +435,7 @@ export class DatabaseStorage implements IStorage {
   // Receipt methods
   async createReceipt(receipt: InsertReceipt & { userId: number, uploadDate?: Date, receiptDate?: Date, paymentMethod?: string, extractedData?: any }): Promise<Receipt> {
     try {
+      // Column names must match exactly what's in the database (camelCase)
       const values: any = {
         userId: receipt.userId,
         filePath: receipt.filePath,
@@ -455,6 +456,9 @@ export class DatabaseStorage implements IStorage {
         values.uploadDate = new Date();
       }
       
+      // For debugging
+      console.log('Creating receipt with values:', Object.keys(values));
+      
       const [result] = await db
         .insert(receipts)
         .values(values)
@@ -469,11 +473,33 @@ export class DatabaseStorage implements IStorage {
 
   async getReceipts(userId: number): Promise<Receipt[]> {
     try {
-      return await db
+      // First get the receipts
+      const receiptList = await db
         .select()
         .from(receipts)
         .where(eq(receipts.userId, userId))
-        .orderBy(sql`receipts.upload_date DESC`);
+        .orderBy(sql`receipts."uploadDate" DESC`);
+      
+      // For each receipt with a storeId, fetch the associated store
+      const receiptsWithStores = await Promise.all(
+        receiptList.map(async (receipt) => {
+          if (receipt.storeId) {
+            const [storeData] = await db
+              .select()
+              .from(stores)
+              .where(eq(stores.id, receipt.storeId));
+              
+            // Return receipt with store information
+            return {
+              ...receipt,
+              store: storeData
+            };
+          }
+          return receipt;
+        })
+      );
+      
+      return receiptsWithStores;
     } catch (error) {
       console.error('Error getting receipts:', error);
       throw error;
@@ -482,12 +508,32 @@ export class DatabaseStorage implements IStorage {
 
   async getReceipt(id: number): Promise<Receipt | undefined> {
     try {
-      const result = await db
+      // Get the receipt
+      const [receipt] = await db
         .select()
         .from(receipts)
         .where(eq(receipts.id, id))
         .limit(1);
-      return result[0];
+      
+      if (!receipt) return undefined;
+      
+      // If receipt has a storeId, fetch the associated store
+      if (receipt.storeId) {
+        const [storeData] = await db
+          .select()
+          .from(stores)
+          .where(eq(stores.id, receipt.storeId));
+          
+        if (storeData) {
+          // Return receipt with store information
+          return {
+            ...receipt,
+            store: storeData
+          };
+        }
+      }
+      
+      return receipt;
     } catch (error) {
       console.error('Error getting receipt:', error);
       throw error;
