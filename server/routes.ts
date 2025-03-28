@@ -11,8 +11,9 @@ import { db } from "./db";
 import { format } from "date-fns";
 import { 
   roles, permissions, rolePermissions, users, appSettings, notifications,
-  locations, foodItems, stores, insertLocationSchema, updateLocationSchema,
-  insertFoodItemSchema, updateFoodItemSchema, insertStoreSchema, updateStoreSchema
+  locations, foodItems, stores, tags, foodItemsTags, insertLocationSchema, updateLocationSchema,
+  insertFoodItemSchema, updateFoodItemSchema, insertStoreSchema, updateStoreSchema,
+  insertTagSchema, updateTagSchema
 } from "@shared/schema";
 import { eq, and, isNull, sql, desc } from "drizzle-orm";
 import Stripe from "stripe";
@@ -101,7 +102,61 @@ async function sendNotification(userId: number, type: string, message: string, a
   }
 }
 
+// Function to ensure system tags exist
+async function ensureSystemTags() {
+  try {
+    // Define default system tags
+    const defaultTags = [
+      { name: 'Vegetables', color: '#4ade80', isSystem: true }, // Green
+      { name: 'Fruits', color: '#fb923c', isSystem: true },     // Orange
+      { name: 'Dairy', color: '#60a5fa', isSystem: true },      // Blue
+      { name: 'Meat', color: '#f87171', isSystem: true },       // Red
+      { name: 'Seafood', color: '#2dd4bf', isSystem: true },    // Teal
+      { name: 'Grains', color: '#fbbf24', isSystem: true },     // Amber
+      { name: 'Canned Food', color: '#a78bfa', isSystem: true }, // Purple
+      { name: 'Frozen', color: '#93c5fd', isSystem: true },     // Light blue
+      { name: 'Snacks', color: '#fcd34d', isSystem: true },     // Yellow
+      { name: 'Beverages', color: '#a3e635', isSystem: true },  // Lime
+      { name: 'Condiments', color: '#c084fc', isSystem: true }, // Violet
+      { name: 'Baked Goods', color: '#d97706', isSystem: true },// Amber
+      { name: 'Cleaning', color: '#0ea5e9', isSystem: true },   // Sky
+      { name: 'Personal Care', color: '#f472b6', isSystem: true }, // Pink
+      { name: 'Pet Products', color: '#84cc16', isSystem: true }, // Lime
+    ];
+
+    // First check if any system tags exist using raw SQL with correct column names
+    const existingCount = await db.execute(sql`
+      SELECT COUNT(*) as count FROM tags WHERE issystem = true
+    `);
+    
+    const count = parseInt(existingCount.rows[0]?.count?.toString() || '0');
+    
+    // If we already have system tags, don't create more
+    if (count > 0) {
+      console.log(`${count} system tags already exist, skipping creation.`);
+      return;
+    }
+    
+    console.log(`Creating ${defaultTags.length} default system tags...`);
+    
+    // Use raw SQL with correct column names
+    for (const tag of defaultTags) {
+      await db.execute(sql`
+        INSERT INTO tags (name, color, issystem, createdat, updatedat) 
+        VALUES (${tag.name}, ${tag.color}, ${tag.isSystem}, NOW(), NOW())
+      `);
+    }
+    
+    console.log('System tags created successfully');
+  } catch (error) {
+    console.error('Error ensuring system tags:', error);
+  }
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Ensure system tags exist
+  await ensureSystemTags();
+  
   app.get('/ping', (_req, res) => {
     res.status(200).send('pong');
   });
@@ -1390,6 +1445,227 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const locationId = req.query.locationId ? parseInt(req.query.locationId as string) : undefined;
       const items = await storage.getFoodItems(req.user.id, locationId);
       res.json(items);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Tag routes
+  app.get('/api/tags', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      const tags = await storage.getTags(req.user.id);
+      res.json(tags);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/api/tags/system', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      const tags = await storage.getSystemTags();
+      res.json(tags);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/tags', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      const result = insertTagSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ message: "Invalid tag data", errors: result.error.format() });
+      }
+      
+      const tag = await storage.createTag({
+        ...result.data,
+        userId: req.user.id,
+      });
+      
+      res.status(201).json(tag);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/api/tags/:id', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      const id = parseInt(req.params.id);
+      const tag = await storage.getTag(id);
+      
+      if (!tag) {
+        return res.status(404).json({ message: "Tag not found" });
+      }
+      
+      // Only allow access to system tags or user's own tags
+      if (!tag.isSystem && tag.userId !== req.user.id) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
+      res.json(tag);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch('/api/tags/:id', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      const id = parseInt(req.params.id);
+      const tag = await storage.getTag(id);
+      
+      if (!tag) {
+        return res.status(404).json({ message: "Tag not found" });
+      }
+      
+      // Only allow updating user's own tags, not system tags
+      if (tag.isSystem || tag.userId !== req.user.id) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
+      const result = updateTagSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ message: "Invalid tag data", errors: result.error.format() });
+      }
+      
+      const updatedTag = await storage.updateTag(id, result.data);
+      res.json(updatedTag);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete('/api/tags/:id', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      const id = parseInt(req.params.id);
+      const tag = await storage.getTag(id);
+      
+      if (!tag) {
+        return res.status(404).json({ message: "Tag not found" });
+      }
+      
+      // Only allow deleting user's own tags, not system tags
+      if (tag.isSystem || tag.userId !== req.user.id) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
+      await storage.deleteTag(id);
+      res.sendStatus(204);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Food item tag relationship routes
+  app.post('/api/food-items/:foodItemId/tags/:tagId', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      const foodItemId = parseInt(req.params.foodItemId);
+      const tagId = parseInt(req.params.tagId);
+      
+      // Verify food item ownership
+      const foodItem = await storage.getFoodItem(foodItemId);
+      if (!foodItem || foodItem.userId !== req.user.id) {
+        return res.status(403).json({ message: "Access denied to food item" });
+      }
+      
+      // Verify tag access (system tags or user's own tags)
+      const tag = await storage.getTag(tagId);
+      if (!tag || (!tag.isSystem && tag.userId !== req.user.id)) {
+        return res.status(403).json({ message: "Access denied to tag" });
+      }
+      
+      await storage.addTagToFoodItem(foodItemId, tagId);
+      res.sendStatus(204);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete('/api/food-items/:foodItemId/tags/:tagId', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      const foodItemId = parseInt(req.params.foodItemId);
+      const tagId = parseInt(req.params.tagId);
+      
+      // Verify food item ownership
+      const foodItem = await storage.getFoodItem(foodItemId);
+      if (!foodItem || foodItem.userId !== req.user.id) {
+        return res.status(403).json({ message: "Access denied to food item" });
+      }
+      
+      await storage.removeTagFromFoodItem(foodItemId, tagId);
+      res.sendStatus(204);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/api/food-items/:foodItemId/tags', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      const foodItemId = parseInt(req.params.foodItemId);
+      
+      // Verify food item ownership
+      const foodItem = await storage.getFoodItem(foodItemId);
+      if (!foodItem || foodItem.userId !== req.user.id) {
+        return res.status(403).json({ message: "Access denied to food item" });
+      }
+      
+      const tags = await storage.getTagsForFoodItem(foodItemId);
+      res.json(tags);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/api/tags/:tagId/food-items', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      const tagId = parseInt(req.params.tagId);
+      
+      // Verify tag access (system tags or user's own tags)
+      const tag = await storage.getTag(tagId);
+      if (!tag || (!tag.isSystem && tag.userId !== req.user.id)) {
+        return res.status(403).json({ message: "Access denied to tag" });
+      }
+      
+      const foodItems = await storage.getFoodItemsByTag(tagId, req.user.id);
+      res.json(foodItems);
     } catch (error) {
       next(error);
     }

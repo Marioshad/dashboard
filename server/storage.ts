@@ -1,15 +1,16 @@
 import { 
-  users, locations, foodItems, stores, receipts,
+  users, locations, foodItems, stores, receipts, tags, foodItemsTags,
   type User, type InsertUser, type UpdateProfile,
   type Location, type InsertLocation, type UpdateLocation,
   type Store, type InsertStore, type UpdateStore,
   type FoodItem, type InsertFoodItem, type UpdateFoodItem,
-  type Receipt, type InsertReceipt, type UpdateReceipt
+  type Receipt, type InsertReceipt, type UpdateReceipt,
+  type Tag, type InsertTag, type UpdateTag, type FoodItemTag
 } from "@shared/schema";
 import { db, pool } from "./db";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
-import { eq, sql, and, isNull } from "drizzle-orm";
+import { eq, sql, and, isNull, or } from "drizzle-orm";
 import { Pool } from 'pg';
 
 const PostgresSessionStore = connectPg(session);
@@ -50,6 +51,20 @@ export interface IStorage {
   updateReceipt(id: number, receipt: UpdateReceipt): Promise<Receipt>;
   deleteReceipt(id: number): Promise<void>;
   getFoodItemsByReceiptId(receiptId: number): Promise<FoodItem[]>;
+  
+  // Tag methods
+  createTag(tag: InsertTag & { userId: number }): Promise<Tag>;
+  getTags(userId: number): Promise<Tag[]>;
+  getSystemTags(): Promise<Tag[]>;
+  getTag(id: number): Promise<Tag | undefined>;
+  updateTag(id: number, tag: UpdateTag): Promise<Tag>;
+  deleteTag(id: number): Promise<void>;
+  
+  // FoodItem Tag methods
+  addTagToFoodItem(foodItemId: number, tagId: number): Promise<void>;
+  removeTagFromFoodItem(foodItemId: number, tagId: number): Promise<void>;
+  getTagsForFoodItem(foodItemId: number): Promise<Tag[]>;
+  getFoodItemsByTag(tagId: number, userId: number): Promise<FoodItem[]>;
   
   sessionStore: session.Store;
 }
@@ -330,8 +345,7 @@ export class DatabaseStorage implements IStorage {
         ? item.expiryDate.toISOString().split('T')[0] // Convert to YYYY-MM-DD format
         : item.expiryDate;
       
-      // Force types to SQL to avoid TypeScript errors
-      const dateNow = new Date().toISOString();
+      const dateNow = new Date();
       
       console.log('Creating food item with data:', {
         ...item,
@@ -339,25 +353,28 @@ export class DatabaseStorage implements IStorage {
         purchased: dateNow,
       });
       
+      // Create an object with all values needed - use direct approach like in createReceipt
+      const values: any = {
+        name: item.name,
+        quantity: String(item.quantity), // Convert number to string for decimal column
+        unit: item.unit,
+        locationId: item.locationId,
+        userId: item.userId,
+        expiryDate: expiryDateString,
+        price: item.price,
+        // Use direct date values for better compatibility
+        purchased: dateNow,
+        createdAt: dateNow,
+        updatedAt: dateNow,
+        receiptId: item.receiptId || null,
+        storeId: item.storeId || null,
+        pricePerUnit: item.pricePerUnit || null,
+        isWeightBased: item.isWeightBased || false,
+      };
+      
       const [result] = await db
         .insert(foodItems)
-        .values({
-          name: item.name,
-          quantity: String(item.quantity), // Convert number to string for decimal column
-          unit: item.unit,
-          locationId: item.locationId,
-          expiryDate: expiryDateString,
-          price: item.price,
-          userId: item.userId,
-          purchased: sql`${dateNow}::timestamp`,
-          createdAt: sql`${dateNow}::timestamp`,
-          updatedAt: sql`${dateNow}::timestamp`,
-          // Include additional fields for receipt items
-          receiptId: item.receiptId || null,
-          storeId: item.storeId || null,
-          pricePerUnit: item.pricePerUnit || null,
-          isWeightBased: item.isWeightBased || false,
-        })
+        .values(values)
         .returning();
       return result;
     } catch (error) {
@@ -601,6 +618,194 @@ export class DatabaseStorage implements IStorage {
       return result;
     } catch (error) {
       console.error('Error getting food items by receipt ID:', error);
+      throw error;
+    }
+  }
+  
+  // Tag methods
+  async createTag(tag: InsertTag & { userId: number }): Promise<Tag> {
+    try {
+      const [result] = await db
+        .insert(tags)
+        .values({
+          name: tag.name,
+          color: tag.color || "#3B82F6",
+          userId: tag.userId,
+          isSystem: tag.isSystem || false,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .returning();
+      return result;
+    } catch (error) {
+      console.error('Error creating tag:', error);
+      throw error;
+    }
+  }
+
+  async getTags(userId: number): Promise<Tag[]> {
+    try {
+      return await db
+        .select()
+        .from(tags)
+        .where(or(
+          eq(tags.userId, userId),
+          eq(tags.isSystem, true)
+        ))
+        .orderBy(tags.name);
+    } catch (error) {
+      console.error('Error getting tags:', error);
+      throw error;
+    }
+  }
+
+  async getSystemTags(): Promise<Tag[]> {
+    try {
+      return await db
+        .select()
+        .from(tags)
+        .where(eq(tags.isSystem, true))
+        .orderBy(tags.name);
+    } catch (error) {
+      console.error('Error getting system tags:', error);
+      throw error;
+    }
+  }
+
+  async getTag(id: number): Promise<Tag | undefined> {
+    try {
+      const result = await db
+        .select()
+        .from(tags)
+        .where(eq(tags.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error('Error getting tag:', error);
+      throw error;
+    }
+  }
+
+  async updateTag(id: number, tag: UpdateTag): Promise<Tag> {
+    try {
+      const [result] = await db
+        .update(tags)
+        .set({
+          ...tag,
+          updatedAt: new Date(),
+        })
+        .where(eq(tags.id, id))
+        .returning();
+      return result;
+    } catch (error) {
+      console.error('Error updating tag:', error);
+      throw error;
+    }
+  }
+
+  async deleteTag(id: number): Promise<void> {
+    try {
+      await db
+        .delete(tags)
+        .where(eq(tags.id, id));
+    } catch (error) {
+      console.error('Error deleting tag:', error);
+      throw error;
+    }
+  }
+
+  // FoodItem Tag methods
+  async addTagToFoodItem(foodItemId: number, tagId: number): Promise<void> {
+    try {
+      await db
+        .insert(foodItemsTags)
+        .values({
+          foodItemId,
+          tagId,
+          createdAt: new Date(),
+        })
+        .onConflictDoNothing(); // Prevent duplicates
+    } catch (error) {
+      console.error('Error adding tag to food item:', error);
+      throw error;
+    }
+  }
+
+  async removeTagFromFoodItem(foodItemId: number, tagId: number): Promise<void> {
+    try {
+      await db
+        .delete(foodItemsTags)
+        .where(
+          and(
+            eq(foodItemsTags.foodItemId, foodItemId),
+            eq(foodItemsTags.tagId, tagId)
+          )
+        );
+    } catch (error) {
+      console.error('Error removing tag from food item:', error);
+      throw error;
+    }
+  }
+
+  async getTagsForFoodItem(foodItemId: number): Promise<Tag[]> {
+    try {
+      // Join foodItemsTags with tags to get tag details
+      const result = await db
+        .select({
+          id: tags.id,
+          name: tags.name,
+          color: tags.color,
+          userId: tags.userId,
+          isSystem: tags.isSystem,
+          createdAt: tags.createdAt,
+          updatedAt: tags.updatedAt,
+        })
+        .from(foodItemsTags)
+        .innerJoin(tags, eq(foodItemsTags.tagId, tags.id))
+        .where(eq(foodItemsTags.foodItemId, foodItemId))
+        .orderBy(tags.name);
+      
+      return result;
+    } catch (error) {
+      console.error('Error getting tags for food item:', error);
+      throw error;
+    }
+  }
+
+  async getFoodItemsByTag(tagId: number, userId: number): Promise<FoodItem[]> {
+    try {
+      // Join foodItemsTags with foodItems to get food item details
+      const result = await db
+        .select()
+        .from(foodItems)
+        .innerJoin(foodItemsTags, eq(foodItemsTags.foodItemId, foodItems.id))
+        .where(
+          and(
+            eq(foodItemsTags.tagId, tagId),
+            eq(foodItems.userId, userId)
+          )
+        )
+        .orderBy(foodItems.name);
+      
+      return result.map(row => ({
+        id: row.food_items.id,
+        name: row.food_items.name,
+        quantity: row.food_items.quantity,
+        unit: row.food_items.unit,
+        locationId: row.food_items.locationId,
+        storeId: row.food_items.storeId,
+        receiptId: row.food_items.receiptId,
+        expiryDate: row.food_items.expiryDate,
+        price: row.food_items.price,
+        pricePerUnit: row.food_items.pricePerUnit,
+        isWeightBased: row.food_items.isWeightBased,
+        purchased: row.food_items.purchased,
+        userId: row.food_items.userId,
+        createdAt: row.food_items.createdAt,
+        updatedAt: row.food_items.updatedAt,
+      }));
+    } catch (error) {
+      console.error('Error getting food items by tag:', error);
       throw error;
     }
   }

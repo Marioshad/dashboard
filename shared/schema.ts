@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, date, decimal, uniqueIndex, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, date, decimal, uniqueIndex, jsonb, primaryKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -136,6 +136,32 @@ export const receipts = pgTable("receipts", {
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
 
+// Tag system for food items
+export const tags = pgTable("tags", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  color: text("color").default("#3B82F6"),
+  userId: integer("userId").references(() => users.id),
+  isSystem: boolean("isSystem").default(false), // To differentiate system tags from user created ones
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => {
+  return {
+    nameUserIdx: uniqueIndex("tag_name_user_idx").on(table.name, table.userId),
+  }
+});
+
+// Junction table for many-to-many relationship between food items and tags
+export const foodItemsTags = pgTable("food_items_tags", {
+  foodItemId: integer("foodItemId").notNull().references(() => foodItems.id),
+  tagId: integer("tagId").notNull().references(() => tags.id),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => {
+  return {
+    pk: primaryKey({ columns: [table.foodItemId, table.tagId] }),
+  }
+});
+
 export const foodItems = pgTable("food_items", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
@@ -166,6 +192,7 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   foodItems: many(foodItems),
   stores: many(stores),
   receipts: many(receipts),
+  tags: many(tags),
 }));
 
 export const rolesRelations = relations(roles, ({ many }) => ({
@@ -236,7 +263,29 @@ export const receiptsRelations = relations(receipts, ({ one, many }) => ({
   foodItems: many(foodItems),
 }));
 
-export const foodItemsRelations = relations(foodItems, ({ one }) => ({
+export const tagsRelations = relations(tags, ({ one, many }) => ({
+  user: one(users, {
+    fields: [tags.userId],
+    references: [users.id],
+  }),
+  foodItems: many(foodItemsTags, {
+    relationName: "tag_food_items"
+  }),
+}));
+
+export const foodItemsTagsRelations = relations(foodItemsTags, ({ one }) => ({
+  foodItem: one(foodItems, {
+    fields: [foodItemsTags.foodItemId],
+    references: [foodItems.id],
+  }),
+  tag: one(tags, {
+    fields: [foodItemsTags.tagId],
+    references: [tags.id],
+    relationName: "tag_food_items"
+  }),
+}));
+
+export const foodItemsRelations = relations(foodItems, ({ one, many }) => ({
   location: one(locations, {
     fields: [foodItems.locationId],
     references: [locations.id],
@@ -253,6 +302,7 @@ export const foodItemsRelations = relations(foodItems, ({ one }) => ({
     fields: [foodItems.userId],
     references: [users.id],
   }),
+  tags: many(foodItemsTags),
 }));
 
 // Schemas
@@ -413,6 +463,19 @@ export const insertReceiptSchema = createInsertSchema(receipts).pick({
 
 export const updateReceiptSchema = insertReceiptSchema;
 
+// Tag schema
+export const insertTagSchema = createInsertSchema(tags).pick({
+  name: true,
+  color: true,
+  isSystem: true,
+}).extend({
+  name: z.string().min(2, "Tag name must be at least 2 characters").max(50, "Tag name cannot exceed 50 characters"),
+  color: z.string().regex(/^#[0-9A-F]{6}$/i, "Color must be a valid HEX color code").default("#3B82F6"),
+  isSystem: z.boolean().default(false),
+});
+
+export const updateTagSchema = insertTagSchema;
+
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type UpdateProfile = z.infer<typeof updateProfileSchema>;
@@ -428,6 +491,9 @@ export type InsertFoodItem = z.infer<typeof insertFoodItemSchema>;
 export type UpdateFoodItem = z.infer<typeof updateFoodItemSchema>;
 export type InsertReceipt = z.infer<typeof insertReceiptSchema>;
 export type UpdateReceipt = z.infer<typeof updateReceiptSchema>;
+export type InsertTag = z.infer<typeof insertTagSchema>;
+export type UpdateTag = z.infer<typeof updateTagSchema>;
+
 export type User = typeof users.$inferSelect;
 export type Role = typeof roles.$inferSelect;
 export type Permission = typeof permissions.$inferSelect;
@@ -436,6 +502,9 @@ export type Notification = typeof notifications.$inferSelect;
 export type Location = typeof locations.$inferSelect;
 export type Store = typeof stores.$inferSelect;
 export type FoodItem = typeof foodItems.$inferSelect;
+export type Tag = typeof tags.$inferSelect;
+export type FoodItemTag = typeof foodItemsTags.$inferSelect;
+
 // Base Receipt type from the table
 export type BaseReceipt = typeof receipts.$inferSelect;
 
