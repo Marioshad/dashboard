@@ -85,3 +85,95 @@
     z-index: 1;
   }
 }
+
+/* Dashboard layout styles */
+.dashboard-layout {
+  @apply grid min-h-screen;
+  grid-template-columns: 260px 1fr;
+  grid-template-areas: "sidebar main";
+}
+
+/* Responsive sidebar styles */
+@media (max-width: 768px) {
+  .dashboard-layout {
+    grid-template-columns: 1fr;
+    grid-template-areas: "main";
+  }
+  
+  .mobile-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    width: 260px;
+    transition: transform 0.3s ease-in-out;
+    z-index: 40;
+    box-shadow: 4px 0 10px rgba(0, 0, 0, 0.1);
+  }
+  
+  .mobile-sidebar-hidden {
+    transform: translateX(-100%);
+  }
+  
+  .mobile-sidebar-visible {
+    transform: translateX(0);
+  }
+  
+  .mobile-sidebar-toggle {
+    @apply bg-white/90 backdrop-blur-sm shadow-md;
+  }
+
+  /* Adjust main content when sidebar is hidden */
+  .dashboard-content {
+    width: 100%;
+    padding-left: 0;
+  }
+}
+
+.navbar-container {
+  grid-area: navbar;
+  z-index: 30;
+}
+
+.fruity-sidebar-gradient {
+  grid-area: sidebar;
+  background: linear-gradient(to bottom, rgb(255, 255, 255) 0%, rgba(247, 250, 252, 1) 100%);
+  border-right: 1px solid #edf2f7;
+  overflow-y: auto;
+}
+
+.dashboard-content {
+  grid-area: main;
+  padding: 1.5rem;
+  background-color: #f7fafc;
+  overflow-y: auto;
+}
+
+.fruity-main-content {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.nav-link {
+  @apply flex items-center gap-2 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-md text-sm font-medium transition-colors;
+}
+
+.nav-link-icon {
+  @apply h-4 w-4 text-gray-500;
+}
+
+.nav-link.active {
+  @apply bg-primary/10 text-primary;
+}
+
+.nav-link.active .nav-link-icon {
+  @apply text-primary;
+}
+
+.fruity-profile-card {
+  @apply rounded-lg bg-white border border-gray-100 shadow-sm;
+}
+
+.fruity-logout-btn {
+  @apply btn-gradient-destructive;
+}

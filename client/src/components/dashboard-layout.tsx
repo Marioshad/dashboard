@@ -16,6 +16,8 @@ import {
   LineChart,
   Receipt,
   Building,
+  Menu,
+  X,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import {
@@ -23,14 +25,26 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Navbar } from "@/components/navbar"; // Assuming Navbar component exists
+import { useIsMobile } from "@/hooks/use-mobile"; // Use the existing mobile hook
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, logoutMutation } = useAuth();
   const [location] = useLocation();
   const [openMenus, setOpenMenus] = useState<string[]>(['users', 'home', 'food']);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const isMobile = useIsMobile();
+
+  // Close sidebar by default on mobile
+  useEffect(() => {
+    if (isMobile) {
+      setSidebarOpen(false);
+    } else {
+      setSidebarOpen(true);
+    }
+  }, [isMobile]);
 
   // Check role ID for admin status
   const isAdmin = (user?.roleId === 1 || user?.roleId === 2); // Superadmin or Admin
@@ -44,20 +58,61 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
     );
   };
 
+  const toggleSidebar = () => {
+    setSidebarOpen(prev => !prev);
+  };
+
   return (
     <div className="dashboard-layout">
       <div className="navbar-container">
         <Navbar />
+        
+        {/* Mobile sidebar toggle button */}
+        {isMobile && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="mobile-sidebar-toggle fixed top-4 left-4 z-50"
+            onClick={toggleSidebar}
+            aria-label={sidebarOpen ? "Close sidebar" : "Open sidebar"}
+          >
+            {sidebarOpen ? (
+              <X className="h-6 w-6" />
+            ) : (
+              <Menu className="h-6 w-6" />
+            )}
+          </Button>
+        )}
       </div>
       
       {/* Sidebar */}
-      <aside className="fruity-sidebar-gradient">
+      <aside className={cn(
+        "fruity-sidebar-gradient",
+        isMobile && "mobile-sidebar",
+        isMobile && !sidebarOpen && "mobile-sidebar-hidden",
+        isMobile && sidebarOpen && "mobile-sidebar-visible"
+      )}>
         <div className="flex flex-col h-full py-6 px-3">
           {/* App Logo/Brand */}
           <div className="px-3 mb-6">
-            <div className="flex items-center">
-              <Apple className="h-8 w-8 text-primary mr-2" />
-              <h2 className="text-xl font-bold text-dark">FoodVault</h2>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <Apple className="h-8 w-8 text-primary mr-2" />
+                <h2 className="text-xl font-bold text-dark">FoodVault</h2>
+              </div>
+              
+              {/* Close button visible only on mobile when sidebar is open */}
+              {isMobile && sidebarOpen && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="sidebar-close-btn"
+                  onClick={toggleSidebar}
+                  aria-label="Close sidebar"
+                >
+                  <X className="h-5 w-5" />
+                </Button>
+              )}
             </div>
           </div>
           
@@ -296,6 +351,15 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       <div className="dashboard-content">
         <main className="fruity-main-content">{children}</main>
       </div>
+      
+      {/* Mobile sidebar overlay - only shown when sidebar is open on mobile */}
+      {isMobile && sidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/30 z-30"
+          onClick={toggleSidebar}
+          aria-hidden="true"
+        />
+      )}
     </div>
   );
 }
