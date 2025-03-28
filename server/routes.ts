@@ -1331,6 +1331,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Get food items for this receipt
       const foodItems = await storage.getFoodItemsByReceiptId(receiptId);
+      console.log(`Fetched ${foodItems.length} items for receipt ${receiptId}:`, foodItems);
       res.json(foodItems);
     } catch (error) {
       next(error);

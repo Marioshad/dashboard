@@ -333,6 +333,12 @@ export class DatabaseStorage implements IStorage {
       // Force types to SQL to avoid TypeScript errors
       const dateNow = new Date().toISOString();
       
+      console.log('Creating food item with data:', {
+        ...item,
+        expiryDate: expiryDateString,
+        purchased: dateNow,
+      });
+      
       const [result] = await db
         .insert(foodItems)
         .values({
@@ -346,6 +352,11 @@ export class DatabaseStorage implements IStorage {
           purchased: sql`${dateNow}::timestamp`,
           createdAt: sql`${dateNow}::timestamp`,
           updatedAt: sql`${dateNow}::timestamp`,
+          // Include additional fields for receipt items
+          receiptId: item.receiptId || null,
+          storeId: item.storeId || null,
+          pricePerUnit: item.pricePerUnit || null,
+          isWeightBased: item.isWeightBased || false,
         })
         .returning();
       return result;
