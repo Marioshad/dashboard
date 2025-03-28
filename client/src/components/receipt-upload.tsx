@@ -469,7 +469,18 @@ export function ReceiptUpload({ onSuccess }: ReceiptUploadProps = {}) {
                     <div className="font-medium">{item.name}</div>
                     <div className="text-sm text-muted-foreground">
                       {item.quantity} {item.unit} · {item.price ? formatPrice(item.price) : formatPrice(0)}
+                      {item.isWeightBased && item.pricePerUnit && (
+                        <span className="ml-1 text-xs text-primary">
+                          ({formatPrice(item.pricePerUnit)}/{item.unit})
+                        </span>
+                      )}
                     </div>
+                    {item.isWeightBased && item.price && item.pricePerUnit && (
+                      <div className="text-xs text-muted-foreground flex justify-between">
+                        <span>Unit price: {formatPrice(item.pricePerUnit)}/{item.unit}</span>
+                        <span>Total: {formatPrice(item.price)}</span>
+                      </div>
+                    )}
                     <div className="text-xs text-muted-foreground">
                       Expires: {new Date(item.expiryDate || '').toLocaleDateString()}
                     </div>

@@ -71,7 +71,7 @@ export async function processReceiptImage(filePath: string): Promise<ExtractedIt
           content: `You are a specialized receipt analyzer. Extract all food items from the receipt image with detailed information.
           For each item, identify the following:
           - name: The product name
-          - quantity: The numeric quantity
+          - quantity: The numeric quantity (can be decimal for weight-based items like 0.450 kg of apples)
           - unit: The unit of measurement (pieces, grams, kg, oz, etc.)
           - price: The total price as shown on the receipt (numeric, e.g., 2.99)
           - pricePerUnit: If the item is sold by weight, include the price per unit (e.g., 1.99 per kg, g, lb, etc.)
@@ -85,7 +85,10 @@ export async function processReceiptImage(filePath: string): Promise<ExtractedIt
             - Dry goods (pasta, rice): 1 year from today
             - Frozen goods: 3 months from today
 
-          For weight-based items (fruits, vegetables, meat), make sure to include both the total price and price per unit.
+          For weight-based items (fruits, vegetables, meat):
+          - Include both the total price and price per unit
+          - Make sure to properly handle decimal quantities (e.g., 0.450 kg)
+          - Calculate the actual total price (quantity * pricePerUnit) if needed
           Use 'pieces' as the default unit if not specified.
           Format your response strictly as a JSON array.
           Response should be valid JSON array only, no explanations or text.`
