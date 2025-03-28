@@ -882,7 +882,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           itemCounts[normalizedName].totalPrice += Number(item.price);
           itemCounts[normalizedName].priceHistory.push({
             price: Number(item.price),
-            date: item.purchased // Keep the original date string
+            date: item.purchased instanceof Date ? item.purchased.toISOString() : item.purchased
           });
         }
       });
