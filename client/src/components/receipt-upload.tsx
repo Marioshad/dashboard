@@ -34,6 +34,7 @@ export function ReceiptUpload({ onSuccess }: ReceiptUploadProps = {}) {
   const [processingError, setProcessingError] = useState<string | null>(null);
   const [storeInfo, setStoreInfo] = useState<any>(null);
   const [receiptDetails, setReceiptDetails] = useState<ReceiptDetails | undefined>(undefined);
+  const [receiptId, setReceiptId] = useState<number | null>(null);
   const [openDialog, setOpenDialog] = useState(false);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -61,6 +62,7 @@ export function ReceiptUpload({ onSuccess }: ReceiptUploadProps = {}) {
     setSelectedItems({});
     setStoreInfo(null);
     setReceiptDetails(undefined);
+    setReceiptId(null);
   };
 
   const handleUpload = async () => {
@@ -95,8 +97,9 @@ export function ReceiptUpload({ onSuccess }: ReceiptUploadProps = {}) {
       
       setProcessingStage("processing");
       
-      // Store receipt details and store information
+      // Store receipt details and store information separately
       setReceiptDetails(data.receiptDetails);
+      setReceiptId(data.receiptId); // Store the receipt ID
       setStoreInfo(data.store);
       
       // Add a small delay to show the processing state to the user
@@ -203,7 +206,8 @@ export function ReceiptUpload({ onSuccess }: ReceiptUploadProps = {}) {
           return {
             ...item,
             locationId: defaultLocationId,
-            purchased: purchaseDate
+            purchased: purchaseDate,
+            receiptId: receiptId // Link the item to the receipt using the stored receipt ID
           };
         });
       
@@ -234,6 +238,7 @@ export function ReceiptUpload({ onSuccess }: ReceiptUploadProps = {}) {
       setSelectedItems({});
       setStoreInfo(null);
       setReceiptDetails(undefined);
+      setReceiptId(null);
       
       // Call onSuccess callback if provided
       if (onSuccess) {

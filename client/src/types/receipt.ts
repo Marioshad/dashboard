@@ -48,6 +48,7 @@ export interface ReceiptDetails {
   totalAmount?: number;
   vatBreakdown?: VatBreakdown[];
   language?: string; // Receipt language detected
+  receiptId?: string | number; // ID of the receipt in the database
 }
 
 export interface ReceiptResponse {
