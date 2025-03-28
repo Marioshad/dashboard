@@ -295,14 +295,30 @@ export const insertStoreSchema = createInsertSchema(stores).pick({
 }).extend({
   name: z.string()
     .min(1, "Store name is required")
-    .min(2, "Store name must be at least 2 characters"),
+    .min(2, "Store name must be at least 2 characters")
+    .max(100, "Store name cannot exceed 100 characters"),
   location: z.string()
     .min(1, "Store location is required")
-    .min(2, "Store location must be at least 2 characters"),
-  phone: z.string().optional(),
-  fax: z.string().optional(),
-  vatNumber: z.string().optional(),
-  taxId: z.string().optional(),
+    .min(2, "Store location must be at least 2 characters")
+    .max(200, "Location cannot exceed 200 characters"),
+  phone: z.string()
+    .max(30, "Phone number cannot exceed 30 characters")
+    .regex(/^[0-9+\-\s()]*$/, "Invalid phone number format")
+    .optional()
+    .or(z.literal("")),
+  fax: z.string()
+    .max(30, "Fax number cannot exceed 30 characters")
+    .regex(/^[0-9+\-\s()]*$/, "Invalid fax number format")
+    .optional()
+    .or(z.literal("")),
+  vatNumber: z.string()
+    .max(50, "VAT number cannot exceed 50 characters")
+    .optional()
+    .or(z.literal("")),
+  taxId: z.string()
+    .max(50, "Tax ID cannot exceed 50 characters")
+    .optional()
+    .or(z.literal("")),
 });
 
 export const updateStoreSchema = insertStoreSchema;
