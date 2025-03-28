@@ -56,21 +56,28 @@ h1, h2, h3, h4, h5, h6 {
   min-height: 100vh;
   background-color: var(--gray-100);
   position: relative;
+  overflow-x: hidden;
 }
 
 /* Navbar - Modern and Clean */
+.navbar-container {
+  position: fixed;
+  top: 0;
+  left: var(--sidebar-width);
+  right: 0;
+  z-index: 1000;
+  padding: 12px 30px 0;
+}
+
 .fruity-navbar-gradient {
-  background-color: rgba(255, 255, 255, 0.8);
+  background-color: rgba(255, 255, 255, 0.98);
   backdrop-filter: saturate(200%) blur(30px);
   border: none;
   box-shadow: var(--header-shadow);
   height: var(--navbar-height);
-  z-index: 10;
+  width: 100%;
   padding: 0.75rem 1.5rem;
   border-radius: var(--border-radius-xs);
-  margin: 12px 30px 0;
-  width: calc(100% - 60px);
-  position: fixed;
 }
 
 /* Sidebar - Soft and Elegant */
@@ -92,11 +99,12 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Dashboard content wrapper */
 .dashboard-content {
-  margin-left: calc(var(--sidebar-width) + 30px);
-  padding-top: calc(var(--navbar-height) + 30px);
+  margin-left: calc(var(--sidebar-width) + 16px);
+  padding-top: calc(var(--navbar-height) + 24px);
   padding-right: 30px;
+  padding-left: 30px;
   padding-bottom: 30px;
-  width: 100%;
+  width: calc(100% - var(--sidebar-width) - 16px);
 }
 
 /* Notification and Currency Buttons - Clean and Interactive */

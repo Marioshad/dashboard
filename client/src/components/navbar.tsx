@@ -123,8 +123,8 @@ export function Navbar() {
   }, [notifications]);
 
   return (
-    <div className="bg-white shadow-sm border-b">
-      <div className="flex justify-between items-center px-4 py-2 h-16">
+    <div className="bg-white shadow-sm border border-gray-100 rounded-md">
+      <div className="flex justify-between items-center px-6 py-3 h-16">
         <div className="flex items-center gap-3">
           {/* Page Title - Dynamic based on current route */}
           <h1 className="text-lg font-medium text-gray-800">
