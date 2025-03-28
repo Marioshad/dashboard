@@ -8,6 +8,7 @@ import path from "path";
 import fs from "fs";
 import express from 'express';
 import { db } from "./db";
+import { format } from "date-fns";
 import { 
   roles, permissions, rolePermissions, users, appSettings, notifications,
   locations, foodItems, stores, insertLocationSchema, updateLocationSchema,
@@ -829,6 +830,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const items = await storage.getFoodItems(req.user.id, locationId);
       res.json(items);
+    } catch (error) {
+      next(error);
+    }
+  });
+  
+  // Get food item suggestions based on partial name
+  app.get('/api/food-items/suggestions', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      const userId = req.user.id;
+      const name = req.query.name as string;
+      
+      if (!name || name.length < 2) {
+        return res.json([]);
+      }
+      
+      // Get all items
+      const allItems = await storage.getFoodItems(userId);
+      
+      // Filter items with similar names
+      const lowercaseName = name.toLowerCase();
+      let similarItems = allItems.filter(item => 
+        item.name.toLowerCase().includes(lowercaseName)
+      );
+      
+      // Group similar items by name to count occurrences
+      const itemCounts: Record<string, { 
+        item: typeof allItems[0]; 
+        count: number; 
+        totalPrice: number; 
+        priceHistory: Array<{price: number; date: string}>
+      }> = {};
+      
+      // Count occurrences of each item name
+      similarItems.forEach(item => {
+        const normalizedName = item.name.toLowerCase();
+        if (!itemCounts[normalizedName]) {
+          itemCounts[normalizedName] = { 
+            item, 
+            count: 0,
+            totalPrice: 0,
+            priceHistory: []
+          };
+        }
+        itemCounts[normalizedName].count++;
+        if (item.price) {
+          itemCounts[normalizedName].totalPrice += Number(item.price);
+          itemCounts[normalizedName].priceHistory.push({
+            price: Number(item.price),
+            date: item.purchased // Keep the original date string
+          });
+        }
+      });
+      
+      // Convert back to array and sort by count (higher first)
+      const suggestions = Object.values(itemCounts)
+        .map(itemData => ({
+          ...itemData.item,
+          occurrences: itemData.count,
+          averagePrice: itemData.count > 0 && itemData.totalPrice > 0 ? itemData.totalPrice / itemData.count : null,
+          priceHistory: itemData.priceHistory
+            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+            .slice(0, 10) // Keep only 10 most recent prices
+        }))
+        .sort((a, b) => (b.occurrences as number) - (a.occurrences as number))
+        .slice(0, 5); // Return top 5 suggestions
+      
+      res.json(suggestions);
     } catch (error) {
       next(error);
     }
