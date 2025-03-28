@@ -74,8 +74,12 @@ interface Store {
 
 // Form schema for creating/editing a store
 const storeFormSchema = z.object({
-  name: z.string().min(2, "Store name must be at least 2 characters"),
-  location: z.string().min(2, "Store location must be at least 2 characters"),
+  name: z.string()
+    .min(1, "Store name is required")
+    .min(2, "Store name must be at least 2 characters"),
+  location: z.string()
+    .min(1, "Store location is required")
+    .min(2, "Store location must be at least 2 characters"),
   phone: z.string().optional(),
   fax: z.string().optional(),
   vatNumber: z.string().optional(),
@@ -281,7 +285,7 @@ export default function StoresPage() {
                 <DialogHeader>
                   <DialogTitle>Add new store</DialogTitle>
                   <DialogDescription>
-                    Create a new store where you purchase food items.
+                    Create a new store where you purchase food items. Fields marked with <span className="text-destructive">*</span> are required.
                   </DialogDescription>
                 </DialogHeader>
                 <Form {...addStoreForm}>
@@ -291,10 +295,15 @@ export default function StoresPage() {
                       name="name"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Store Name</FormLabel>
+                          <FormLabel>
+                            Store Name <span className="text-destructive">*</span>
+                          </FormLabel>
                           <FormControl>
-                            <Input {...field} placeholder="Supermarket name" />
+                            <Input {...field} placeholder="Supermarket name" required />
                           </FormControl>
+                          <FormDescription>
+                            Store name is required
+                          </FormDescription>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -304,10 +313,15 @@ export default function StoresPage() {
                       name="location"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Location</FormLabel>
+                          <FormLabel>
+                            Location <span className="text-destructive">*</span>
+                          </FormLabel>
                           <FormControl>
-                            <Input {...field} placeholder="Address or location of the store" />
+                            <Input {...field} placeholder="Address or location of the store" required />
                           </FormControl>
+                          <FormDescription>
+                            Store location is required
+                          </FormDescription>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -491,7 +505,7 @@ export default function StoresPage() {
           <DialogHeader>
             <DialogTitle>Edit store</DialogTitle>
             <DialogDescription>
-              Update the store information.
+              Update the store information. Fields marked with <span className="text-destructive">*</span> are required.
             </DialogDescription>
           </DialogHeader>
           <Form {...editStoreForm}>
@@ -501,10 +515,15 @@ export default function StoresPage() {
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Store Name</FormLabel>
+                    <FormLabel>
+                      Store Name <span className="text-destructive">*</span>
+                    </FormLabel>
                     <FormControl>
-                      <Input {...field} placeholder="Supermarket name" />
+                      <Input {...field} placeholder="Supermarket name" required />
                     </FormControl>
+                    <FormDescription>
+                      Store name is required
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -514,10 +533,15 @@ export default function StoresPage() {
                 name="location"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Location</FormLabel>
+                    <FormLabel>
+                      Location <span className="text-destructive">*</span>
+                    </FormLabel>
                     <FormControl>
-                      <Input {...field} placeholder="Address or location of the store" />
+                      <Input {...field} placeholder="Address or location of the store" required />
                     </FormControl>
+                    <FormDescription>
+                      Store location is required
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}

@@ -293,8 +293,12 @@ export const insertStoreSchema = createInsertSchema(stores).pick({
   vatNumber: true,
   taxId: true,
 }).extend({
-  name: z.string().min(2, "Store name must be at least 2 characters"),
-  location: z.string().min(2, "Store location must be at least 2 characters"),
+  name: z.string()
+    .min(1, "Store name is required")
+    .min(2, "Store name must be at least 2 characters"),
+  location: z.string()
+    .min(1, "Store location is required")
+    .min(2, "Store location must be at least 2 characters"),
   phone: z.string().optional(),
   fax: z.string().optional(),
   vatNumber: z.string().optional(),
