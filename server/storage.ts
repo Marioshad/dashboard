@@ -1,7 +1,8 @@
 import { 
-  users, locations, foodItems, 
+  users, locations, foodItems, stores, 
   type User, type InsertUser, type UpdateProfile,
   type Location, type InsertLocation, type UpdateLocation,
+  type Store, type InsertStore, type UpdateStore,
   type FoodItem, type InsertFoodItem, type UpdateFoodItem 
 } from "@shared/schema";
 import { db, pool } from "./db";
@@ -25,6 +26,14 @@ export interface IStorage {
   getLocation(id: number): Promise<Location | undefined>;
   updateLocation(id: number, location: UpdateLocation): Promise<Location>;
   deleteLocation(id: number): Promise<void>;
+  
+  // Store methods
+  createStore(store: InsertStore & { userId: number }): Promise<Store>;
+  getStores(userId: number): Promise<Store[]>;
+  findStoreByNameAndLocation(name: string, location: string, userId: number): Promise<Store | undefined>;
+  getStore(id: number): Promise<Store | undefined>;
+  updateStore(id: number, store: UpdateStore): Promise<Store>;
+  deleteStore(id: number): Promise<void>;
   
   // Food item methods
   createFoodItem(item: InsertFoodItem & { userId: number }): Promise<FoodItem>;
@@ -208,6 +217,98 @@ export class DatabaseStorage implements IStorage {
         .where(eq(locations.id, id));
     } catch (error) {
       console.error('Error deleting location:', error);
+      throw error;
+    }
+  }
+
+  // Store methods
+  async createStore(store: InsertStore & { userId: number }): Promise<Store> {
+    try {
+      const [result] = await db
+        .insert(stores)
+        .values({
+          ...store,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .returning();
+      return result;
+    } catch (error) {
+      console.error('Error creating store:', error);
+      throw error;
+    }
+  }
+
+  async getStores(userId: number): Promise<Store[]> {
+    try {
+      return await db
+        .select()
+        .from(stores)
+        .where(eq(stores.userId, userId));
+    } catch (error) {
+      console.error('Error getting stores:', error);
+      throw error;
+    }
+  }
+
+  async findStoreByNameAndLocation(name: string, location: string, userId: number): Promise<Store | undefined> {
+    try {
+      const result = await db
+        .select()
+        .from(stores)
+        .where(
+          and(
+            eq(stores.name, name),
+            eq(stores.location, location),
+            eq(stores.userId, userId)
+          )
+        )
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error('Error finding store by name and location:', error);
+      throw error;
+    }
+  }
+
+  async getStore(id: number): Promise<Store | undefined> {
+    try {
+      const result = await db
+        .select()
+        .from(stores)
+        .where(eq(stores.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error('Error getting store:', error);
+      throw error;
+    }
+  }
+
+  async updateStore(id: number, store: UpdateStore): Promise<Store> {
+    try {
+      const [result] = await db
+        .update(stores)
+        .set({
+          ...store,
+          updatedAt: new Date(),
+        })
+        .where(eq(stores.id, id))
+        .returning();
+      return result;
+    } catch (error) {
+      console.error('Error updating store:', error);
+      throw error;
+    }
+  }
+
+  async deleteStore(id: number): Promise<void> {
+    try {
+      await db
+        .delete(stores)
+        .where(eq(stores.id, id));
+    } catch (error) {
+      console.error('Error deleting store:', error);
       throw error;
     }
   }

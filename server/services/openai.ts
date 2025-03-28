@@ -1,7 +1,7 @@
 import { OpenAI } from "openai";
 import fs from "fs";
 import path from "path";
-import { FoodItem, InsertFoodItem } from "@shared/schema";
+import { FoodItem, InsertFoodItem, InsertStore } from "@shared/schema";
 import { format, addDays } from "date-fns";
 
 // Initialize OpenAI with API key
@@ -19,6 +19,15 @@ export interface ExtractedItem {
   unit: string;
   price: number | null;
   expiryDate: string;
+}
+
+export interface ExtractedStore {
+  name: string;
+  location: string;
+  phone?: string;
+  fax?: string;
+  vatNumber?: string;
+  taxId?: string;
 }
 
 /**
@@ -119,7 +128,8 @@ export async function processReceiptImage(filePath: string): Promise<ExtractedIt
 export function convertToFoodItems(
   items: ExtractedItem[],
   locationId: number,
-  userId: number
+  userId: number,
+  storeId?: number
 ): Partial<InsertFoodItem>[] {
   const today = new Date();
   
@@ -131,6 +141,136 @@ export function convertToFoodItems(
     expiryDate: item.expiryDate,
     locationId,
     userId,
+    storeId,
     purchased: format(today, "yyyy-MM-dd")
   }));
+}
+
+/**
+ * Extract store information from a receipt image using OpenAI's Vision API
+ * @param filePath Path to the uploaded receipt image
+ * @returns Store information extracted from the receipt
+ */
+export async function extractStoreFromReceipt(filePath: string): Promise<ExtractedStore> {
+  try {
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error("OpenAI API key not configured");
+    }
+
+    const absolutePath = path.resolve(filePath);
+    const fileBuffer = fs.readFileSync(absolutePath);
+    const base64Image = fileBuffer.toString("base64");
+
+    // Call OpenAI API with the receipt image
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: `You are a specialized receipt analyzer. Extract the store information from the receipt image.
+          Look for the store name, location/address, phone number, fax number, VAT number, and tax ID.
+          Format your response as a JSON object with the following structure:
+          {
+            "name": "Store Name",
+            "location": "Store Address or Location",
+            "phone": "Phone Number if available",
+            "fax": "Fax Number if available",
+            "vatNumber": "VAT Registration Number if available",
+            "taxId": "Tax ID if available"
+          }
+          The name and location fields are required, others are optional.
+          Response should be valid JSON only, no explanations or text.`
+        },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Extract the store information from this receipt." },
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:image/jpeg;base64,${base64Image}`,
+              },
+            },
+          ],
+        },
+      ],
+      max_tokens: 2000,
+      temperature: 0,
+    });
+
+    // Extract and parse the JSON response
+    const content = response.choices[0].message.content;
+    if (!content) {
+      throw new Error("No content in OpenAI response");
+    }
+
+    // Try to extract JSON from the response
+    let jsonStr = content;
+    // If response has markdown code blocks, extract the JSON part
+    if (content.includes("```")) {
+      jsonStr = content.split("```json")[1]?.split("```")[0] || 
+               content.split("```")[1]?.split("```")[0] || content;
+    }
+    
+    // Clean up any explanatory text before or after the JSON
+    jsonStr = jsonStr.trim();
+    
+    // Parse the JSON response
+    try {
+      const extractedStore = JSON.parse(jsonStr) as ExtractedStore;
+      
+      // Ensure required fields are present and valid
+      if (!extractedStore.name || typeof extractedStore.name !== 'string') {
+        extractedStore.name = "Unknown Store";
+      }
+      
+      if (!extractedStore.location || typeof extractedStore.location !== 'string') {
+        extractedStore.location = "Unknown Location";
+      }
+      
+      return {
+        name: extractedStore.name.trim(),
+        location: extractedStore.location.trim(),
+        phone: extractedStore.phone?.trim(),
+        fax: extractedStore.fax?.trim(),
+        vatNumber: extractedStore.vatNumber?.trim(),
+        taxId: extractedStore.taxId?.trim()
+      };
+    } catch (error) {
+      console.error("Failed to parse store information:", error);
+      // Return default store info if parsing fails
+      return {
+        name: "Unknown Store",
+        location: "Unknown Location"
+      };
+    }
+  } catch (error: any) {
+    console.error("Error extracting store information with OpenAI:", error);
+    // Return default store info if API call fails
+    return {
+      name: "Unknown Store",
+      location: "Unknown Location"
+    };
+  }
+}
+
+/**
+ * Convert extracted store information to a store object for database insertion
+ * @param store Extracted store information
+ * @param userId User ID
+ * @returns Store object ready for database insertion
+ */
+export function convertToStore(
+  store: ExtractedStore,
+  userId: number
+): InsertStore & { userId: number } {
+  return {
+    name: store.name,
+    location: store.location,
+    phone: store.phone || undefined,
+    fax: store.fax || undefined,
+    vatNumber: store.vatNumber || undefined,
+    taxId: store.taxId || undefined,
+    userId
+  };
 }

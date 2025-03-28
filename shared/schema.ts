@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, date, decimal } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, date, decimal, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -93,12 +93,37 @@ export const locations = pgTable("locations", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// Stores table for tracking where food was purchased from
+export const stores = pgTable("stores", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  location: text("location").notNull(),
+  phone: text("phone"),
+  fax: text("fax"),
+  vatNumber: text("vat_number"),
+  taxId: text("tax_id"),
+  userId: integer("user_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => {
+  return {
+    // Create a unique index on store name and location for a specific user
+    // This will help identify duplicate stores during receipt scanning
+    storeNameLocationUserIdx: uniqueIndex("store_name_location_user_idx").on(
+      table.name, 
+      table.location, 
+      table.userId
+    ),
+  }
+});
+
 export const foodItems = pgTable("food_items", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   quantity: decimal("quantity", { precision: 10, scale: 3 }).notNull(),
   unit: text("unit").notNull(), // g, kg, pieces, etc.
   locationId: integer("location_id").notNull().references(() => locations.id),
+  storeId: integer("store_id").references(() => stores.id), // Where the item was purchased
   expiryDate: date("expiry_date").notNull(),
   price: integer("price"), // in cents
   purchased: timestamp("purchased").notNull(),
@@ -117,6 +142,7 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   actedNotifications: many(notifications, { relationName: "actor" }),
   locations: many(locations),
   foodItems: many(foodItems),
+  stores: many(stores),
 }));
 
 export const rolesRelations = relations(roles, ({ many }) => ({
@@ -166,10 +192,22 @@ export const locationsRelations = relations(locations, ({ one, many }) => ({
   foodItems: many(foodItems),
 }));
 
+export const storesRelations = relations(stores, ({ one, many }) => ({
+  user: one(users, {
+    fields: [stores.userId],
+    references: [users.id],
+  }),
+  foodItems: many(foodItems),
+}));
+
 export const foodItemsRelations = relations(foodItems, ({ one }) => ({
   location: one(locations, {
     fields: [foodItems.locationId],
     references: [locations.id],
+  }),
+  store: one(stores, {
+    fields: [foodItems.storeId],
+    references: [stores.id],
   }),
   user: one(users, {
     fields: [foodItems.userId],
@@ -246,11 +284,32 @@ export const insertLocationSchema = createInsertSchema(locations).pick({
 
 export const updateLocationSchema = insertLocationSchema;
 
+// Store schemas
+export const insertStoreSchema = createInsertSchema(stores).pick({
+  name: true,
+  location: true,
+  phone: true,
+  fax: true,
+  vatNumber: true,
+  taxId: true,
+}).extend({
+  name: z.string().min(2, "Store name must be at least 2 characters"),
+  location: z.string().min(2, "Store location must be at least 2 characters"),
+  phone: z.string().optional(),
+  fax: z.string().optional(),
+  vatNumber: z.string().optional(),
+  taxId: z.string().optional(),
+});
+
+export const updateStoreSchema = insertStoreSchema;
+
+// Add storeId to the food item schema
 export const insertFoodItemSchema = createInsertSchema(foodItems).pick({
   name: true,
   quantity: true,
   unit: true,
   locationId: true,
+  storeId: true,
   expiryDate: true,
   price: true,
 }).extend({
@@ -258,6 +317,7 @@ export const insertFoodItemSchema = createInsertSchema(foodItems).pick({
   quantity: z.string().or(z.number()).pipe(z.coerce.number().positive("Quantity must be a positive number")),
   unit: z.string().min(1, "Unit is required"),
   locationId: z.number().min(1, "Location is required"),
+  storeId: z.number().optional(), // Store is optional
   expiryDate: z.date().or(z.string()),
   price: z.number().optional(),
 });
@@ -273,6 +333,8 @@ export type InsertPermission = z.infer<typeof insertPermissionSchema>;
 export type UpdatePermission = z.infer<typeof updatePermissionSchema>;
 export type InsertLocation = z.infer<typeof insertLocationSchema>;
 export type UpdateLocation = z.infer<typeof updateLocationSchema>;
+export type InsertStore = z.infer<typeof insertStoreSchema>;
+export type UpdateStore = z.infer<typeof updateStoreSchema>;
 export type InsertFoodItem = z.infer<typeof insertFoodItemSchema>;
 export type UpdateFoodItem = z.infer<typeof updateFoodItemSchema>;
 export type User = typeof users.$inferSelect;
@@ -281,4 +343,5 @@ export type Permission = typeof permissions.$inferSelect;
 export type AppSettings = typeof appSettings.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
 export type Location = typeof locations.$inferSelect;
+export type Store = typeof stores.$inferSelect;
 export type FoodItem = typeof foodItems.$inferSelect;
