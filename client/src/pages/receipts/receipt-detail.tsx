@@ -204,9 +204,9 @@ export function ReceiptDetailPage() {
                     </div>
                     <div className="font-medium">
                       {receipt.totalAmount 
-                        ? formatCurrency(parseFloat(receipt.totalAmount.toString())) 
+                        ? formatCurrency(parseFloat(receipt.totalAmount.toString()) / 100) 
                         : (receiptDetails.totalAmount 
-                          ? formatCurrency(receiptDetails.totalAmount) 
+                          ? formatCurrency(receiptDetails.totalAmount / 100) 
                           : 'N/A')}
                     </div>
                   </div>
@@ -235,7 +235,7 @@ export function ReceiptDetailPage() {
                       return (
                         <div key={index} className="flex justify-between text-sm">
                           <span>VAT {(vat.rate * 100).toFixed(0)}%</span>
-                          <span>{formatCurrency(vat.amount)}</span>
+                          <span>{formatCurrency(vat.amount / 100)}</span>
                         </div>
                       );
                     })}
@@ -280,7 +280,7 @@ export function ReceiptDetailPage() {
                           </div>
                         </div>
                         <div className="text-right">
-                          {item.price ? formatCurrency(item.price) : 'N/A'}
+                          {item.price ? formatCurrency(item.price / 100) : 'N/A'}
                         </div>
                       </div>
                       {item.expiryDate && (

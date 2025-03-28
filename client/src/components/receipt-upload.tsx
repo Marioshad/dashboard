@@ -427,7 +427,7 @@ export function ReceiptUpload({ onSuccess }: ReceiptUploadProps = {}) {
                     <span>VAT Breakdown:</span>
                     {receiptDetails.totalAmount !== undefined && (
                       <span className="font-semibold">
-                        Total: {formatPrice(receiptDetails.totalAmount * 100)}
+                        Total: {formatPrice(receiptDetails.totalAmount)}
                       </span>
                     )}
                   </div>
@@ -435,7 +435,7 @@ export function ReceiptUpload({ onSuccess }: ReceiptUploadProps = {}) {
                     {receiptDetails.vatBreakdown.map((vat, idx) => (
                       <div key={idx} className="flex justify-between text-muted-foreground">
                         <span>{vat.rate}%</span>
-                        <span>{formatPrice(vat.amount * 100)}</span>
+                        <span>{formatPrice(vat.amount)}</span>
                       </div>
                     ))}
                   </div>
@@ -456,7 +456,7 @@ export function ReceiptUpload({ onSuccess }: ReceiptUploadProps = {}) {
                   <div className="space-y-1">
                     <div className="font-medium">{item.name}</div>
                     <div className="text-sm text-muted-foreground">
-                      {item.quantity} {item.unit} · {item.price ? formatPrice(item.price) : formatPrice(0)}
+                      {item.quantity} {item.unit} · {item.price ? formatPrice(item.price * 100) : formatPrice(0)}
                     </div>
                     <div className="text-xs text-muted-foreground">
                       Expires: {new Date(item.expiryDate || '').toLocaleDateString()}
