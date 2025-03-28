@@ -120,19 +120,19 @@ export const stores = pgTable("stores", {
 // Receipts table for storing uploaded receipts
 export const receipts = pgTable("receipts", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => users.id),
-  storeId: integer("store_id").references(() => stores.id),
-  filePath: text("file_path").notNull(),
-  fileName: text("file_name").notNull(),
-  fileSize: integer("file_size").notNull(),
-  mimeType: text("mime_type").notNull(),
-  uploadDate: timestamp("upload_date").defaultNow().notNull(),
-  extractedData: jsonb("extracted_data"),
-  totalAmount: decimal("total_amount", { precision: 10, scale: 2 }),
-  receiptDate: timestamp("receipt_date"),
-  receiptNumber: text("receipt_number"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  userId: integer("userId").notNull().references(() => users.id),
+  storeId: integer("storeId").references(() => stores.id),
+  filePath: text("filePath").notNull(),
+  fileName: text("fileName").notNull(),
+  fileSize: integer("fileSize").notNull(),
+  mimeType: text("mimeType").notNull(),
+  uploadDate: timestamp("uploadDate").defaultNow().notNull(),
+  extractedData: jsonb("extractedData"),
+  totalAmount: decimal("totalAmount", { precision: 10, scale: 2 }),
+  receiptDate: timestamp("receiptDate"),
+  receiptNumber: text("receiptNumber"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
 
 export const foodItems = pgTable("food_items", {
@@ -142,7 +142,7 @@ export const foodItems = pgTable("food_items", {
   unit: text("unit").notNull(), // g, kg, pieces, etc.
   locationId: integer("location_id").notNull().references(() => locations.id),
   storeId: integer("store_id").references(() => stores.id), // Where the item was purchased
-  receiptId: integer("receipt_id").references(() => receipts.id), // Add relation to receipts
+  receiptId: integer("receiptId").references(() => receipts.id), // Add relation to receipts
   expiryDate: date("expiry_date").notNull(),
   price: integer("price"), // in cents
   purchased: timestamp("purchased").notNull(),
@@ -425,4 +425,11 @@ export type Notification = typeof notifications.$inferSelect;
 export type Location = typeof locations.$inferSelect;
 export type Store = typeof stores.$inferSelect;
 export type FoodItem = typeof foodItems.$inferSelect;
-export type Receipt = typeof receipts.$inferSelect;
+// Base Receipt type from the table
+export type BaseReceipt = typeof receipts.$inferSelect;
+
+// Extended Receipt type with related data
+export type Receipt = BaseReceipt & {
+  store?: Store;
+  paymentMethod?: string;
+};

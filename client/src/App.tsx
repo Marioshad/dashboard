@@ -23,7 +23,8 @@ import ExpiryTrackerPage from "@/pages/expiry-tracker-page";
 import StoresPage from "@/pages/stores";
 import StoreDetailsPage from "@/pages/stores/store-details";
 import ReceiptsPage from "@/pages/receipts";
-import ReceiptDetailPage from "@/pages/receipts/receipt-detail";
+// Import receipt detail page component directly 
+import { ReceiptDetailPage } from "./pages/receipts/receipt-detail";
 
 function Router() {
   return (

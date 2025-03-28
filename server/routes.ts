@@ -1223,6 +1223,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Get food items for a specific receipt
+  app.get('/api/receipts/:id/items', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      const receiptId = parseInt(req.params.id);
+      if (isNaN(receiptId)) {
+        return res.status(400).json({ message: "Invalid receipt ID" });
+      }
+      
+      // First check if receipt exists and belongs to user
+      const receipt = await storage.getReceipt(receiptId);
+      if (!receipt) {
+        return res.status(404).json({ message: "Receipt not found" });
+      }
+      
+      // Verify ownership
+      if (receipt.userId !== req.user.id) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
+      // Get food items for this receipt
+      const foodItems = await storage.getFoodItemsByReceiptId(receiptId);
+      res.json(foodItems);
+    } catch (error) {
+      next(error);
+    }
+  });
+  
   app.delete('/api/receipts/:id', async (req, res, next) => {
     try {
       if (!req.isAuthenticated()) {
