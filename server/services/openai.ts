@@ -22,6 +22,11 @@ export interface ExtractedItem {
   isWeightBased?: boolean; // Indicates if this is a weight-based item
   expiryDate: string;
   purchaseDate?: string; // Add optional purchase date field
+  isDiscount?: boolean; // Indicates if this is a discount item
+  description?: string; // Additional description or notes
+  originalName?: string; // Original name in receipt's language
+  normalizedName?: string; // Normalized version of the name
+  lineNumbers?: number[]; // Line numbers in the receipt for multi-line items
 }
 
 export interface ExtractedStore {
@@ -39,12 +44,25 @@ export interface ReceiptDetails {
   time?: string;
   cashier?: string;
   paymentMethod?: string;
+  cardLastDigits?: string; // Last 4 digits of payment card (if applicable)
   totalAmount?: number;
   vatBreakdown?: {
-    rate: number;
-    amount: number;
+    rate: number;  // VAT rate percentage (e.g., 5 for 5%)
+    amount: number; // VAT amount
+    netAmount?: number; // Net amount before VAT (if available)
+    grossAmount?: number; // Gross amount after VAT (if available)
   }[];
   language?: string; // Detected language of the receipt
+  discounts?: {
+    description: string;
+    amount: number;
+  }[];
+  loyaltyInfo?: {
+    programName?: string; // e.g., "Lidl Plus", "My Alphamega"
+    points?: number;
+    stickerCount?: number;
+    message?: string; // Any additional loyalty info like "You are entitled to 2 stickers"
+  };
 }
 
 /**
@@ -70,12 +88,16 @@ export async function processReceiptImage(filePath: string): Promise<ExtractedIt
           role: "system",
           content: `You are a specialized receipt analyzer. Extract all food items from the receipt image with detailed information.
           For each item, identify the following:
-          - name: The product name
+          - name: The product name (normalized to English if originally in another language)
+          - originalName: The original product name as it appears on the receipt (in its original language)
+          - normalizedName: A normalized version of the name (remove noise like brand names if possible)
           - quantity: The numeric quantity (can be decimal for weight-based items like 0.450 kg of apples)
           - unit: The unit of measurement (pieces, grams, kg, oz, etc.)
           - price: The total price as shown on the receipt (numeric, e.g., 2.99)
           - pricePerUnit: If the item is sold by weight, include the price per unit (e.g., 1.99 per kg, g, lb, etc.)
           - isWeightBased: true if the item is sold by weight (kg, g, lb), false if sold by count
+          - isDiscount: true if this is a discount line or item (e.g., "Lidl Plus έκπτωση" or "Discount -1.72")
+          - description: Any additional information or notes about the item
           - expiryDate: Estimated expiry date based on TODAY'S DATE (${format(new Date(), "yyyy-MM-dd")}) and typical shelf life of the product. Use YYYY-MM-DD format. 
             - Fresh produce like leafy greens: 5-7 days from today
             - Fruits like apples, oranges: 1-2 weeks from today
@@ -84,11 +106,29 @@ export async function processReceiptImage(filePath: string): Promise<ExtractedIt
             - Bread: 4-7 days from today
             - Dry goods (pasta, rice): 1 year from today
             - Frozen goods: 3 months from today
+          - lineNumbers: List of line numbers in the receipt that refer to this item (for multi-line items)
 
           For weight-based items (fruits, vegetables, meat):
-          - Include both the total price and price per unit
-          - Make sure to properly handle decimal quantities (e.g., 0.450 kg)
-          - Calculate the actual total price (quantity * pricePerUnit) if needed
+          - Pay special attention to formats like "1.444 kg × 2.49 EUR/kg = 3.60"
+          - Extract quantity (1.444), unit (kg), price per unit (2.49), and total price (3.60)
+          - Set isWeightBased to true for such items
+          - Calculate the total price if needed (quantity * pricePerUnit)
+
+          For multilingual receipts (especially Greek + English mix):
+          - Normalize common Greek grocery terms to their English equivalents (e.g., ΜΠΑΝ. → Bananas, ΛΕΜΟΝΙ → Lemon)
+          - For produce and common items, provide standard English names in the 'name' field
+          - Keep the original text in the 'originalName' field
+
+          For multi-line items (like in Lidl receipts):
+          - Join related lines that form a single product entry
+          - Handle cases where name is on one line and price/weight on another
+          - Use the lineNumbers field to indicate which lines were grouped together
+
+          For discount items:
+          - Identify discount lines (often prefixed with "Discount" or showing negative amounts)
+          - Set isDiscount to true for these items
+          - Try to associate discounts with their corresponding items when possible
+
           Use 'pieces' as the default unit if not specified.
           Format your response strictly as a JSON array.
           Response should be valid JSON array only, no explanations or text.`
@@ -184,7 +224,12 @@ export async function processReceiptImage(filePath: string): Promise<ExtractedIt
           price: item.price !== undefined ? Number(item.price) : null,
           pricePerUnit: isWeightBased && item.pricePerUnit ? Number(item.pricePerUnit) : null,
           isWeightBased: isWeightBased,
-          expiryDate: item.expiryDate || defaultExpiryDate
+          expiryDate: item.expiryDate || defaultExpiryDate,
+          isDiscount: Boolean(item.isDiscount) || false,
+          description: item.description ? String(item.description) : undefined,
+          originalName: item.originalName ? String(item.originalName) : undefined,
+          normalizedName: item.normalizedName ? String(item.normalizedName) : undefined,
+          lineNumbers: Array.isArray(item.lineNumbers) ? item.lineNumbers : undefined
         };
       });
       
@@ -214,7 +259,9 @@ export function convertToFoodItems(
 ): Partial<InsertFoodItem>[] {
   const today = new Date();
   
-  return items.map(item => {
+  // Map items and then filter out nulls
+  // First, map all the items (creating food items or null values)
+  const mapped = items.map(item => {
     // Use purchase date from receipt if available, otherwise use today's date
     const purchaseDate = (item as any).purchaseDate || format(today, "yyyy-MM-dd");
     
@@ -223,8 +270,17 @@ export function convertToFoodItems(
       item.isWeightBased || 
       ['kg', 'g', 'gram', 'grams', 'kilogram', 'kilograms', 'lb', 'lbs', 'pound', 'pounds', 'oz', 'ounce', 'ounces'].includes(item.unit.toLowerCase());
     
+    // Skip discount items - we don't want to add them to inventory
+    if (item.isDiscount) {
+      return null;
+    }
+    
+    // Use normalized name if available, otherwise use standard name
+    const finalName = item.normalizedName || item.name;
+    
+    // Create food item with all available data
     return {
-      name: item.name,
+      name: finalName,
       quantity: item.quantity,
       unit: item.unit,
       price: item.price !== null ? item.price : undefined,
@@ -234,9 +290,16 @@ export function convertToFoodItems(
       locationId,
       userId,
       storeId,
-      purchased: purchaseDate
+      purchased: purchaseDate,
+      // Include original name from receipt if different from normalized name
+      description: item.originalName && item.originalName !== finalName 
+        ? `Original: ${item.originalName}${item.description ? ' - ' + item.description : ''}`
+        : item.description
     };
   });
+  
+  // Then, filter out any null values
+  return mapped.filter((item): item is Partial<InsertFoodItem> => item !== null);
 }
 
 /**
@@ -369,8 +432,8 @@ export async function extractReceiptDetails(filePath: string): Promise<ReceiptDe
         {
           role: "system",
           content: `You are a specialized receipt analyzer. Extract detailed transaction information from the receipt.
-          Look for receipt number, transaction date, transaction time, cashier name, payment method, and total amount.
-          Also extract VAT breakdown information if available.
+          Look for receipt number, transaction date, transaction time, cashier name, payment method, card details, and total amount.
+          Also extract VAT breakdown information if available, including net, gross and VAT amounts for each rate.
           Format your response as a JSON object with the following structure:
           {
             "receiptNumber": "Receipt or transaction ID",
@@ -378,12 +441,56 @@ export async function extractReceiptDetails(filePath: string): Promise<ReceiptDe
             "time": "Transaction time in HH:MM:SS format",
             "cashier": "Name of the cashier if available",
             "paymentMethod": "Method of payment (CASH, VISA, MASTERCARD, etc.)",
+            "cardLastDigits": "Last 4 digits of the payment card if available",
             "totalAmount": Total amount as shown on the receipt (numeric, e.g., 24.99),
             "vatBreakdown": [
-              { "rate": VAT rate as a number (e.g., 5 for 5%), "amount": amount as shown on receipt }
+              { 
+                "rate": VAT rate as a number (e.g., 5 for 5%), 
+                "amount": VAT amount, 
+                "netAmount": Net amount before VAT,
+                "grossAmount": Gross amount after VAT
+              }
             ],
-            "language": "The language of the receipt (e.g., English, French, German, etc.)"
+            "discounts": [
+              {
+                "description": "Description of the discount",
+                "amount": Amount of the discount (numeric)
+              }
+            ],
+            "loyaltyInfo": {
+              "programName": "Name of loyalty program (e.g., Lidl Plus, My Alphamega)",
+              "points": Number of points earned or accumulated,
+              "stickerCount": Number of stickers earned or accumulated,
+              "message": "Any additional loyalty info like 'You are entitled to 2 stickers'"
+            },
+            "language": "The language of the receipt (e.g., English, Greek, etc.)"
           }
+          
+          Pay special attention to the following:
+          
+          1. VAT Breakdown:
+             - In Cyprus, common VAT rates are 0%, 5%, 9%, and 19%
+             - Look for sections with labels like "ΦΠΑ", "VAT", "Φ.Π.Α.", "ΣΥΝΟΛΟ", "TOTAL"
+             - Extract both the rate and corresponding amount
+             - If possible, extract net amount (before VAT) and gross amount (after VAT) for each rate
+             - Ensure all amounts add up correctly (net + VAT = gross)
+          
+          2. Payment Methods:
+             - Look for payment method indicators like "VISA", "MASTERCARD", "ΜΕΤΡΗΤΑ", "CASH"
+             - If a card was used, try to extract the last 4 digits of the card number
+             - Watch for expressions like "VISA ending 1234" or "Card ****1234"
+          
+          3. Loyalty Programs:
+             - Check for loyalty program information (often at the bottom of receipts)
+             - Examples include "Lidl Plus έκπτωση", "My Alphamega", "You are entitled to X stickers"
+             - Extract point earnings, sticker counts, and special messages
+             - For "You are entitled to X stickers" type messages, include them in loyaltyInfo.message
+          
+          4. Discounts:
+             - Identify any discounts applied to the purchase
+             - These might appear as "ΕΚΠΤΩΣΗ", "DISCOUNT", negative amounts, or with minus signs
+             - Include both the description and the amount for each discount
+          
           All fields are optional but provide as many as you can identify.
           For the language field, detect what language the receipt text is in.
           Response should be valid JSON only, no explanations or text.`
