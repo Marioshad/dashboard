@@ -90,6 +90,25 @@ export async function runMigrations(): Promise<boolean> {
         log(`Successfully applied ${file}`, 'migration');
       } catch (error: any) {
         log(`Error executing ${file}: ${error.message}`, 'migration');
+        
+        // Add more detailed error reporting
+        if (error.position) {
+          const errorPos = parseInt(error.position);
+          const startPos = Math.max(0, errorPos - 100);
+          const endPos = Math.min(migrationSQL.length, errorPos + 100);
+          const errorContext = migrationSQL.substring(startPos, endPos);
+          
+          log(`Error position: ${error.position}`, 'migration');
+          log(`SQL context near error:`, 'migration');
+          log(`...${errorContext}...`, 'migration');
+          
+          // Try to identify the specific line where the error occurred
+          const lines = migrationSQL.substring(0, errorPos).split('\n');
+          const lineNum = lines.length;
+          const colNum = lines[lines.length - 1].length + 1;
+          log(`Error at approximately line ${lineNum}, column ${colNum}`, 'migration');
+        }
+        
         throw error; // Re-throw to trigger rollback
       }
     }

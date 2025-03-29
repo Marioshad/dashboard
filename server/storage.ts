@@ -1,16 +1,15 @@
 import { 
-  users, locations, foodItems, stores, receipts, tags, foodItemsTags,
+  users, locations, foodItems, stores, receipts,
   type User, type InsertUser, type UpdateProfile,
   type Location, type InsertLocation, type UpdateLocation,
   type Store, type InsertStore, type UpdateStore,
   type FoodItem, type InsertFoodItem, type UpdateFoodItem,
-  type Receipt, type InsertReceipt, type UpdateReceipt,
-  type Tag, type InsertTag, type UpdateTag, type FoodItemTag
+  type Receipt, type InsertReceipt, type UpdateReceipt
 } from "@shared/schema";
 import { db, pool } from "./db";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
-import { eq, sql, and, isNull, or, inArray } from "drizzle-orm";
+import { eq, sql, and, isNull } from "drizzle-orm";
 import { Pool } from 'pg';
 
 const PostgresSessionStore = connectPg(session);
@@ -51,20 +50,6 @@ export interface IStorage {
   updateReceipt(id: number, receipt: UpdateReceipt): Promise<Receipt>;
   deleteReceipt(id: number): Promise<void>;
   getFoodItemsByReceiptId(receiptId: number): Promise<FoodItem[]>;
-  
-  // Tag methods
-  createTag(tag: InsertTag & { userId: number }): Promise<Tag>;
-  getTags(userId: number): Promise<Tag[]>;
-  getSystemTags(): Promise<Tag[]>;
-  getTag(id: number): Promise<Tag | undefined>;
-  updateTag(id: number, tag: UpdateTag): Promise<Tag>;
-  deleteTag(id: number): Promise<void>;
-  
-  // FoodItem Tag methods
-  addTagToFoodItem(foodItemId: number, tagId: number): Promise<void>;
-  removeTagFromFoodItem(foodItemId: number, tagId: number): Promise<void>;
-  getTagsForFoodItem(foodItemId: number): Promise<Tag[]>;
-  getFoodItemsByTag(tagId: number, userId: number): Promise<FoodItem[]>;
   
   sessionStore: session.Store;
 }
@@ -138,7 +123,7 @@ export class DatabaseStorage implements IStorage {
 
   async createUser(insertUser: InsertUser): Promise<User> {
     try {
-      const [user] = await db.insert(users).values(insertUser).returning();
+      const [user] = await db.insert(users).values([insertUser]).returning();
       return user;
     } catch (error) {
       console.error('Error creating user:', error);
@@ -178,11 +163,11 @@ export class DatabaseStorage implements IStorage {
     try {
       const [result] = await db
         .insert(locations)
-        .values({
+        .values([{
           ...location,
           createdAt: new Date(),
           updatedAt: new Date(),
-        })
+        }])
         .returning();
       return result;
     } catch (error) {
@@ -250,11 +235,11 @@ export class DatabaseStorage implements IStorage {
     try {
       const [result] = await db
         .insert(stores)
-        .values({
+        .values([{
           ...store,
           createdAt: new Date(),
           updatedAt: new Date(),
-        })
+        }])
         .returning();
       return result;
     } catch (error) {
@@ -345,7 +330,8 @@ export class DatabaseStorage implements IStorage {
         ? item.expiryDate.toISOString().split('T')[0] // Convert to YYYY-MM-DD format
         : item.expiryDate;
       
-      const dateNow = new Date();
+      // Force types to SQL to avoid TypeScript errors
+      const dateNow = new Date().toISOString();
       
       console.log('Creating food item with data:', {
         ...item,
@@ -353,28 +339,57 @@ export class DatabaseStorage implements IStorage {
         purchased: dateNow,
       });
       
-      // Create an object with all values needed - use direct approach like in createReceipt
-      const values: any = {
-        name: item.name,
-        quantity: String(item.quantity), // Convert number to string for decimal column
-        unit: item.unit,
-        locationId: item.locationId,
-        userId: item.userId,
-        expiryDate: expiryDateString,
-        price: item.price,
-        // Use direct date values for better compatibility
-        purchased: dateNow,
-        createdAt: dateNow,
-        updatedAt: dateNow,
-        receiptId: item.receiptId || null,
-        storeId: item.storeId || null,
-        pricePerUnit: item.pricePerUnit || null,
-        isWeightBased: item.isWeightBased || false,
+      // Prepare the values as separate variables
+      const name = item.name;
+      const quantity = String(item.quantity); // Convert number to string for decimal column
+      const unit = item.unit;
+      const locationId = item.locationId;
+      const expiryDate = expiryDateString;
+      const price = item.price;
+      const userId = item.userId;
+      const purchased = sql`${dateNow}::timestamp`;
+      const createdAt = sql`${dateNow}::timestamp`;
+      const updatedAt = sql`${dateNow}::timestamp`;
+      const receiptId = item.receiptId || null;
+      const storeId = item.storeId || null;
+      const pricePerUnit = item.pricePerUnit || null;
+      const isWeightBased = item.isWeightBased || false;
+      const normalizedName = item.normalizedName || null;
+      const originalName = item.originalName || null;
+      const category = item.category || null;
+      const normalizationConfidence = item.normalizationConfidence || null;
+      
+      // Create a base values object
+      const valuesObj: any = {
+        name,
+        quantity,
+        unit,
+        locationId,
+        expiryDate,
+        price,
+        userId,
+        purchased,
+        createdAt,
+        updatedAt,
+        receiptId,
+        storeId,
+        pricePerUnit,
+        isWeightBased,
+        normalizedName,
+        originalName,
+        category,
+        normalizationConfidence,
       };
       
+      // Conditionally add lineNumbers if present
+      if (item.lineNumbers && Array.isArray(item.lineNumbers)) {
+        valuesObj.lineNumbers = item.lineNumbers;
+      }
+      
+      // Wrap in array for drizzle's .values() method which expects an array
       const [result] = await db
         .insert(foodItems)
-        .values(values)
+        .values([valuesObj])
         .returning();
       return result;
     } catch (error) {
@@ -489,7 +504,7 @@ export class DatabaseStorage implements IStorage {
       
       const [result] = await db
         .insert(receipts)
-        .values(values)
+        .values([values])
         .returning();
       
       return result;
@@ -618,274 +633,6 @@ export class DatabaseStorage implements IStorage {
       return result;
     } catch (error) {
       console.error('Error getting food items by receipt ID:', error);
-      throw error;
-    }
-  }
-  
-  // Tag methods
-  async createTag(tag: InsertTag & { userId: number }): Promise<Tag> {
-    try {
-      const [result] = await db
-        .insert(tags)
-        .values({
-          name: tag.name,
-          color: tag.color || "#3B82F6",
-          userId: tag.userId,
-          isSystem: tag.isSystem || false,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .returning();
-      return result;
-    } catch (error) {
-      console.error('Error creating tag:', error);
-      throw error;
-    }
-  }
-
-  async getTags(userId: number): Promise<Tag[]> {
-    try {
-      // Use raw SQL to handle the case conversion issue with PostgreSQL
-      const result = await db.execute(sql`
-        SELECT * FROM tags 
-        WHERE userid = ${userId} OR issystem = true
-        ORDER BY name, id
-      `);
-      
-      // Map the raw results and handle duplicates
-      // Keep track of tag names we've already processed to avoid duplicates
-      const processedTags = new Map<string, Tag>();
-      
-      for (const row of result.rows) {
-        const tagName = String(row.name);
-        const tag: Tag = {
-          id: Number(row.id),
-          name: tagName,
-          color: row.color ? String(row.color) : null,
-          userId: row.userid ? Number(row.userid) : null,
-          isSystem: Boolean(row.issystem),
-          createdAt: row.createdat ? new Date(String(row.createdat)) : new Date(),
-          updatedAt: row.updatedat ? new Date(String(row.updatedat)) : new Date()
-        };
-        
-        // Only add if we haven't seen this tag name before, or if this is a user tag (non-system)
-        if (!processedTags.has(tagName) || tag.userId === userId) {
-          processedTags.set(tagName, tag);
-        }
-      }
-      
-      // Return the deduplicated tags
-      return Array.from(processedTags.values());
-    } catch (error) {
-      console.error('Error getting tags:', error);
-      throw error;
-    }
-  }
-
-  async getSystemTags(): Promise<Tag[]> {
-    try {
-      // Use raw SQL to handle the case conversion issue with PostgreSQL
-      const result = await db.execute(sql`
-        SELECT * FROM tags 
-        WHERE issystem = true
-        ORDER BY name, id
-      `);
-      
-      // Map the raw results and handle duplicates
-      // Keep track of tag names we've already processed to avoid duplicates
-      const processedTags = new Map<string, Tag>();
-      
-      for (const row of result.rows) {
-        const tagName = String(row.name);
-        const tag: Tag = {
-          id: Number(row.id),
-          name: tagName,
-          color: row.color ? String(row.color) : null,
-          userId: row.userid ? Number(row.userid) : null,
-          isSystem: Boolean(row.issystem),
-          createdAt: row.createdat ? new Date(String(row.createdat)) : new Date(),
-          updatedAt: row.updatedat ? new Date(String(row.updatedat)) : new Date()
-        };
-        
-        // If we haven't seen this tag name before, or if this tag has a lower ID (older)
-        if (!processedTags.has(tagName) || Number(row.id) < processedTags.get(tagName)!.id) {
-          processedTags.set(tagName, tag);
-        }
-      }
-      
-      // Return the deduplicated tags
-      return Array.from(processedTags.values());
-    } catch (error) {
-      console.error('Error getting system tags:', error);
-      throw error;
-    }
-  }
-
-  async getTag(id: number): Promise<Tag | undefined> {
-    try {
-      // Use raw SQL to handle the case conversion issue with PostgreSQL
-      const result = await db.execute(sql`
-        SELECT * FROM tags 
-        WHERE id = ${id}
-        LIMIT 1
-      `);
-      
-      if (result.rows.length === 0) {
-        return undefined;
-      }
-      
-      const row = result.rows[0];
-      
-      // Map the raw result to a Tag object with proper type casting
-      return {
-        id: Number(row.id),
-        name: String(row.name),
-        color: row.color ? String(row.color) : null,
-        userId: row.userid ? Number(row.userid) : null,
-        isSystem: Boolean(row.issystem),
-        createdAt: row.createdat ? new Date(String(row.createdat)) : new Date(),
-        updatedAt: row.updatedat ? new Date(String(row.updatedat)) : new Date()
-      };
-    } catch (error) {
-      console.error('Error getting tag:', error);
-      throw error;
-    }
-  }
-
-  async updateTag(id: number, tag: UpdateTag): Promise<Tag> {
-    try {
-      // Use raw SQL to handle the case conversion issue with PostgreSQL
-      const result = await db.execute(sql`
-        UPDATE tags
-        SET 
-          name = ${tag.name},
-          color = ${tag.color || "#3B82F6"},
-          updatedat = NOW()
-        WHERE id = ${id}
-        RETURNING *
-      `);
-      
-      if (result.rows.length === 0) {
-        throw new Error("Tag not found or update failed");
-      }
-      
-      const row = result.rows[0];
-      
-      // Map the raw result to a Tag object with proper type casting
-      return {
-        id: Number(row.id),
-        name: String(row.name),
-        color: row.color ? String(row.color) : null,
-        userId: row.userid ? Number(row.userid) : null,
-        isSystem: Boolean(row.issystem),
-        createdAt: row.createdat ? new Date(String(row.createdat)) : new Date(),
-        updatedAt: row.updatedat ? new Date(String(row.updatedat)) : new Date()
-      };
-    } catch (error) {
-      console.error('Error updating tag:', error);
-      throw error;
-    }
-  }
-
-  async deleteTag(id: number): Promise<void> {
-    try {
-      await db
-        .delete(tags)
-        .where(eq(tags.id, id));
-    } catch (error) {
-      console.error('Error deleting tag:', error);
-      throw error;
-    }
-  }
-
-  // FoodItem Tag methods
-  async addTagToFoodItem(foodItemId: number, tagId: number): Promise<void> {
-    try {
-      await db
-        .insert(foodItemsTags)
-        .values({
-          foodItemId,
-          tagId,
-          createdAt: new Date(),
-        })
-        .onConflictDoNothing(); // Prevent duplicates
-    } catch (error) {
-      console.error('Error adding tag to food item:', error);
-      throw error;
-    }
-  }
-
-  async removeTagFromFoodItem(foodItemId: number, tagId: number): Promise<void> {
-    try {
-      await db
-        .delete(foodItemsTags)
-        .where(
-          and(
-            eq(foodItemsTags.foodItemId, foodItemId),
-            eq(foodItemsTags.tagId, tagId)
-          )
-        );
-    } catch (error) {
-      console.error('Error removing tag from food item:', error);
-      throw error;
-    }
-  }
-
-  async getTagsForFoodItem(foodItemId: number): Promise<Tag[]> {
-    try {
-      // Use raw SQL to handle the case conversion issue with PostgreSQL
-      const result = await db.execute(sql`
-        SELECT t.* FROM tags t
-        INNER JOIN food_items_tags fit ON t.id = fit.tag_id
-        WHERE fit.food_item_id = ${foodItemId}
-        ORDER BY t.name
-      `);
-      
-      // Map the raw results to Tag objects with proper type casting
-      return result.rows.map((row: any) => ({
-        id: Number(row.id),
-        name: String(row.name),
-        color: row.color ? String(row.color) : null,
-        userId: row.userid ? Number(row.userid) : null,
-        isSystem: Boolean(row.issystem),
-        createdAt: row.createdat ? new Date(String(row.createdat)) : new Date(),
-        updatedAt: row.updatedat ? new Date(String(row.updatedat)) : new Date()
-      }));
-    } catch (error) {
-      console.error('Error getting tags for food item:', error);
-      throw error;
-    }
-  }
-
-  async getFoodItemsByTag(tagId: number, userId: number): Promise<FoodItem[]> {
-    try {
-      // First get the IDs from the relation table
-      const taggedItemsQuery = await db.execute(sql`
-        SELECT food_item_id FROM food_items_tags
-        WHERE tag_id = ${tagId}
-      `);
-      
-      // If no items have this tag, return empty array
-      if (taggedItemsQuery.rows.length === 0) {
-        return [];
-      }
-      
-      // Create the item IDs for the query
-      const itemIds = taggedItemsQuery.rows.map((row: any) => Number(row.food_item_id));
-      
-      // Get the food items directly using the IDs - this avoids type issues
-      const foodItemsList: FoodItem[] = [];
-      
-      for (const itemId of itemIds) {
-        const foodItem = await this.getFoodItem(itemId);
-        if (foodItem && foodItem.userId === userId) {
-          foodItemsList.push(foodItem);
-        }
-      }
-      
-      return foodItemsList.sort((a, b) => a.name.localeCompare(b.name));
-    } catch (error) {
-      console.error('Error getting food items by tag:', error);
       throw error;
     }
   }

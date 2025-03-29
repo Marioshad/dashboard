@@ -18,7 +18,6 @@ import {
   Building,
   Menu,
   X,
-  Tag,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import {
@@ -170,7 +169,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               <CollapsibleTrigger asChild>
                 <div className={cn(
                   "nav-link cursor-pointer",
-                  ["/inventory", "/locations", "/shopping-list", "/receipts", "/expiry-tracker", "/analytics", "/stores", "/tags"].includes(location) && "active"
+                  ["/inventory", "/locations", "/shopping-list", "/receipts", "/expiry-tracker", "/analytics", "/stores"].includes(location) && "active"
                 )}>
                   <span className="flex items-center">
                     <Apple className="nav-link-icon" />
@@ -235,15 +234,6 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                   )}>
                     <Building className="nav-link-icon" />
                     Stores
-                  </div>
-                </Link>
-                <Link href="/tags">
-                  <div className={cn(
-                    "nav-link",
-                    location === "/tags" && "active"
-                  )}>
-                    <Tag className="nav-link-icon" />
-                    Tags
                   </div>
                 </Link>
                 <Link href="/analytics">
