@@ -649,19 +649,33 @@ export class DatabaseStorage implements IStorage {
       const result = await db.execute(sql`
         SELECT * FROM tags 
         WHERE userid = ${userId} OR issystem = true
-        ORDER BY name
+        ORDER BY name, id
       `);
       
-      // Map the raw results to Tag objects with proper type casting
-      return result.rows.map((row: any) => ({
-        id: Number(row.id),
-        name: String(row.name),
-        color: row.color ? String(row.color) : null,
-        userId: row.userid ? Number(row.userid) : null,
-        isSystem: Boolean(row.issystem),
-        createdAt: row.createdat ? new Date(String(row.createdat)) : new Date(),
-        updatedAt: row.updatedat ? new Date(String(row.updatedat)) : new Date()
-      }));
+      // Map the raw results and handle duplicates
+      // Keep track of tag names we've already processed to avoid duplicates
+      const processedTags = new Map<string, Tag>();
+      
+      for (const row of result.rows) {
+        const tagName = String(row.name);
+        const tag: Tag = {
+          id: Number(row.id),
+          name: tagName,
+          color: row.color ? String(row.color) : null,
+          userId: row.userid ? Number(row.userid) : null,
+          isSystem: Boolean(row.issystem),
+          createdAt: row.createdat ? new Date(String(row.createdat)) : new Date(),
+          updatedAt: row.updatedat ? new Date(String(row.updatedat)) : new Date()
+        };
+        
+        // Only add if we haven't seen this tag name before, or if this is a user tag (non-system)
+        if (!processedTags.has(tagName) || tag.userId === userId) {
+          processedTags.set(tagName, tag);
+        }
+      }
+      
+      // Return the deduplicated tags
+      return Array.from(processedTags.values());
     } catch (error) {
       console.error('Error getting tags:', error);
       throw error;
@@ -674,19 +688,33 @@ export class DatabaseStorage implements IStorage {
       const result = await db.execute(sql`
         SELECT * FROM tags 
         WHERE issystem = true
-        ORDER BY name
+        ORDER BY name, id
       `);
       
-      // Map the raw results to Tag objects with proper type casting
-      return result.rows.map((row: any) => ({
-        id: Number(row.id),
-        name: String(row.name),
-        color: row.color ? String(row.color) : null,
-        userId: row.userid ? Number(row.userid) : null,
-        isSystem: Boolean(row.issystem),
-        createdAt: row.createdat ? new Date(String(row.createdat)) : new Date(),
-        updatedAt: row.updatedat ? new Date(String(row.updatedat)) : new Date()
-      }));
+      // Map the raw results and handle duplicates
+      // Keep track of tag names we've already processed to avoid duplicates
+      const processedTags = new Map<string, Tag>();
+      
+      for (const row of result.rows) {
+        const tagName = String(row.name);
+        const tag: Tag = {
+          id: Number(row.id),
+          name: tagName,
+          color: row.color ? String(row.color) : null,
+          userId: row.userid ? Number(row.userid) : null,
+          isSystem: Boolean(row.issystem),
+          createdAt: row.createdat ? new Date(String(row.createdat)) : new Date(),
+          updatedAt: row.updatedat ? new Date(String(row.updatedat)) : new Date()
+        };
+        
+        // If we haven't seen this tag name before, or if this tag has a lower ID (older)
+        if (!processedTags.has(tagName) || Number(row.id) < processedTags.get(tagName)!.id) {
+          processedTags.set(tagName, tag);
+        }
+      }
+      
+      // Return the deduplicated tags
+      return Array.from(processedTags.values());
     } catch (error) {
       console.error('Error getting system tags:', error);
       throw error;
