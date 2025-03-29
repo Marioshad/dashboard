@@ -107,49 +107,92 @@ async function ensureSystemTags() {
   try {
     // Define default system tags
     const defaultTags = [
-      { name: 'Vegetables', color: '#4ade80', isSystem: true }, // Green
-      { name: 'Fruits', color: '#fb923c', isSystem: true },     // Orange
-      { name: 'Dairy', color: '#60a5fa', isSystem: true },      // Blue
-      { name: 'Meat', color: '#f87171', isSystem: true },       // Red
-      { name: 'Seafood', color: '#2dd4bf', isSystem: true },    // Teal
-      { name: 'Grains', color: '#fbbf24', isSystem: true },     // Amber
-      { name: 'Canned Food', color: '#a78bfa', isSystem: true }, // Purple
-      { name: 'Frozen', color: '#93c5fd', isSystem: true },     // Light blue
-      { name: 'Snacks', color: '#fcd34d', isSystem: true },     // Yellow
-      { name: 'Beverages', color: '#a3e635', isSystem: true },  // Lime
-      { name: 'Condiments', color: '#c084fc', isSystem: true }, // Violet
-      { name: 'Baked Goods', color: '#d97706', isSystem: true },// Amber
-      { name: 'Cleaning', color: '#0ea5e9', isSystem: true },   // Sky
-      { name: 'Personal Care', color: '#f472b6', isSystem: true }, // Pink
-      { name: 'Pet Products', color: '#84cc16', isSystem: true }, // Lime
+      { name: 'Vegetables', color: '#10B981', isSystem: true }, // Green
+      { name: 'Fruits', color: '#F59E0B', isSystem: true },     // Orange
+      { name: 'Dairy', color: '#3B82F6', isSystem: true },      // Blue
+      { name: 'Meat', color: '#EF4444', isSystem: true },       // Red
+      { name: 'Seafood', color: '#06B6D4', isSystem: true },    // Teal
+      { name: 'Grains', color: '#F59E0B', isSystem: true },     // Amber
+      { name: 'Canned Food', color: '#8B5CF6', isSystem: true }, // Purple
+      { name: 'Frozen', color: '#3B82F6', isSystem: true },     // Light blue
+      { name: 'Snacks', color: '#F97316', isSystem: true },     // Yellow
+      { name: 'Beverages', color: '#84CC16', isSystem: true },  // Lime
+      { name: 'Condiments', color: '#8B5CF6', isSystem: true }, // Violet
+      { name: 'Bakery', color: '#8B5CF6', isSystem: true },     // Purple
+      { name: 'Cleaning', color: '#0EA5E9', isSystem: true },   // Sky
+      { name: 'Personal Care', color: '#EC4899', isSystem: true }, // Pink
+      { name: 'Pet Supplies', color: '#9333EA', isSystem: true }, // Purple
     ];
 
-    // First check if any system tags exist using raw SQL with correct column names
-    const existingCount = await db.execute(sql`
+    // FIRST - Delete any duplicate system tags
+    // 1. Get current system tags
+    const currentTagsResult = await db.execute(sql`
+      SELECT id, name FROM tags WHERE issystem = true
+    `);
+    
+    // Group existing tags by name
+    const tagsByName: Record<string, number[]> = {};
+    
+    currentTagsResult.rows.forEach((tag: any) => {
+      const tagName = tag.name;
+      if (!tagsByName[tagName]) {
+        tagsByName[tagName] = [];
+      }
+      tagsByName[tagName].push(Number(tag.id));
+    });
+    
+    // For each tag name with multiple entries, keep only the lowest ID and delete the rest
+    for (const [name, ids] of Object.entries(tagsByName)) {
+      if (ids.length > 1) {
+        // Sort IDs in ascending order
+        ids.sort((a, b) => a - b);
+        
+        // Keep the first ID (lowest), delete the rest
+        const idsToDelete = ids.slice(1);
+        
+        console.log(`Found ${ids.length} duplicate tags named "${name}". Keeping ID ${ids[0]}, removing ${idsToDelete.length} duplicates.`);
+        
+        // Delete duplicate tags
+        for (const idToDelete of idsToDelete) {
+          await db.execute(sql`DELETE FROM tags WHERE id = ${idToDelete}`);
+        }
+      }
+    }
+    
+    // Now check if we need to create any missing system tags
+    for (const tag of defaultTags) {
+      // Check if this tag exists
+      const existingTag = await db.execute(sql`
+        SELECT COUNT(*) as count FROM tags 
+        WHERE name = ${tag.name} AND issystem = true
+      `);
+      
+      const count = parseInt(existingTag.rows[0]?.count?.toString() || '0');
+      
+      if (count === 0) {
+        console.log(`Creating missing system tag: ${tag.name}`);
+        
+        // Create the tag
+        await db.execute(sql`
+          INSERT INTO tags (name, color, issystem, createdat, updatedat) 
+          VALUES (${tag.name}, ${tag.color}, ${tag.isSystem}, NOW(), NOW())
+        `);
+      }
+    }
+    
+    // Log summary
+    const finalCount = await db.execute(sql`
       SELECT COUNT(*) as count FROM tags WHERE issystem = true
     `);
     
-    const count = parseInt(existingCount.rows[0]?.count?.toString() || '0');
-    
-    // If we already have system tags, don't create more
-    if (count > 0) {
-      console.log(`${count} system tags already exist, skipping creation.`);
-      return;
-    }
-    
-    console.log(`Creating ${defaultTags.length} default system tags...`);
-    
-    // Use raw SQL with correct column names
-    for (const tag of defaultTags) {
-      await db.execute(sql`
-        INSERT INTO tags (name, color, issystem, createdat, updatedat) 
-        VALUES (${tag.name}, ${tag.color}, ${tag.isSystem}, NOW(), NOW())
-      `);
-    }
-    
-    console.log('System tags created successfully');
+    const systemTagCount = parseInt(finalCount.rows[0]?.count?.toString() || '0');
+    console.log(`System tags check complete. Currently have ${systemTagCount} system tags.`);
   } catch (error) {
     console.error('Error ensuring system tags:', error);
+    if (error instanceof Error) {
+      console.error('Error message:', error.message);
+      console.error('Stack trace:', error.stack);
+    }
   }
 }
 
