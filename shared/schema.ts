@@ -103,8 +103,9 @@ export const stores = pgTable("stores", {
   fax: text("fax"),
   vatNumber: text("vat_number"),
   taxId: text("tax_id"),
-  parserType: text("parser_type"), // For store-specific parsing rules (LIDL, ALPHAMEGA, etc.)
-  parserConfig: jsonb("parser_config"), // JSON configuration for the parser
+  // Temporarily commenting out parser columns until migration is fixed
+  // parserType: text("parser_type"), // For store-specific parsing rules (LIDL, ALPHAMEGA, etc.)
+  // parserConfig: jsonb("parser_config"), // JSON configuration for the parser
   userId: integer("user_id").notNull().references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
