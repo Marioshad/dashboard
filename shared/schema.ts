@@ -1,4 +1,5 @@
 import { pgTable, text, serial, integer, boolean, timestamp, date, decimal, uniqueIndex, jsonb } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -102,6 +103,8 @@ export const stores = pgTable("stores", {
   fax: text("fax"),
   vatNumber: text("vat_number"),
   taxId: text("tax_id"),
+  parserType: text("parser_type"), // For store-specific parsing rules (LIDL, ALPHAMEGA, etc.)
+  parserConfig: jsonb("parser_config"), // JSON configuration for the parser
   userId: integer("user_id").notNull().references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -136,9 +139,33 @@ export const receipts = pgTable("receipts", {
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
 
+// Tags table for categorizing food items
+export const tags = pgTable("tags", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  color: text("color").default("#3B82F6"),
+  isSystem: boolean("is_system").default(false),
+  userId: integer("user_id").references(() => users.id), // null for system tags
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Food item to tags many-to-many join table
+export const foodItemTags = pgTable("food_item_tags", {
+  foodItemId: integer("food_item_id").notNull().references(() => foodItems.id, { onDelete: 'cascade' }),
+  tagId: integer("tag_id").notNull().references(() => tags.id),
+}, (table) => {
+  return {
+    pk: uniqueIndex("food_item_tag_pk").on(table.foodItemId, table.tagId),
+  }
+});
+
 export const foodItems = pgTable("food_items", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
+  normalizedName: text("normalized_name"), // Normalized name for item grouping
+  originalName: text("original_name"), // Original name from receipt
+  category: text("category"), // Category identified during normalization
   quantity: decimal("quantity", { precision: 10, scale: 3 }).notNull(),
   unit: text("unit").notNull(), // g, kg, pieces, etc.
   locationId: integer("location_id").notNull().references(() => locations.id),
@@ -148,6 +175,8 @@ export const foodItems = pgTable("food_items", {
   price: decimal("price", { precision: 10, scale: 2 }), // direct price value
   pricePerUnit: decimal("price_per_unit", { precision: 10, scale: 2 }), // direct price per unit
   isWeightBased: boolean("is_weight_based").default(false), // Flag to identify weight-based items vs. piece-based
+  normalizationConfidence: decimal("normalization_confidence", { precision: 5, scale: 4 }), // Confidence score for normalization
+  lineNumbers: integer("line_numbers").array(), // Line numbers from the receipt
   purchased: timestamp("purchased").notNull(),
   userId: integer("user_id").notNull().references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -236,7 +265,7 @@ export const receiptsRelations = relations(receipts, ({ one, many }) => ({
   foodItems: many(foodItems),
 }));
 
-export const foodItemsRelations = relations(foodItems, ({ one }) => ({
+export const foodItemsRelations = relations(foodItems, ({ one, many }) => ({
   location: one(locations, {
     fields: [foodItems.locationId],
     references: [locations.id],
@@ -252,6 +281,29 @@ export const foodItemsRelations = relations(foodItems, ({ one }) => ({
   user: one(users, {
     fields: [foodItems.userId],
     references: [users.id],
+  }),
+  tags: many(foodItemTags, { relationName: "foodItemToTags" }),
+}));
+
+export const tagsRelations = relations(tags, ({ one, many }) => ({
+  user: one(users, {
+    fields: [tags.userId],
+    references: [users.id],
+  }),
+  foodItems: many(foodItemTags, { relationName: "tagToFoodItems" }),
+  products: many(products),
+}));
+
+export const foodItemTagsRelations = relations(foodItemTags, ({ one }) => ({
+  foodItem: one(foodItems, {
+    fields: [foodItemTags.foodItemId],
+    references: [foodItems.id],
+    relationName: "foodItemToTags",
+  }),
+  tag: one(tags, {
+    fields: [foodItemTags.tagId],
+    references: [tags.id],
+    relationName: "tagToFoodItems",
   }),
 }));
 
@@ -366,6 +418,9 @@ export const updateStoreSchema = insertStoreSchema;
 // Add storeId to the food item schema
 export const insertFoodItemSchema = createInsertSchema(foodItems).pick({
   name: true,
+  normalizedName: true,
+  originalName: true,
+  category: true,
   quantity: true,
   unit: true,
   locationId: true,
@@ -375,8 +430,13 @@ export const insertFoodItemSchema = createInsertSchema(foodItems).pick({
   price: true,
   pricePerUnit: true,
   isWeightBased: true,
+  normalizationConfidence: true,
+  lineNumbers: true,
 }).extend({
   name: z.string().min(2, "Food name must be at least 2 characters"),
+  normalizedName: z.string().optional(), // Normalized name is optional
+  originalName: z.string().optional(), // Original name is optional
+  category: z.string().optional(), // Category is optional
   quantity: z.string().or(z.number()).pipe(z.coerce.number().positive("Quantity must be a positive number")),
   unit: z.string().min(1, "Unit is required"),
   locationId: z.number().min(1, "Location is required"),
@@ -386,6 +446,8 @@ export const insertFoodItemSchema = createInsertSchema(foodItems).pick({
   price: z.number().optional(),
   pricePerUnit: z.number().optional(), // Price per unit is optional
   isWeightBased: z.boolean().optional().default(false), // Weight-based flag is optional
+  normalizationConfidence: z.number().optional(), // Normalization confidence is optional
+  lineNumbers: z.array(z.number()).optional(), // Line numbers from receipt are optional
 });
 
 export const updateFoodItemSchema = insertFoodItemSchema;
@@ -436,11 +498,72 @@ export type Notification = typeof notifications.$inferSelect;
 export type Location = typeof locations.$inferSelect;
 export type Store = typeof stores.$inferSelect;
 export type FoodItem = typeof foodItems.$inferSelect;
+export type Tag = typeof tags.$inferSelect;
+export type FoodItemTag = typeof foodItemTags.$inferSelect;
 // Base Receipt type from the table
 export type BaseReceipt = typeof receipts.$inferSelect;
+
+// Products table for normalization reference
+export const products = pgTable("products", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  canonicalName: text("canonical_name").notNull(),
+  categoryId: integer("category_id").references(() => tags.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => {
+  return {
+    canonicalNameIdx: uniqueIndex("canonical_name_idx").on(table.canonicalName),
+  }
+});
+
+// Product aliases for name variations
+export const productAliases = pgTable("product_aliases", {
+  id: serial("id").primaryKey(),
+  productId: integer("product_id").references(() => products.id, { onDelete: 'cascade' }).notNull(),
+  alias: text("alias").notNull(),
+  language: text("language").default("en"),
+  storeId: integer("store_id").references(() => stores.id),
+  confidence: decimal("confidence", { precision: 5, scale: 4 }).default("1.0"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => {
+  return {
+    aliasProductStoreIdx: uniqueIndex("alias_product_store_idx").on(
+      table.productId, 
+      table.alias, 
+      table.language, 
+      sql`COALESCE(${table.storeId}, 0)`
+    ),
+  }
+});
+
+// Relations for products
+export const productsRelations = relations(products, ({ one, many }) => ({
+  category: one(tags, {
+    fields: [products.categoryId],
+    references: [tags.id],
+  }),
+  aliases: many(productAliases),
+}));
+
+// Relations for product aliases
+export const productAliasesRelations = relations(productAliases, ({ one }) => ({
+  product: one(products, {
+    fields: [productAliases.productId],
+    references: [products.id],
+  }),
+  store: one(stores, {
+    fields: [productAliases.storeId],
+    references: [stores.id],
+  }),
+}));
 
 // Extended Receipt type with related data
 export type Receipt = BaseReceipt & {
   store?: Store;
   paymentMethod?: string;
 };
+
+// Product types
+export type Product = typeof products.$inferSelect;
+export type ProductAlias = typeof productAliases.$inferSelect;
