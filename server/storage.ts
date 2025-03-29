@@ -10,7 +10,7 @@ import {
 import { db, pool } from "./db";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
-import { eq, sql, and, isNull, or } from "drizzle-orm";
+import { eq, sql, and, isNull, or, inArray } from "drizzle-orm";
 import { Pool } from 'pg';
 
 const PostgresSessionStore = connectPg(session);
@@ -645,14 +645,23 @@ export class DatabaseStorage implements IStorage {
 
   async getTags(userId: number): Promise<Tag[]> {
     try {
-      return await db
-        .select()
-        .from(tags)
-        .where(or(
-          eq(tags.userId, userId),
-          eq(tags.isSystem, true)
-        ))
-        .orderBy(tags.name);
+      // Use raw SQL to handle the case conversion issue with PostgreSQL
+      const result = await db.execute(sql`
+        SELECT * FROM tags 
+        WHERE userid = ${userId} OR issystem = true
+        ORDER BY name
+      `);
+      
+      // Map the raw results to Tag objects with proper type casting
+      return result.rows.map((row: any) => ({
+        id: Number(row.id),
+        name: String(row.name),
+        color: row.color ? String(row.color) : null,
+        userId: row.userid ? Number(row.userid) : null,
+        isSystem: Boolean(row.issystem),
+        createdAt: row.createdat ? new Date(String(row.createdat)) : new Date(),
+        updatedAt: row.updatedat ? new Date(String(row.updatedat)) : new Date()
+      }));
     } catch (error) {
       console.error('Error getting tags:', error);
       throw error;
@@ -661,11 +670,23 @@ export class DatabaseStorage implements IStorage {
 
   async getSystemTags(): Promise<Tag[]> {
     try {
-      return await db
-        .select()
-        .from(tags)
-        .where(eq(tags.isSystem, true))
-        .orderBy(tags.name);
+      // Use raw SQL to handle the case conversion issue with PostgreSQL
+      const result = await db.execute(sql`
+        SELECT * FROM tags 
+        WHERE issystem = true
+        ORDER BY name
+      `);
+      
+      // Map the raw results to Tag objects with proper type casting
+      return result.rows.map((row: any) => ({
+        id: Number(row.id),
+        name: String(row.name),
+        color: row.color ? String(row.color) : null,
+        userId: row.userid ? Number(row.userid) : null,
+        isSystem: Boolean(row.issystem),
+        createdAt: row.createdat ? new Date(String(row.createdat)) : new Date(),
+        updatedAt: row.updatedat ? new Date(String(row.updatedat)) : new Date()
+      }));
     } catch (error) {
       console.error('Error getting system tags:', error);
       throw error;
@@ -674,12 +695,29 @@ export class DatabaseStorage implements IStorage {
 
   async getTag(id: number): Promise<Tag | undefined> {
     try {
-      const result = await db
-        .select()
-        .from(tags)
-        .where(eq(tags.id, id))
-        .limit(1);
-      return result[0];
+      // Use raw SQL to handle the case conversion issue with PostgreSQL
+      const result = await db.execute(sql`
+        SELECT * FROM tags 
+        WHERE id = ${id}
+        LIMIT 1
+      `);
+      
+      if (result.rows.length === 0) {
+        return undefined;
+      }
+      
+      const row = result.rows[0];
+      
+      // Map the raw result to a Tag object with proper type casting
+      return {
+        id: Number(row.id),
+        name: String(row.name),
+        color: row.color ? String(row.color) : null,
+        userId: row.userid ? Number(row.userid) : null,
+        isSystem: Boolean(row.issystem),
+        createdAt: row.createdat ? new Date(String(row.createdat)) : new Date(),
+        updatedAt: row.updatedat ? new Date(String(row.updatedat)) : new Date()
+      };
     } catch (error) {
       console.error('Error getting tag:', error);
       throw error;
@@ -688,15 +726,33 @@ export class DatabaseStorage implements IStorage {
 
   async updateTag(id: number, tag: UpdateTag): Promise<Tag> {
     try {
-      const [result] = await db
-        .update(tags)
-        .set({
-          ...tag,
-          updatedAt: new Date(),
-        })
-        .where(eq(tags.id, id))
-        .returning();
-      return result;
+      // Use raw SQL to handle the case conversion issue with PostgreSQL
+      const result = await db.execute(sql`
+        UPDATE tags
+        SET 
+          name = ${tag.name},
+          color = ${tag.color || "#3B82F6"},
+          updatedat = NOW()
+        WHERE id = ${id}
+        RETURNING *
+      `);
+      
+      if (result.rows.length === 0) {
+        throw new Error("Tag not found or update failed");
+      }
+      
+      const row = result.rows[0];
+      
+      // Map the raw result to a Tag object with proper type casting
+      return {
+        id: Number(row.id),
+        name: String(row.name),
+        color: row.color ? String(row.color) : null,
+        userId: row.userid ? Number(row.userid) : null,
+        isSystem: Boolean(row.issystem),
+        createdAt: row.createdat ? new Date(String(row.createdat)) : new Date(),
+        updatedAt: row.updatedat ? new Date(String(row.updatedat)) : new Date()
+      };
     } catch (error) {
       console.error('Error updating tag:', error);
       throw error;
@@ -749,23 +805,24 @@ export class DatabaseStorage implements IStorage {
 
   async getTagsForFoodItem(foodItemId: number): Promise<Tag[]> {
     try {
-      // Join foodItemsTags with tags to get tag details
-      const result = await db
-        .select({
-          id: tags.id,
-          name: tags.name,
-          color: tags.color,
-          userId: tags.userId,
-          isSystem: tags.isSystem,
-          createdAt: tags.createdAt,
-          updatedAt: tags.updatedAt,
-        })
-        .from(foodItemsTags)
-        .innerJoin(tags, eq(foodItemsTags.tagId, tags.id))
-        .where(eq(foodItemsTags.foodItemId, foodItemId))
-        .orderBy(tags.name);
+      // Use raw SQL to handle the case conversion issue with PostgreSQL
+      const result = await db.execute(sql`
+        SELECT t.* FROM tags t
+        INNER JOIN food_items_tags fit ON t.id = fit.tag_id
+        WHERE fit.food_item_id = ${foodItemId}
+        ORDER BY t.name
+      `);
       
-      return result;
+      // Map the raw results to Tag objects with proper type casting
+      return result.rows.map((row: any) => ({
+        id: Number(row.id),
+        name: String(row.name),
+        color: row.color ? String(row.color) : null,
+        userId: row.userid ? Number(row.userid) : null,
+        isSystem: Boolean(row.issystem),
+        createdAt: row.createdat ? new Date(String(row.createdat)) : new Date(),
+        updatedAt: row.updatedat ? new Date(String(row.updatedat)) : new Date()
+      }));
     } catch (error) {
       console.error('Error getting tags for food item:', error);
       throw error;
@@ -774,36 +831,31 @@ export class DatabaseStorage implements IStorage {
 
   async getFoodItemsByTag(tagId: number, userId: number): Promise<FoodItem[]> {
     try {
-      // Join foodItemsTags with foodItems to get food item details
-      const result = await db
-        .select()
-        .from(foodItems)
-        .innerJoin(foodItemsTags, eq(foodItemsTags.foodItemId, foodItems.id))
-        .where(
-          and(
-            eq(foodItemsTags.tagId, tagId),
-            eq(foodItems.userId, userId)
-          )
-        )
-        .orderBy(foodItems.name);
+      // First get the IDs from the relation table
+      const taggedItemsQuery = await db.execute(sql`
+        SELECT food_item_id FROM food_items_tags
+        WHERE tag_id = ${tagId}
+      `);
       
-      return result.map(row => ({
-        id: row.food_items.id,
-        name: row.food_items.name,
-        quantity: row.food_items.quantity,
-        unit: row.food_items.unit,
-        locationId: row.food_items.locationId,
-        storeId: row.food_items.storeId,
-        receiptId: row.food_items.receiptId,
-        expiryDate: row.food_items.expiryDate,
-        price: row.food_items.price,
-        pricePerUnit: row.food_items.pricePerUnit,
-        isWeightBased: row.food_items.isWeightBased,
-        purchased: row.food_items.purchased,
-        userId: row.food_items.userId,
-        createdAt: row.food_items.createdAt,
-        updatedAt: row.food_items.updatedAt,
-      }));
+      // If no items have this tag, return empty array
+      if (taggedItemsQuery.rows.length === 0) {
+        return [];
+      }
+      
+      // Create the item IDs for the query
+      const itemIds = taggedItemsQuery.rows.map((row: any) => Number(row.food_item_id));
+      
+      // Get the food items directly using the IDs - this avoids type issues
+      const foodItemsList: FoodItem[] = [];
+      
+      for (const itemId of itemIds) {
+        const foodItem = await this.getFoodItem(itemId);
+        if (foodItem && foodItem.userId === userId) {
+          foodItemsList.push(foodItem);
+        }
+      }
+      
+      return foodItemsList.sort((a, b) => a.name.localeCompare(b.name));
     } catch (error) {
       console.error('Error getting food items by tag:', error);
       throw error;
