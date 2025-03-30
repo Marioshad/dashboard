@@ -75,7 +75,7 @@ async function ensureSystemTags() {
       result = await db.execute(sql`SELECT id, name FROM tags WHERE issystem = true`);
     }
     
-    const existingTags = result.rows.map(row => row.name.toLowerCase());
+    const existingTags = result.rows.map(row => (row as Record<string, string>).name.toLowerCase());
     log(`Found ${existingTags.length} existing system tags`);
     
     // Check for duplicates (multiple system tags with the same name)
@@ -100,10 +100,10 @@ async function ensureSystemTags() {
     
     // If duplicates found, remove them
     if (duplicateCheck.rows.length > 0) {
-      log(`Found duplicate system tags: ${duplicateCheck.rows.map(r => r.name).join(', ')}`);
+      log(`Found duplicate system tags: ${duplicateCheck.rows.map(r => (r as Record<string, any>).name).join(', ')}`);
       
       for (const row of duplicateCheck.rows) {
-        const tagName = row.name;
+        const tagName = (row as Record<string, any>).name;
         
         // Get all IDs of this duplicate tag
         let dupTagsResult;
@@ -121,7 +121,7 @@ async function ensureSystemTags() {
           `);
         }
         
-        const dupIds = dupTagsResult.rows.map(r => r.id);
+        const dupIds = dupTagsResult.rows.map(r => (r as Record<string, any>).id);
         
         // Keep the first one, delete the rest
         const keepId = dupIds[0];

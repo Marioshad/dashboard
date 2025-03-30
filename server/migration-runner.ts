@@ -5,14 +5,16 @@ import { fileURLToPath } from 'url';
 import { log } from './vite';
 
 // Get the current directory for ES modules
-let __dirname;
+// Use explicit type annotation for __dirname to avoid implicit 'any' errors
+let __dirname: string = '';
 try {
   // For ES modules environment
   const __filename = fileURLToPath(import.meta.url);
   __dirname = path.dirname(__filename);
 } catch (e) {
   // For CommonJS environment
-  __dirname = path.dirname(new URL(import.meta.url).pathname);
+  const pathname = new URL(import.meta.url).pathname;
+  __dirname = path.dirname(pathname);
 }
 
 const { Pool } = pg;
@@ -22,17 +24,31 @@ const { Pool } = pg;
  * @returns Promise<boolean> True if migrations were successful
  */
 export async function runMigrations(): Promise<boolean> {
-  // Get the database URL from the environment
-  const dbUrl = process.env.DATABASE_URL;
-  if (!dbUrl) {
-    log('Error: DATABASE_URL environment variable is required for migrations', 'migration');
+  // Get database connection information
+  let connectionString: string;
+  
+  if (process.env.DATABASE_URL) {
+    connectionString = process.env.DATABASE_URL;
+    log('Using DATABASE_URL for migrations', 'migration');
+  } else if (process.env.PGHOST && process.env.PGUSER && process.env.PGDATABASE) {
+    // Build connection string from individual parameters
+    const host = process.env.PGHOST;
+    const port = process.env.PGPORT || '5432';
+    const user = process.env.PGUSER;
+    const password = process.env.PGPASSWORD || '';
+    const database = process.env.PGDATABASE;
+    
+    connectionString = `postgresql://${user}:${password}@${host}:${port}/${database}`;
+    log('Constructed DATABASE_URL from individual PG* variables for migrations', 'migration');
+  } else {
+    log('Error: Either DATABASE_URL or PGHOST, PGUSER, and PGDATABASE must be set for migrations', 'migration');
     return false;
   }
 
   // Create a new PostgreSQL client with appropriate SSL settings
   const pool = new Pool({
-    connectionString: dbUrl,
-    ssl: dbUrl.includes('localhost') ? false : { rejectUnauthorized: false } // Only use SSL for non-local
+    connectionString,
+    ssl: connectionString.includes('localhost') ? false : { rejectUnauthorized: false } // Only use SSL for non-local
   });
 
   // Get all migration files
