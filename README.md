@@ -118,6 +118,15 @@ The application automatically runs migrations on startup:
 3. Changes to the database schema should be done through new migration files
 4. If migrations fail, the application will log detailed errors but will still attempt to start with the existing schema
 
+**System Tags Initialization:**
+
+The application includes a special migration (011_ensure_system_tags.sql) that sets up standard food categories as system tags:
+- This migration is designed to be idempotent (can be run multiple times safely)
+- It handles PostgreSQL's automatic column name conversion (is_system → issystem)
+- System tags include categories like Vegetables, Fruits, Dairy, Meat, etc.
+- These tags are automatically assigned to food items during receipt scanning
+- The migration will run during the deployment process
+
 ### 6. Important Notes
 
 - The application uses secure session cookies in production
@@ -141,6 +150,12 @@ The application uses a comprehensive schema with several tables:
 - `notifications` - User notifications for real-time updates
 - `locations` - Food storage locations (pantry, refrigerator, freezer, etc.)
 - `food_items` - Inventory of food items with expiry tracking
+- `stores` - Stores where items were purchased, extracted from receipts
+- `receipts` - Scanned and processed shopping receipts
+- `tags` - Categorization tags for food items (system and user-defined)
+- `food_item_tags` - Junction table for many-to-many relationship between food items and tags
+- `products` - Normalized product database for consistent item tracking
+- `product_aliases` - Alternative names for products to improve recognition
 
 ### Features
 - Soft delete functionality using `deletedAt` timestamp fields
@@ -148,6 +163,11 @@ The application uses a comprehensive schema with several tables:
 - Decimal quantity support for precise food inventory tracking
 - Receipt scanning and OCR processing via OpenAI
 - WebSocket-based real-time notifications
+- System tags for automatic food categorization
+- Receipt text extraction in multiple languages
+- Store-specific parsers for different receipt formats
+- Intelligent item normalization for consistent tracking
+- Automatic expiry date suggestions based on food type
 
 The schema is automatically managed through Drizzle ORM and database migrations.
 
