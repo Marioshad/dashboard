@@ -26,13 +26,24 @@ A React.js and Node.js application with user authentication and a basic dashboar
 npm install
 ```
 
-3. Create a `.env` file in the root directory with:
-```env
-DATABASE_URL=postgresql://your_database_url
-SESSION_SECRET=your_session_secret
+3. Copy the `.env.example` file to create your own `.env` file:
+```bash
+cp .env.example .env
 ```
 
-4. Start the development server:
+4. Update the `.env` file with your credentials:
+```env
+# At minimum, you'll need:
+DATABASE_URL=postgresql://username:password@hostname:5432/database_name
+SESSION_SECRET=your_strong_secret_key_here
+OPENAI_API_KEY=sk-your_openai_api_key
+
+# For optional features:
+STRIPE_SECRET_KEY=sk_test_your_stripe_key
+SENDGRID_API_KEY=SG.your_sendgrid_api_key
+```
+
+5. Start the development server:
 ```bash
 npm run dev
 ```
@@ -56,15 +67,39 @@ Make sure your code is in a Git repository and pushed to GitHub.
 
 ### 3. Environment Variables
 
-Set the following environment variables in Railway dashboard:
+Set the following environment variables in the Railway dashboard. Refer to your `.env.example` file for all available options.
+
+**Required Variables:**
 - `DATABASE_URL` (automatically added by Railway)
 - `SESSION_SECRET` (add a secure random string)
 - `NODE_ENV=production`
 - `PORT` (automatically added by Railway)
-- `OPENAI_API_KEY` (if using receipt scanning features)
-- `STRIPE_SECRET_KEY` (optional, for payment processing)
-- `SENDGRID_API_KEY` (optional, for email notifications)
-- `SENDGRID_FROM_EMAIL` (optional, sender email for notifications)
+- `HOST=0.0.0.0` (important for Railway's networking)
+- `OPENAI_API_KEY` (required for receipt scanning features)
+- `OPENAI_MODEL=gpt-4o` (or your preferred OpenAI model)
+
+**Optional Variables (for additional features):**
+- `STRIPE_SECRET_KEY` (payment processing)
+- `STRIPE_WEBHOOK_SECRET` (for Stripe webhook verification)
+- `STRIPE_PRICE_ID` (for subscription products)
+- `SENDGRID_API_KEY` (email notifications)
+- `SENDGRID_FROM_EMAIL` (sender email for notifications)
+- `APP_URL` (your application's public URL)
+
+**Note:** Railway automatically provides the `DATABASE_URL`, but you can also use individual PostgreSQL connection parameters:
+- `PGUSER`
+- `PGPASSWORD`
+- `PGHOST`
+- `PGPORT`
+- `PGDATABASE`
+
+The application is designed to use either the full `DATABASE_URL` or these individual parameters.
+
+**Setting up Environment Variables in Railway:**
+1. Navigate to your project in the Railway dashboard
+2. Go to the "Variables" tab
+3. You can use the `.env.example` file in this repository as a reference for which variables to set
+4. For sensitive values like API keys, ensure you use Railway's secure variables storage
 
 ### 4. Deployment Settings
 
