@@ -5,6 +5,10 @@ import { testDatabaseConnection, db } from "./db";
 import { runMigrations } from "./migration-runner";
 import { tags } from "@shared/schema";
 import { sql, eq } from "drizzle-orm";
+import dotenv from 'dotenv';
+
+// Load environment variables from .env file
+dotenv.config();
 
 // System tags configuration
 const SYSTEM_TAGS = [
@@ -214,6 +218,10 @@ app.use((req, res, next) => {
   try {
     log("Starting application initialization...");
 
+    // Log OpenAI configuration
+    log(`OpenAI API Key configured: ${Boolean(process.env.OPENAI_API_KEY)}`);
+    log(`OpenAI Model: ${process.env.OPENAI_MODEL || 'gpt-4o (default)'}`);
+    
     log("Testing database connection...");
     const dbConnectionStatus = await testDatabaseConnection();
     if (!dbConnectionStatus) {

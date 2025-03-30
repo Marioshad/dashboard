@@ -9,6 +9,10 @@ if (!process.env.OPENAI_API_KEY) {
   console.warn("OPENAI_API_KEY not provided. Receipt OCR features will be disabled.");
 }
 
+// Get the OpenAI model from environment variables or use the default
+const openaiModel = process.env.OPENAI_MODEL || "gpt-4o";
+console.log(`Using OpenAI model: ${openaiModel}`);
+
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
@@ -57,6 +61,8 @@ export async function processReceiptImage(filePath: string): Promise<ExtractedIt
     if (!process.env.OPENAI_API_KEY) {
       throw new Error("OpenAI API key not configured");
     }
+    
+    console.log(`Processing receipt image with OpenAI model: ${openaiModel}`);
 
     const absolutePath = path.resolve(filePath);
     const fileBuffer = fs.readFileSync(absolutePath);
@@ -64,7 +70,7 @@ export async function processReceiptImage(filePath: string): Promise<ExtractedIt
 
     // Call OpenAI API with the receipt image
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: openaiModel,
       messages: [
         {
           role: "system",
@@ -249,6 +255,8 @@ export async function extractStoreFromReceipt(filePath: string): Promise<Extract
     if (!process.env.OPENAI_API_KEY) {
       throw new Error("OpenAI API key not configured");
     }
+    
+    console.log(`Extracting store information with OpenAI model: ${openaiModel}`);
 
     const absolutePath = path.resolve(filePath);
     const fileBuffer = fs.readFileSync(absolutePath);
@@ -256,7 +264,7 @@ export async function extractStoreFromReceipt(filePath: string): Promise<Extract
 
     // Call OpenAI API with the receipt image
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: openaiModel,
       messages: [
         {
           role: "system",
@@ -357,6 +365,8 @@ export async function extractReceiptDetails(filePath: string): Promise<ReceiptDe
     if (!process.env.OPENAI_API_KEY) {
       throw new Error("OpenAI API key not configured");
     }
+    
+    console.log(`Extracting receipt details with OpenAI model: ${openaiModel}`);
 
     const absolutePath = path.resolve(filePath);
     const fileBuffer = fs.readFileSync(absolutePath);
@@ -364,7 +374,7 @@ export async function extractReceiptDetails(filePath: string): Promise<ReceiptDe
 
     // Call OpenAI API with the receipt image
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: openaiModel,
       messages: [
         {
           role: "system",
