@@ -65,57 +65,113 @@ BEGIN
     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tags' AND column_name = 'is_system') THEN
       -- If is_system exists, use it in the query
       IF NOT EXISTS (SELECT 1 FROM tags WHERE name = category AND is_system = TRUE) THEN
-        INSERT INTO tags (name, color, is_system, user_id)
-        VALUES (category, 
-                CASE 
-                  WHEN category = 'Fruits' THEN '#10B981'
-                  WHEN category = 'Vegetables' THEN '#84CC16'
-                  WHEN category = 'Dairy' THEN '#3B82F6'
-                  WHEN category = 'Meat' THEN '#EF4444'
-                  WHEN category = 'Bakery' THEN '#8B5CF6'
-                  WHEN category = 'Snacks' THEN '#F59E0B'
-                  WHEN category = 'Beverages' THEN '#06B6D4'
-                  WHEN category = 'Cleaning' THEN '#6B7280'
-                  WHEN category = 'Personal Care' THEN '#EC4899'
-                  WHEN category = 'Canned Food' THEN '#6366F1'
-                  WHEN category = 'Frozen Food' THEN '#2563EB'
-                  WHEN category = 'Condiments' THEN '#D97706'
-                  WHEN category = 'Breakfast' THEN '#0369A1'
-                  WHEN category = 'Grains' THEN '#65A30D'
-                  WHEN category = 'Pet Supplies' THEN '#4B5563'
-                  WHEN category = 'Organic' THEN '#059669'
-                  ELSE '#6B7280'
-                END, 
-                TRUE, 
-                NULL);
+        -- Check if userid column exists
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tags' AND column_name = 'userid') THEN
+          INSERT INTO tags (name, color, is_system, userid)
+          VALUES (category, 
+                  CASE 
+                    WHEN category = 'Fruits' THEN '#10B981'
+                    WHEN category = 'Vegetables' THEN '#84CC16'
+                    WHEN category = 'Dairy' THEN '#3B82F6'
+                    WHEN category = 'Meat' THEN '#EF4444'
+                    WHEN category = 'Bakery' THEN '#8B5CF6'
+                    WHEN category = 'Snacks' THEN '#F59E0B'
+                    WHEN category = 'Beverages' THEN '#06B6D4'
+                    WHEN category = 'Cleaning' THEN '#6B7280'
+                    WHEN category = 'Personal Care' THEN '#EC4899'
+                    WHEN category = 'Canned Food' THEN '#6366F1'
+                    WHEN category = 'Frozen Food' THEN '#2563EB'
+                    WHEN category = 'Condiments' THEN '#D97706'
+                    WHEN category = 'Breakfast' THEN '#0369A1'
+                    WHEN category = 'Grains' THEN '#65A30D'
+                    WHEN category = 'Pet Supplies' THEN '#4B5563'
+                    WHEN category = 'Organic' THEN '#059669'
+                    ELSE '#6B7280'
+                  END, 
+                  TRUE, 
+                  NULL);
+        ELSE
+          -- Fallback to user_id if that column exists
+          INSERT INTO tags (name, color, is_system, user_id)
+          VALUES (category, 
+                  CASE 
+                    WHEN category = 'Fruits' THEN '#10B981'
+                    WHEN category = 'Vegetables' THEN '#84CC16'
+                    WHEN category = 'Dairy' THEN '#3B82F6'
+                    WHEN category = 'Meat' THEN '#EF4444'
+                    WHEN category = 'Bakery' THEN '#8B5CF6'
+                    WHEN category = 'Snacks' THEN '#F59E0B'
+                    WHEN category = 'Beverages' THEN '#06B6D4'
+                    WHEN category = 'Cleaning' THEN '#6B7280'
+                    WHEN category = 'Personal Care' THEN '#EC4899'
+                    WHEN category = 'Canned Food' THEN '#6366F1'
+                    WHEN category = 'Frozen Food' THEN '#2563EB'
+                    WHEN category = 'Condiments' THEN '#D97706'
+                    WHEN category = 'Breakfast' THEN '#0369A1'
+                    WHEN category = 'Grains' THEN '#65A30D'
+                    WHEN category = 'Pet Supplies' THEN '#4B5563'
+                    WHEN category = 'Organic' THEN '#059669'
+                    ELSE '#6B7280'
+                  END, 
+                  TRUE, 
+                  NULL);
+        END IF;
+      END IF;
       END IF;
     ELSE
       -- If is_system doesn't exist, check based on name only
       IF NOT EXISTS (SELECT 1 FROM tags WHERE name = category) THEN
         -- Handle the case where is_system column doesn't exist
         -- Adjust the INSERT statement to match the actual columns in the tags table
-        INSERT INTO tags (name, color, user_id)
-        VALUES (category, 
-                CASE 
-                  WHEN category = 'Fruits' THEN '#10B981'
-                  WHEN category = 'Vegetables' THEN '#84CC16'
-                  WHEN category = 'Dairy' THEN '#3B82F6'
-                  WHEN category = 'Meat' THEN '#EF4444'
-                  WHEN category = 'Bakery' THEN '#8B5CF6'
-                  WHEN category = 'Snacks' THEN '#F59E0B'
-                  WHEN category = 'Beverages' THEN '#06B6D4'
-                  WHEN category = 'Cleaning' THEN '#6B7280'
-                  WHEN category = 'Personal Care' THEN '#EC4899'
-                  WHEN category = 'Canned Food' THEN '#6366F1'
-                  WHEN category = 'Frozen Food' THEN '#2563EB'
-                  WHEN category = 'Condiments' THEN '#D97706'
-                  WHEN category = 'Breakfast' THEN '#0369A1'
-                  WHEN category = 'Grains' THEN '#65A30D'
-                  WHEN category = 'Pet Supplies' THEN '#4B5563'
-                  WHEN category = 'Organic' THEN '#059669'
-                  ELSE '#6B7280'
-                END,
-                NULL);
+        -- Check if userid column exists
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tags' AND column_name = 'userid') THEN
+          INSERT INTO tags (name, color, userid)
+          VALUES (category, 
+                  CASE 
+                    WHEN category = 'Fruits' THEN '#10B981'
+                    WHEN category = 'Vegetables' THEN '#84CC16'
+                    WHEN category = 'Dairy' THEN '#3B82F6'
+                    WHEN category = 'Meat' THEN '#EF4444'
+                    WHEN category = 'Bakery' THEN '#8B5CF6'
+                    WHEN category = 'Snacks' THEN '#F59E0B'
+                    WHEN category = 'Beverages' THEN '#06B6D4'
+                    WHEN category = 'Cleaning' THEN '#6B7280'
+                    WHEN category = 'Personal Care' THEN '#EC4899'
+                    WHEN category = 'Canned Food' THEN '#6366F1'
+                    WHEN category = 'Frozen Food' THEN '#2563EB'
+                    WHEN category = 'Condiments' THEN '#D97706'
+                    WHEN category = 'Breakfast' THEN '#0369A1'
+                    WHEN category = 'Grains' THEN '#65A30D'
+                    WHEN category = 'Pet Supplies' THEN '#4B5563'
+                    WHEN category = 'Organic' THEN '#059669'
+                    ELSE '#6B7280'
+                  END,
+                  NULL);
+        ELSE
+          -- Fallback to user_id if that column exists
+          INSERT INTO tags (name, color, user_id)
+          VALUES (category, 
+                  CASE 
+                    WHEN category = 'Fruits' THEN '#10B981'
+                    WHEN category = 'Vegetables' THEN '#84CC16'
+                    WHEN category = 'Dairy' THEN '#3B82F6'
+                    WHEN category = 'Meat' THEN '#EF4444'
+                    WHEN category = 'Bakery' THEN '#8B5CF6'
+                    WHEN category = 'Snacks' THEN '#F59E0B'
+                    WHEN category = 'Beverages' THEN '#06B6D4'
+                    WHEN category = 'Cleaning' THEN '#6B7280'
+                    WHEN category = 'Personal Care' THEN '#EC4899'
+                    WHEN category = 'Canned Food' THEN '#6366F1'
+                    WHEN category = 'Frozen Food' THEN '#2563EB'
+                    WHEN category = 'Condiments' THEN '#D97706'
+                    WHEN category = 'Breakfast' THEN '#0369A1'
+                    WHEN category = 'Grains' THEN '#65A30D'
+                    WHEN category = 'Pet Supplies' THEN '#4B5563'
+                    WHEN category = 'Organic' THEN '#059669'
+                    ELSE '#6B7280'
+                  END,
+                  NULL);
+        END IF;
       END IF;
     END IF;
   END LOOP;
