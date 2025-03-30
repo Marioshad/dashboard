@@ -123,7 +123,7 @@ export class DatabaseStorage implements IStorage {
 
   async createUser(insertUser: InsertUser): Promise<User> {
     try {
-      const [user] = await db.insert(users).values(insertUser).returning();
+      const [user] = await db.insert(users).values([insertUser]).returning();
       return user;
     } catch (error) {
       console.error('Error creating user:', error);
@@ -163,11 +163,11 @@ export class DatabaseStorage implements IStorage {
     try {
       const [result] = await db
         .insert(locations)
-        .values({
+        .values([{
           ...location,
           createdAt: new Date(),
           updatedAt: new Date(),
-        })
+        }])
         .returning();
       return result;
     } catch (error) {
@@ -235,11 +235,11 @@ export class DatabaseStorage implements IStorage {
     try {
       const [result] = await db
         .insert(stores)
-        .values({
+        .values([{
           ...store,
           createdAt: new Date(),
           updatedAt: new Date(),
-        })
+        }])
         .returning();
       return result;
     } catch (error) {
@@ -333,20 +333,63 @@ export class DatabaseStorage implements IStorage {
       // Force types to SQL to avoid TypeScript errors
       const dateNow = new Date().toISOString();
       
+      console.log('Creating food item with data:', {
+        ...item,
+        expiryDate: expiryDateString,
+        purchased: dateNow,
+      });
+      
+      // Prepare the values as separate variables
+      const name = item.name;
+      const quantity = String(item.quantity); // Convert number to string for decimal column
+      const unit = item.unit;
+      const locationId = item.locationId;
+      const expiryDate = expiryDateString;
+      const price = item.price;
+      const userId = item.userId;
+      const purchased = sql`${dateNow}::timestamp`;
+      const createdAt = sql`${dateNow}::timestamp`;
+      const updatedAt = sql`${dateNow}::timestamp`;
+      const receiptId = item.receiptId || null;
+      const storeId = item.storeId || null;
+      const pricePerUnit = item.pricePerUnit || null;
+      const isWeightBased = item.isWeightBased || false;
+      const normalizedName = item.normalizedName || null;
+      const originalName = item.originalName || null;
+      const category = item.category || null;
+      const normalizationConfidence = item.normalizationConfidence || null;
+      
+      // Create a base values object
+      const valuesObj: any = {
+        name,
+        quantity,
+        unit,
+        locationId,
+        expiryDate,
+        price,
+        userId,
+        purchased,
+        createdAt,
+        updatedAt,
+        receiptId,
+        storeId,
+        pricePerUnit,
+        isWeightBased,
+        normalizedName,
+        originalName,
+        category,
+        normalizationConfidence,
+      };
+      
+      // Conditionally add lineNumbers if present
+      if (item.lineNumbers && Array.isArray(item.lineNumbers)) {
+        valuesObj.lineNumbers = item.lineNumbers;
+      }
+      
+      // Wrap in array for drizzle's .values() method which expects an array
       const [result] = await db
         .insert(foodItems)
-        .values({
-          name: item.name,
-          quantity: String(item.quantity), // Convert number to string for decimal column
-          unit: item.unit,
-          locationId: item.locationId,
-          expiryDate: expiryDateString,
-          price: item.price,
-          userId: item.userId,
-          purchased: sql`${dateNow}::timestamp`,
-          createdAt: sql`${dateNow}::timestamp`,
-          updatedAt: sql`${dateNow}::timestamp`,
-        })
+        .values([valuesObj])
         .returning();
       return result;
     } catch (error) {
@@ -461,7 +504,7 @@ export class DatabaseStorage implements IStorage {
       
       const [result] = await db
         .insert(receipts)
-        .values(values)
+        .values([values])
         .returning();
       
       return result;

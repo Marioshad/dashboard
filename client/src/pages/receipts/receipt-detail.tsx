@@ -13,7 +13,8 @@ import {
   DollarSign,
   Tag,
   CircleX,
-  Loader2 
+  Loader2,
+  Globe
 } from 'lucide-react';
 
 // Import shared types
@@ -107,6 +108,16 @@ export function ReceiptDetailPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
+              {/* Language Badge */}
+              {receiptDetails.language && (
+                <div className="mb-4">
+                  <Badge className="bg-primary/20 hover:bg-primary/30 text-primary font-medium border-0 flex items-center gap-1">
+                    <Globe className="h-3 w-3" />
+                    Receipt Language: {receiptDetails.language}
+                  </Badge>
+                </div>
+              )}
+              
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-4">
                   <div>

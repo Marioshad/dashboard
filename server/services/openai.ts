@@ -9,6 +9,10 @@ if (!process.env.OPENAI_API_KEY) {
   console.warn("OPENAI_API_KEY not provided. Receipt OCR features will be disabled.");
 }
 
+// Get the OpenAI model from environment variables or use the default
+const openaiModel = process.env.OPENAI_MODEL || "gpt-4o";
+console.log(`Using OpenAI model: ${openaiModel}`);
+
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
@@ -18,6 +22,8 @@ export interface ExtractedItem {
   quantity: number;
   unit: string;
   price: number | null;
+  pricePerUnit?: number | null; // Price per unit (kg, liter, etc.)
+  isWeightBased?: boolean; // Indicates if this is a weight-based item
   expiryDate: string;
   purchaseDate?: string; // Add optional purchase date field
 }
@@ -42,6 +48,7 @@ export interface ReceiptDetails {
     rate: number;
     amount: number;
   }[];
+  language?: string; // Detected language of the receipt
 }
 
 /**
@@ -54,6 +61,8 @@ export async function processReceiptImage(filePath: string): Promise<ExtractedIt
     if (!process.env.OPENAI_API_KEY) {
       throw new Error("OpenAI API key not configured");
     }
+    
+    console.log(`Processing receipt image with OpenAI model: ${openaiModel}`);
 
     const absolutePath = path.resolve(filePath);
     const fileBuffer = fs.readFileSync(absolutePath);
@@ -61,14 +70,33 @@ export async function processReceiptImage(filePath: string): Promise<ExtractedIt
 
     // Call OpenAI API with the receipt image
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: openaiModel,
       messages: [
         {
           role: "system",
-          content: `You are a specialized receipt analyzer. Extract all food items from the receipt image. 
-          For each item, identify the name, quantity, unit, and price in cents. 
-          Format your response strictly as a JSON array with each food item having: name, quantity (numeric), unit (pieces, grams, oz, etc.), price (in cents, numeric).
-          Use 'pieces' as the default unit if not specified. Estimate expiry dates based on typical shelf life.
+          content: `You are a specialized receipt analyzer. Extract all food items from the receipt image with detailed information.
+          For each item, identify the following:
+          - name: The product name
+          - quantity: The numeric quantity (can be decimal for weight-based items like 0.450 kg of apples)
+          - unit: The unit of measurement (pieces, grams, kg, oz, etc.)
+          - price: The total price as shown on the receipt (numeric, e.g., 2.99)
+          - pricePerUnit: If the item is sold by weight, include the price per unit (e.g., 1.99 per kg, g, lb, etc.)
+          - isWeightBased: true if the item is sold by weight (kg, g, lb), false if sold by count
+          - expiryDate: Estimated expiry date based on TODAY'S DATE (${format(new Date(), "yyyy-MM-dd")}) and typical shelf life of the product. Use YYYY-MM-DD format. 
+            - Fresh produce like leafy greens: 5-7 days from today
+            - Fruits like apples, oranges: 1-2 weeks from today
+            - Dairy: 1-2 weeks from today
+            - Meat/Fish: 3-5 days from today if fresh, 3-6 months if frozen
+            - Bread: 4-7 days from today
+            - Dry goods (pasta, rice): 1 year from today
+            - Frozen goods: 3 months from today
+
+          For weight-based items (fruits, vegetables, meat):
+          - Include both the total price and price per unit
+          - Make sure to properly handle decimal quantities (e.g., 0.450 kg)
+          - Calculate the actual total price (quantity * pricePerUnit) if needed
+          Use 'pieces' as the default unit if not specified.
+          Format your response strictly as a JSON array.
           Response should be valid JSON array only, no explanations or text.`
         },
         {
@@ -110,14 +138,58 @@ export async function processReceiptImage(filePath: string): Promise<ExtractedIt
       // Map and validate the extracted items
       const processedItems: ExtractedItem[] = extractedItems.map(item => {
         const today = new Date();
-        const defaultExpiryDate = format(addDays(today, 7), "yyyy-MM-dd"); // Default to a week
+        
+        // Set default expiry based on food category
+        let defaultExpiryDays = 7; // Default to a week
+        const itemNameLower = String(item.name || "").toLowerCase();
+        
+        // Determine default expiry based on food type
+        if (itemNameLower.includes("milk") || itemNameLower.includes("yogurt") || itemNameLower.includes("cheese") || 
+            itemNameLower.includes("butter") || itemNameLower.includes("cream")) {
+          // Dairy products
+          defaultExpiryDays = 10;
+        } else if (itemNameLower.includes("meat") || itemNameLower.includes("chicken") || 
+                   itemNameLower.includes("fish") || itemNameLower.includes("beef") || 
+                   itemNameLower.includes("pork") || itemNameLower.includes("lamb")) {
+          // Meat products
+          defaultExpiryDays = 4;
+        } else if (itemNameLower.includes("bread") || itemNameLower.includes("bagel") || 
+                   itemNameLower.includes("bun") || itemNameLower.includes("roll")) {
+          // Bread products
+          defaultExpiryDays = 5;
+        } else if (itemNameLower.includes("apple") || itemNameLower.includes("orange") || 
+                   itemNameLower.includes("banana") || itemNameLower.includes("fruit")) {
+          // Fruits
+          defaultExpiryDays = 10;
+        } else if (itemNameLower.includes("vegetable") || itemNameLower.includes("lettuce") || 
+                   itemNameLower.includes("spinach") || itemNameLower.includes("kale") || 
+                   itemNameLower.includes("salad")) {
+          // Leafy vegetables
+          defaultExpiryDays = 5;
+        } else if (itemNameLower.includes("frozen")) {
+          // Frozen foods
+          defaultExpiryDays = 90;
+        } else if (itemNameLower.includes("pasta") || itemNameLower.includes("rice") || 
+                   itemNameLower.includes("cereal") || itemNameLower.includes("can")) {
+          // Dry goods
+          defaultExpiryDays = 365;
+        }
+        
+        const defaultExpiryDate = format(addDays(today, defaultExpiryDays), "yyyy-MM-dd");
+        
+        // Check if the item is weight-based by examining the unit
+        const weightUnits = ['kg', 'g', 'gram', 'grams', 'kilogram', 'kilograms', 'lb', 'lbs', 'pound', 'pounds', 'oz', 'ounce', 'ounces'];
+        const unit = String(item.unit || "pieces").toLowerCase();
+        const isWeightBased = item.isWeightBased === true || weightUnits.some(wu => unit.includes(wu));
         
         // Ensure proper types and defaults
         return {
           name: String(item.name || "Unknown Item").trim(),
           quantity: Number(item.quantity) || 1,
-          unit: String(item.unit || "pieces").toLowerCase(),
+          unit: unit,
           price: item.price !== undefined ? Number(item.price) : null,
+          pricePerUnit: isWeightBased && item.pricePerUnit ? Number(item.pricePerUnit) : null,
+          isWeightBased: isWeightBased,
           expiryDate: item.expiryDate || defaultExpiryDate
         };
       });
@@ -152,11 +224,18 @@ export function convertToFoodItems(
     // Use purchase date from receipt if available, otherwise use today's date
     const purchaseDate = (item as any).purchaseDate || format(today, "yyyy-MM-dd");
     
+    // Determine if the item is weight-based (by examining unit or other indicators)
+    const isWeightBased = 
+      item.isWeightBased || 
+      ['kg', 'g', 'gram', 'grams', 'kilogram', 'kilograms', 'lb', 'lbs', 'pound', 'pounds', 'oz', 'ounce', 'ounces'].includes(item.unit.toLowerCase());
+    
     return {
       name: item.name,
       quantity: item.quantity,
       unit: item.unit,
       price: item.price !== null ? item.price : undefined,
+      pricePerUnit: item.pricePerUnit || undefined,
+      isWeightBased: isWeightBased,
       expiryDate: item.expiryDate,
       locationId,
       userId,
@@ -176,6 +255,8 @@ export async function extractStoreFromReceipt(filePath: string): Promise<Extract
     if (!process.env.OPENAI_API_KEY) {
       throw new Error("OpenAI API key not configured");
     }
+    
+    console.log(`Extracting store information with OpenAI model: ${openaiModel}`);
 
     const absolutePath = path.resolve(filePath);
     const fileBuffer = fs.readFileSync(absolutePath);
@@ -183,7 +264,7 @@ export async function extractStoreFromReceipt(filePath: string): Promise<Extract
 
     // Call OpenAI API with the receipt image
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: openaiModel,
       messages: [
         {
           role: "system",
@@ -284,6 +365,8 @@ export async function extractReceiptDetails(filePath: string): Promise<ReceiptDe
     if (!process.env.OPENAI_API_KEY) {
       throw new Error("OpenAI API key not configured");
     }
+    
+    console.log(`Extracting receipt details with OpenAI model: ${openaiModel}`);
 
     const absolutePath = path.resolve(filePath);
     const fileBuffer = fs.readFileSync(absolutePath);
@@ -291,7 +374,7 @@ export async function extractReceiptDetails(filePath: string): Promise<ReceiptDe
 
     // Call OpenAI API with the receipt image
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: openaiModel,
       messages: [
         {
           role: "system",
@@ -305,12 +388,14 @@ export async function extractReceiptDetails(filePath: string): Promise<ReceiptDe
             "time": "Transaction time in HH:MM:SS format",
             "cashier": "Name of the cashier if available",
             "paymentMethod": "Method of payment (CASH, VISA, MASTERCARD, etc.)",
-            "totalAmount": Total amount in cents (numeric),
+            "totalAmount": Total amount as shown on the receipt (numeric, e.g., 24.99),
             "vatBreakdown": [
-              { "rate": VAT rate as a number (e.g., 5 for 5%), "amount": amount in cents }
-            ]
+              { "rate": VAT rate as a number (e.g., 5 for 5%), "amount": amount as shown on receipt }
+            ],
+            "language": "The language of the receipt (e.g., English, French, German, etc.)"
           }
           All fields are optional but provide as many as you can identify.
+          For the language field, detect what language the receipt text is in.
           Response should be valid JSON only, no explanations or text.`
         },
         {
@@ -379,6 +464,11 @@ export async function extractReceiptDetails(filePath: string): Promise<ReceiptDe
           console.error("Error formatting date:", error);
           // Keep the original date string if formatting fails
         }
+      }
+      
+      // Default language to English if not detected
+      if (!receiptDetails.language) {
+        receiptDetails.language = "English";
       }
       
       return receiptDetails;

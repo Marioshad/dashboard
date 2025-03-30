@@ -34,6 +34,7 @@ export function ReceiptUpload({ onSuccess }: ReceiptUploadProps = {}) {
   const [processingError, setProcessingError] = useState<string | null>(null);
   const [storeInfo, setStoreInfo] = useState<any>(null);
   const [receiptDetails, setReceiptDetails] = useState<ReceiptDetails | undefined>(undefined);
+  const [receiptId, setReceiptId] = useState<number | null>(null);
   const [openDialog, setOpenDialog] = useState(false);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -61,6 +62,7 @@ export function ReceiptUpload({ onSuccess }: ReceiptUploadProps = {}) {
     setSelectedItems({});
     setStoreInfo(null);
     setReceiptDetails(undefined);
+    setReceiptId(null);
   };
 
   const handleUpload = async () => {
@@ -95,8 +97,9 @@ export function ReceiptUpload({ onSuccess }: ReceiptUploadProps = {}) {
       
       setProcessingStage("processing");
       
-      // Store receipt details and store information
+      // Store receipt details and store information separately
       setReceiptDetails(data.receiptDetails);
+      setReceiptId(data.receiptId); // Store the receipt ID
       setStoreInfo(data.store);
       
       // Add a small delay to show the processing state to the user
@@ -200,24 +203,48 @@ export function ReceiptUpload({ onSuccess }: ReceiptUploadProps = {}) {
             ? new Date(receiptDetails.date).toISOString().split('T')[0] 
             : new Date().toISOString().split('T')[0];
           
-          return {
-            ...item,
+          // Ensure item data meets schema requirements by cleaning null values
+          const cleanedItem = {
+            name: item.name,
+            quantity: item.quantity || 1, // Default to 1 if quantity is null
+            unit: item.unit || "pc", // Default to pieces if unit is null
+            price: item.price || 0, // Default to 0 if price is null
+            expiryDate: item.expiryDate, // This should always be present
             locationId: defaultLocationId,
-            purchased: purchaseDate
+            purchased: purchaseDate,
+            receiptId: receiptId, // Link the item to the receipt using the stored receipt ID
+            
+            // Optional fields - convert null to undefined
+            pricePerUnit: item.pricePerUnit || undefined,
+            isWeightBased: item.isWeightBased || undefined
           };
+          
+          return cleanedItem;
         });
       
-      for (const item of itemsToAdd) {
-        const response = await fetch('/api/food-items', {
-          method: 'POST',
-          body: JSON.stringify(item),
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        });
-        if (!response.ok) {
-          throw new Error(`Failed to add item: ${item.name}`);
+      try {
+        for (const item of itemsToAdd) {
+          const response = await fetch('/api/food-items', {
+            method: 'POST',
+            body: JSON.stringify(item),
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          });
+          
+          if (!response.ok) {
+            // If we get a 400 error, try to extract more detailed error information
+            if (response.status === 400) {
+              const errorData = await response.json();
+              console.error('Validation error:', errorData);
+              throw new Error(`Failed to add item: ${item.name}. Validation error: ${JSON.stringify(errorData.errors || errorData)}`);
+            }
+            throw new Error(`Failed to add item: ${item.name}`);
+          }
         }
+      } catch (error: any) {
+        console.error('Error adding items:', error);
+        throw error; // Re-throw to be caught by the outer try/catch
       }
       
       toast({
@@ -234,6 +261,7 @@ export function ReceiptUpload({ onSuccess }: ReceiptUploadProps = {}) {
       setSelectedItems({});
       setStoreInfo(null);
       setReceiptDetails(undefined);
+      setReceiptId(null);
       
       // Call onSuccess callback if provided
       if (onSuccess) {
@@ -261,6 +289,18 @@ export function ReceiptUpload({ onSuccess }: ReceiptUploadProps = {}) {
         <CardDescription>
           Upload your grocery receipt to automatically add items to your inventory
         </CardDescription>
+        <div className="mt-2 text-xs text-muted-foreground bg-muted/30 p-3 rounded-md">
+          <p className="font-medium mb-1">Expiration dates are calculated automatically based on food type:</p>
+          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5 list-disc list-inside">
+            <li>Fresh produce: 5-7 days</li>
+            <li>Fruits: 10-14 days</li>
+            <li>Dairy: 10-14 days</li>
+            <li>Meat/Fish: 3-5 days (fresh)</li>
+            <li>Meat/Fish: 3-6 months (frozen)</li>
+            <li>Bread: 4-7 days</li>
+            <li>Dry goods: 1 year</li>
+          </ul>
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid w-full max-w-sm items-center gap-1.5">
@@ -383,6 +423,12 @@ export function ReceiptUpload({ onSuccess }: ReceiptUploadProps = {}) {
                 {/* Receipt Details */}
                 {receiptDetails && (
                   <div className="space-y-1 ml-auto text-right">
+                    {receiptDetails.language && (
+                      <div className="flex items-center justify-end gap-1 font-medium text-primary mb-1">
+                        <span>Language: {receiptDetails.language}</span>
+                      </div>
+                    )}
+                    
                     {receiptDetails.receiptNumber && (
                       <div className="flex items-center justify-end gap-1">
                         <Receipt className="h-3 w-3" />
@@ -421,7 +467,7 @@ export function ReceiptUpload({ onSuccess }: ReceiptUploadProps = {}) {
                     <span>VAT Breakdown:</span>
                     {receiptDetails.totalAmount !== undefined && (
                       <span className="font-semibold">
-                        Total: {formatPrice(receiptDetails.totalAmount * 100)}
+                        Total: {formatPrice(receiptDetails.totalAmount)}
                       </span>
                     )}
                   </div>
@@ -429,7 +475,7 @@ export function ReceiptUpload({ onSuccess }: ReceiptUploadProps = {}) {
                     {receiptDetails.vatBreakdown.map((vat, idx) => (
                       <div key={idx} className="flex justify-between text-muted-foreground">
                         <span>{vat.rate}%</span>
-                        <span>{formatPrice(vat.amount * 100)}</span>
+                        <span>{formatPrice(vat.amount)}</span>
                       </div>
                     ))}
                   </div>
@@ -451,7 +497,18 @@ export function ReceiptUpload({ onSuccess }: ReceiptUploadProps = {}) {
                     <div className="font-medium">{item.name}</div>
                     <div className="text-sm text-muted-foreground">
                       {item.quantity} {item.unit} · {item.price ? formatPrice(item.price) : formatPrice(0)}
+                      {item.isWeightBased && item.pricePerUnit && (
+                        <span className="ml-1 text-xs text-primary">
+                          ({formatPrice(item.pricePerUnit)}/{item.unit})
+                        </span>
+                      )}
                     </div>
+                    {item.isWeightBased && item.price && item.pricePerUnit && (
+                      <div className="text-xs text-muted-foreground flex justify-between">
+                        <span>Unit price: {formatPrice(item.pricePerUnit)}/{item.unit}</span>
+                        <span>Total: {formatPrice(item.price)}</span>
+                      </div>
+                    )}
                     <div className="text-xs text-muted-foreground">
                       Expires: {new Date(item.expiryDate || '').toLocaleDateString()}
                     </div>

@@ -8,9 +8,10 @@ import path from "path";
 import fs from "fs";
 import express from 'express';
 import { db } from "./db";
+import { format } from "date-fns";
 import { 
   roles, permissions, rolePermissions, users, appSettings, notifications,
-  locations, foodItems, stores, insertLocationSchema, updateLocationSchema,
+  locations, foodItems, stores, tags, foodItemTags, insertLocationSchema, updateLocationSchema,
   insertFoodItemSchema, updateFoodItemSchema, insertStoreSchema, updateStoreSchema
 } from "@shared/schema";
 import { eq, and, isNull, sql, desc } from "drizzle-orm";
@@ -833,6 +834,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
       next(error);
     }
   });
+  
+  // Get food item suggestions based on partial name
+  app.get('/api/food-items/suggestions', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      const userId = req.user.id;
+      const name = req.query.name as string;
+      
+      if (!name || name.length < 2) {
+        return res.json([]);
+      }
+      
+      // Get all items
+      const allItems = await storage.getFoodItems(userId);
+      
+      // Filter items with similar names
+      const lowercaseName = name.toLowerCase();
+      let similarItems = allItems.filter(item => 
+        item.name.toLowerCase().includes(lowercaseName)
+      );
+      
+      // Group similar items by name to count occurrences
+      const itemCounts: Record<string, { 
+        item: typeof allItems[0]; 
+        count: number; 
+        totalPrice: number; 
+        priceHistory: Array<{price: number; date: string}>
+      }> = {};
+      
+      // Count occurrences of each item name
+      similarItems.forEach(item => {
+        const normalizedName = item.name.toLowerCase();
+        if (!itemCounts[normalizedName]) {
+          itemCounts[normalizedName] = { 
+            item, 
+            count: 0,
+            totalPrice: 0,
+            priceHistory: []
+          };
+        }
+        itemCounts[normalizedName].count++;
+        if (item.price) {
+          itemCounts[normalizedName].totalPrice += Number(item.price);
+          itemCounts[normalizedName].priceHistory.push({
+            price: Number(item.price),
+            date: item.purchased instanceof Date ? item.purchased.toISOString() : item.purchased
+          });
+        }
+      });
+      
+      // Convert back to array and sort by count (higher first)
+      const suggestions = Object.values(itemCounts)
+        .map(itemData => ({
+          ...itemData.item,
+          occurrences: itemData.count,
+          averagePrice: itemData.count > 0 && itemData.totalPrice > 0 ? itemData.totalPrice / itemData.count : null,
+          priceHistory: itemData.priceHistory
+            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+            .slice(0, 10) // Keep only 10 most recent prices
+        }))
+        .sort((a, b) => (b.occurrences as number) - (a.occurrences as number))
+        .slice(0, 5); // Return top 5 suggestions
+      
+      res.json(suggestions);
+    } catch (error) {
+      next(error);
+    }
+  });
 
   app.post('/api/food-items', async (req, res, next) => {
     try {
@@ -1159,6 +1231,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         receiptNumber: receiptDetails.receiptNumber,
         totalAmount: receiptDetails.totalAmount,
         paymentMethod: receiptDetails.paymentMethod,
+        language: receiptDetails.language,
         extractedData: errorMessage ? undefined : {
           store: extractedStore,
           receiptDetails: receiptDetails
@@ -1258,6 +1331,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Get food items for this receipt
       const foodItems = await storage.getFoodItemsByReceiptId(receiptId);
+      console.log(`Fetched ${foodItems.length} items for receipt ${receiptId}:`, foodItems);
       res.json(foodItems);
     } catch (error) {
       next(error);
@@ -1317,6 +1391,290 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const items = await storage.getFoodItems(req.user.id, locationId);
       res.json(items);
     } catch (error) {
+      next(error);
+    }
+  });
+
+  // Tags API endpoints
+  app.get('/api/tags', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      // Check which column name is used in the database (is_system or issystem)
+      const columnCheckResult = await db.execute(sql`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'tags' 
+        AND (column_name = 'is_system' OR column_name = 'issystem')
+      `);
+      
+      // If neither column exists, return an empty array
+      if (columnCheckResult.rows.length === 0) {
+        console.log("Tags table is missing the system column");
+        return res.json([]);
+      }
+      
+      // Determine which column name to use
+      const systemColumnName = columnCheckResult.rows[0].column_name;
+      console.log(`Using ${systemColumnName} as the system tag column for query`);
+      
+      // Use the appropriate column name in the query
+      let result;
+      if (systemColumnName === 'is_system') {
+        result = await db.execute(sql`
+          SELECT id, name, color, is_system as "isSystem", userid as "userId"
+          FROM tags 
+          WHERE userid = ${req.user.id} OR is_system = true
+          ORDER BY name ASC
+        `);
+      } else {
+        result = await db.execute(sql`
+          SELECT id, name, color, issystem as "isSystem", userid as "userId"
+          FROM tags 
+          WHERE userid = ${req.user.id} OR issystem = true
+          ORDER BY name ASC
+        `);
+      }
+      
+      res.json(result.rows);
+    } catch (error) {
+      console.error('Error fetching tags:', error);
+      next(error);
+    }
+  });
+
+  app.post('/api/tags', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      const { name, color } = req.body;
+      
+      if (!name || !color) {
+        return res.status(400).json({ message: "Name and color are required" });
+      }
+      
+      // Insert new tag
+      const [tag] = await db.insert(tags)
+        .values({
+          name,
+          color,
+          isSystem: false,
+          userId: req.user.id
+        })
+        .returning();
+      
+      res.status(201).json(tag);
+    } catch (error) {
+      console.error('Error creating tag:', error);
+      next(error);
+    }
+  });
+
+  app.patch('/api/tags/:id', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      const tagId = parseInt(req.params.id);
+      if (isNaN(tagId)) {
+        return res.status(400).json({ message: "Invalid tag ID" });
+      }
+      
+      // Check if tag exists and belongs to user
+      const [tag] = await db.select()
+        .from(tags)
+        .where(
+          and(
+            eq(tags.id, tagId),
+            eq(tags.userId, req.user.id)
+          )
+        );
+      
+      if (!tag) {
+        return res.status(404).json({ message: "Tag not found or you don't have permission to edit it" });
+      }
+      
+      // Don't allow editing system tags
+      if (tag.isSystem) {
+        return res.status(403).json({ message: "System tags cannot be modified" });
+      }
+      
+      const { name, color } = req.body;
+      
+      // Update tag
+      const [updatedTag] = await db.update(tags)
+        .set({
+          name: name || tag.name,
+          color: color || tag.color
+        })
+        .where(eq(tags.id, tagId))
+        .returning();
+      
+      res.json(updatedTag);
+    } catch (error) {
+      console.error('Error updating tag:', error);
+      next(error);
+    }
+  });
+
+  app.delete('/api/tags/:id', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      const tagId = parseInt(req.params.id);
+      if (isNaN(tagId)) {
+        return res.status(400).json({ message: "Invalid tag ID" });
+      }
+      
+      // Check if tag exists and belongs to user
+      const [tag] = await db.select()
+        .from(tags)
+        .where(
+          and(
+            eq(tags.id, tagId),
+            eq(tags.userId, req.user.id)
+          )
+        );
+      
+      if (!tag) {
+        return res.status(404).json({ message: "Tag not found or you don't have permission to delete it" });
+      }
+      
+      // Don't allow deleting system tags
+      if (tag.isSystem) {
+        return res.status(403).json({ message: "System tags cannot be deleted" });
+      }
+      
+      // First remove any associations in the many-to-many table
+      await db.delete(foodItemTags)
+        .where(eq(foodItemTags.tagId, tagId));
+      
+      // Then delete the tag
+      await db.delete(tags)
+        .where(eq(tags.id, tagId));
+      
+      res.status(200).json({ message: "Tag deleted successfully" });
+    } catch (error) {
+      console.error('Error deleting tag:', error);
+      next(error);
+    }
+  });
+
+  // Tag-Item relationship endpoints
+  app.get('/api/food-items/:itemId/tags', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      const itemId = parseInt(req.params.itemId);
+      if (isNaN(itemId)) {
+        return res.status(400).json({ message: "Invalid food item ID" });
+      }
+      
+      // Check if item exists and belongs to user
+      const item = await storage.getFoodItem(itemId);
+      if (!item) {
+        return res.status(404).json({ message: "Food item not found" });
+      }
+      
+      if (item.userId !== req.user.id) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
+      // Check which column name is used in the database
+      const columnCheckResult = await db.execute(sql`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'tags' 
+        AND (column_name = 'is_system' OR column_name = 'issystem')
+      `);
+      
+      // If neither column exists, return an empty array
+      if (columnCheckResult.rows.length === 0) {
+        console.log("Tags table is missing the system column");
+        return res.json([]);
+      }
+      
+      // Determine which column name to use
+      const systemColumnName = columnCheckResult.rows[0].column_name;
+      
+      // Use appropriate column in query
+      let result;
+      if (systemColumnName === 'is_system') {
+        result = await db.execute(sql`
+          SELECT t.id, t.name, t.color, t.is_system as "isSystem", t.userid as "userId"
+          FROM tags t
+          JOIN food_item_tags fit ON t.id = fit.tag_id
+          WHERE fit.food_item_id = ${itemId}
+        `);
+      } else {
+        result = await db.execute(sql`
+          SELECT t.id, t.name, t.color, t.issystem as "isSystem", t.userid as "userId"
+          FROM tags t
+          JOIN food_item_tags fit ON t.id = fit.tag_id
+          WHERE fit.food_item_id = ${itemId}
+        `);
+      }
+      
+      res.json(result.rows);
+    } catch (error) {
+      console.error('Error fetching food item tags:', error);
+      next(error);
+    }
+  });
+
+  app.post('/api/food-items/:itemId/tags', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      const itemId = parseInt(req.params.itemId);
+      if (isNaN(itemId)) {
+        return res.status(400).json({ message: "Invalid food item ID" });
+      }
+      
+      // Check if item exists and belongs to user
+      const item = await storage.getFoodItem(itemId);
+      if (!item) {
+        return res.status(404).json({ message: "Food item not found" });
+      }
+      
+      if (item.userId !== req.user.id) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
+      const { tagIds } = req.body;
+      if (!tagIds || !Array.isArray(tagIds)) {
+        return res.status(400).json({ message: "tagIds array is required" });
+      }
+      
+      // Remove existing tags
+      await db.delete(foodItemTags)
+        .where(eq(foodItemTags.foodItemId, itemId));
+      
+      // Add new tags
+      if (tagIds.length > 0) {
+        await db.insert(foodItemTags)
+          .values(
+            tagIds.map(tagId => ({
+              foodItemId: itemId,
+              tagId: tagId
+            }))
+          );
+      }
+      
+      res.status(200).json({ message: "Tags updated successfully" });
+    } catch (error) {
+      console.error('Error updating food item tags:', error);
       next(error);
     }
   });

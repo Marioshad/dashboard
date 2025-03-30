@@ -10,6 +10,7 @@ export interface Receipt {
   receiptDate?: string;
   receiptNumber?: string;
   totalAmount?: number;
+  language?: string; // Receipt language
   createdAt: string;
   updatedAt: string;
   store?: {
@@ -26,7 +27,11 @@ export interface ExtractedItem {
   quantity: number;
   unit: string;
   price: number | null;
+  pricePerUnit?: number; // Price per unit (for weight-based items)
+  isWeightBased?: boolean; // Flag for items sold by weight
   expiryDate: string;
+  locationId?: number; // Suggested storage location
+  suggestionScore?: number; // Score for item suggestion
 }
 
 export interface VatBreakdown {
@@ -42,6 +47,8 @@ export interface ReceiptDetails {
   paymentMethod?: string;
   totalAmount?: number;
   vatBreakdown?: VatBreakdown[];
+  language?: string; // Receipt language detected
+  receiptId?: string | number; // ID of the receipt in the database
 }
 
 export interface ReceiptResponse {
