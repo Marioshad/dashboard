@@ -52,8 +52,8 @@ interface Tag {
   id: number;
   name: string;
   color: string;
-  is_system: boolean;
-  user_id: number | null;
+  isSystem: boolean;  // Changed from is_system to isSystem to match API response
+  userId: number | null;  // Changed from user_id to userId to match API response
 }
 
 export default function TagsPage() {
@@ -196,8 +196,8 @@ export default function TagsPage() {
   };
 
   // Group tags: System tags and user tags
-  const systemTags = tagsQuery.data?.filter(tag => tag.is_system) || [];
-  const userTags = tagsQuery.data?.filter(tag => !tag.is_system) || [];
+  const systemTags = tagsQuery.data?.filter(tag => tag.isSystem) || [];
+  const userTags = tagsQuery.data?.filter(tag => !tag.isSystem) || [];
 
   return (
     <DashboardLayout>
