@@ -42,15 +42,25 @@ BEGIN
             ('Gluten-Free', '#CDDC39', TRUE);
     ELSE
         -- If the tables already exist but the is_system column is missing, add it
+        -- Check for both the 'is_system' and 'issystem' column names (PostgreSQL may convert to lowercase)
         IF NOT EXISTS (
             SELECT 1 
             FROM information_schema.columns 
-            WHERE table_name = 'tags' AND column_name = 'is_system'
+            WHERE table_name = 'tags' AND (column_name = 'is_system' OR column_name = 'issystem')
         ) THEN
             ALTER TABLE tags ADD COLUMN is_system BOOLEAN NOT NULL DEFAULT FALSE;
             
             -- Insert default system tags only if none exist yet
-            IF NOT EXISTS (SELECT 1 FROM tags WHERE is_system = TRUE) THEN
+            -- Check for both possible column names (is_system or issystem)
+            IF NOT EXISTS (
+                SELECT 1 FROM tags 
+                WHERE 
+                    CASE 
+                        WHEN EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tags' AND column_name = 'is_system')
+                        THEN is_system = TRUE
+                        ELSE issystem = TRUE
+                    END
+            ) THEN
                 INSERT INTO tags (name, color, is_system) VALUES
                     ('Vegetables', '#4CAF50', TRUE),
                     ('Fruits', '#FF9800', TRUE),
