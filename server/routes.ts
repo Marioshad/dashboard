@@ -1029,6 +1029,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
+      // Check receipt item limits for free tier users
+      if (result.data.receiptId) {
+        // Get user's subscription tier
+        const user = await db.select().from(users).where(eq(users.id, req.user.id)).limit(1);
+        
+        if (user.length > 0 && user[0].subscriptionTier === 'free') {
+          // Count existing items for this receipt
+          const existingItemsCount = await db
+            .select({ count: sql`count(*)` })
+            .from(foodItems)
+            .where(and(
+              eq(foodItems.receiptId, result.data.receiptId),
+              eq(foodItems.userId, req.user.id)
+            ));
+            
+          const count = Number(existingItemsCount[0]?.count || 0);
+          
+          // If we've already hit the 50 item limit, don't add more
+          if (count >= 50) {
+            // Send a notification about the limit being reached
+            await sendNotification(
+              req.user.id,
+              'item_limit_reached',
+              `You've reached the 50-item limit for receipt items on your free plan. Upgrade to add more items.`,
+              undefined,
+              { 
+                receiptId: result.data.receiptId,
+                limit: 50,
+                count: count,
+                subscriptionTier: 'free'
+              }
+            );
+            
+            return res.status(403).json({ 
+              message: "Item limit reached",
+              error: 'FREE_TIER_ITEM_LIMIT',
+              details: 'Free tier accounts are limited to 50 items per receipt. Upgrade your plan to get unlimited items.',
+              limit: 50,
+              count: count
+            });
+          }
+        }
+      }
+      
       const foodItem = await storage.createFoodItem({
         ...result.data,
         userId: req.user.id
@@ -1303,7 +1347,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           } = await import('./services/openai');
           
           // Process the receipt image with OpenAI OCR to extract items
-          extractedItems = await processReceiptImage(fullFilePath);
+          // Pass the subscription tier to limit items for free tier users
+          const userTier = typeof user.subscriptionTier === 'string' ? user.subscriptionTier : 'free';
+          extractedItems = await processReceiptImage(fullFilePath, userTier);
           
           // Extract store information from the receipt
           extractedStore = await extractStoreFromReceipt(fullFilePath);
