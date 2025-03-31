@@ -14,7 +14,8 @@ import {
   Tag,
   CircleX,
   Loader2,
-  Globe
+  Globe,
+  AlertCircle
 } from 'lucide-react';
 
 // Import shared types
@@ -26,11 +27,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { useCurrency } from '@/hooks/use-currency';
+import { useAuth } from '@/hooks/use-auth';
+import { Link } from 'wouter';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 export function ReceiptDetailPage() {
   const [, setLocation] = useLocation();
   const { id } = useParams<{ id: string }>();
   const { formatCurrency } = useCurrency();
+  const { user } = useAuth();
   
   const { data: receipt, isLoading, error } = useQuery<ReceiptType>({
     queryKey: ['/api/receipts', id],
@@ -268,6 +273,35 @@ export function ReceiptDetailPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
+              {/* Free tier limit warning */}
+              {user && user.subscriptionTier === 'free' && items.length > 0 && (
+                <Alert className="mb-4 bg-amber-50 border-amber-200">
+                  <AlertCircle className="h-4 w-4 text-amber-600" />
+                  <AlertTitle className="text-amber-800 text-sm font-medium">Free Tier Limit</AlertTitle>
+                  <AlertDescription className="text-xs text-amber-700">
+                    Free tier accounts are limited to 50 items per receipt.
+                    {items.length >= 45 && items.length <= 50 && (
+                      <>
+                        <br />
+                        <strong>Warning:</strong> This receipt has {items.length} items, approaching the 50-item limit.
+                      </>
+                    )}
+                    {items.length > 50 && (
+                      <>
+                        <br />
+                        <strong>Note:</strong> This receipt has {items.length} items but only the first 50 are saved.
+                        Additional items may have been discarded.
+                      </>
+                    )}
+                    <div className="mt-2">
+                      <Link to="/subscription" className="text-primary text-xs font-medium hover:underline">
+                        Upgrade to Smart Pantry tier → Unlimited items per receipt
+                      </Link>
+                    </div>
+                  </AlertDescription>
+                </Alert>
+              )}
+              
               {items.length > 0 ? (
                 <div className="space-y-4">
                   {items.map((item, index) => (

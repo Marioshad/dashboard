@@ -20,12 +20,20 @@ import { Button } from '@/components/ui/button';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { Link, useLocation, useRoute } from 'wouter';
-import { Eye, Trash2, ReceiptText, Plus } from 'lucide-react';
+import { Eye, Trash2, ReceiptText, Plus, AlertCircle } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useCurrency } from '@/hooks/use-currency';
 import { toast } from '@/hooks/use-toast';
 import { ReceiptUpload } from '@/components/receipt-upload';
 import { Receipt } from '@/types/receipt';
+import { useAuth } from '@/hooks/use-auth';
+import { Badge } from '@/components/ui/badge';
+import { 
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 export function ReceiptsPage() {
   const [isUploading, setIsUploading] = useState(false);
@@ -34,6 +42,7 @@ export function ReceiptsPage() {
   const { formatCurrency } = useCurrency();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [receiptToDelete, setReceiptToDelete] = useState<number | null>(null);
+  const { user } = useAuth();
   
   const { data: receipts = [], isLoading, error } = useQuery<Receipt[]>({
     queryKey: ['/api/receipts'],
@@ -83,14 +92,66 @@ export function ReceiptsPage() {
   return (
     <DashboardLayout>
       <div className="container mx-auto p-4 max-w-7xl">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold">Receipts</h1>
-          <Button 
-            onClick={() => setIsUploading(true)}
-            className="bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800"
-          >
-            <Plus className="w-4 h-4 mr-2" /> Upload Receipt
-          </Button>
+        <div className="flex flex-col gap-2 mb-6">
+          <div className="flex justify-between items-center">
+            <h1 className="text-3xl font-bold">Receipts</h1>
+            <Button 
+              onClick={() => setIsUploading(true)}
+              className="bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800"
+            >
+              <Plus className="w-4 h-4 mr-2" /> Upload Receipt
+            </Button>
+          </div>
+          
+          {/* Subscription usage indicator */}
+          {user && user.subscriptionTier !== 'pro' && (user.receiptScansLimit ?? 0) > 0 && (
+            <div className="flex items-center gap-2 rounded-lg p-2 bg-muted/50 text-sm">
+              <div className="flex flex-1 flex-col xs:flex-row xs:items-center gap-1">
+                <div className="flex items-center gap-2">
+                  <Badge variant={user.subscriptionTier === 'free' ? 'outline' : 'default'} className="capitalize">
+                    {user.subscriptionTier} Tier
+                  </Badge>
+                  
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="flex items-center">
+                          <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <div className="w-[220px]">
+                          <p><strong>Receipt Scan Limits</strong></p>
+                          <p className="text-xs mt-1">• Free: 3 scans per period, 50 items per receipt</p>
+                          <p className="text-xs">• Smart Pantry: 20 scans per period</p>
+                          <p className="text-xs">• Family Pantry Pro: Unlimited scans</p>
+                          <div className="mt-1 text-xs">
+                            <Link to="/subscription" className="text-primary underline">
+                              Upgrade your plan
+                            </Link>
+                          </div>
+                        </div>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+
+                <div className="text-muted-foreground flex-1">
+                  <span>
+                    Receipt Scans Remaining: <strong>{Math.max(0, (user.receiptScansLimit ?? 0) - (user.receiptScansUsed ?? 0))}/{user.receiptScansLimit ?? 0}</strong>
+                  </span>
+                </div>
+              </div>
+              
+              {user.subscriptionTier === 'free' && (
+                <Button variant="outline" size="sm" asChild className="shrink-0">
+                  <Link to="/subscription">
+                    Upgrade
+                  </Link>
+                </Button>
+              )}
+            </div>
+          )}
         </div>
 
         {isLoading ? (
