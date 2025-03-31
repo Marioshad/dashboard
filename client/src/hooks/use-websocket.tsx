@@ -52,8 +52,15 @@ export function useWebSocket() {
         try {
           const data = JSON.parse(event.data) as WebSocketMessage;
           
-          // Handle notification updates
+          // Handle new notification created
           if (data.type === 'notification') {
+            // Check if it's an unread count update notification
+            if (data.data && data.data.type === 'unread_count_update') {
+              // We can update without a full refetch, but for simplicity we'll invalidate
+              console.log('Received unread count update:', data.data.unreadCount);
+            }
+            
+            // Always invalidate notifications query for any notification update
             queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
           }
           
