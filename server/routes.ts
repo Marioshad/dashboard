@@ -17,6 +17,13 @@ import {
 import { eq, and, isNull, sql, desc } from "drizzle-orm";
 import Stripe from "stripe";
 import { WebSocketServer, WebSocket as WsWebSocket } from 'ws';
+import { IncomingMessage } from 'http';
+import { Socket } from 'net';
+import { parse } from 'cookie';
+import cookieSignature from 'cookie-signature';
+import { log } from './vite';
+
+const SESSION_SECRET = process.env.SESSION_SECRET || 'keyboard cat';
 
 // Make Stripe integration optional
 let stripe: Stripe | null = null;
@@ -62,38 +69,27 @@ const upload = multer({
   }
 });
 
-// Store WebSocket clients
-const clients = new Map<number, WsWebSocket>();
+// Import the WebSocket handlers
+import { sendNotification as wsSendNotification } from './websockets/handlers/notificationHandler';
+import { updateReceiptScanUsage as wsUpdateReceiptScanUsage } from './websockets/handlers/usageUpdateHandler';
+import { getConnectedClients } from './websockets/index';
 
 async function sendNotification(userId: number, type: string, message: string, actorId?: number, metadata?: any) {
   try {
-    // Create a notification object with the metadata included in the message
-    const notificationData = {
+    log(`Sending notification to user ${userId}: ${type} - ${message}`);
+    
+    // Use the specialized notification handler from the websockets module 
+    // which handles both database and WebSocket operations
+    const notification = await wsSendNotification(
       userId,
       type,
       message,
-      actorId
-    };
+      actorId,
+      metadata,
+      getConnectedClients() // Get the current connected clients map
+    );
     
-    // If metadata is provided, convert it to JSON string and attach to message
-    if (metadata) {
-      notificationData.message = `${message}|${JSON.stringify(metadata)}`;
-    }
-    
-    const [notification] = await db
-      .insert(notifications)
-      .values(notificationData)
-      .returning();
-
-    const ws = clients.get(userId);
-    // WsWebSocket.OPEN is 1 (same constant as browser WebSocket.OPEN)
-    if (ws?.readyState === 1) {
-      ws.send(JSON.stringify({
-        type: 'notification',
-        data: notification
-      }));
-    }
-
+    log(`Notification sent and saved with ID ${notification.id}`);
     return notification;
   } catch (error) {
     console.error('Error sending notification:', error);
@@ -499,16 +495,96 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.sendStatus(401);
       }
 
+      const userId = req.user.id;
+
+      // Get the count of unread notifications before update
+      const unreadCountBefore = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(notifications)
+        .where(
+          and(
+            eq(notifications.userId, userId),
+            eq(notifications.read, false)
+          )
+        )
+        .then(result => result[0]?.count || 0);
+
+      // Skip update if there are no unread notifications
+      if (unreadCountBefore === 0) {
+        return res.sendStatus(200);
+      }
+
       await db
         .update(notifications)
         .set({ read: true })
         .where(
           and(
-            eq(notifications.userId, req.user.id),
+            eq(notifications.userId, userId),
             eq(notifications.read, false)
           )
         );
 
+      // Send a WebSocket notification to update badge count in real-time
+      if (app.locals.sendWebSocketNotification) {
+        app.locals.sendWebSocketNotification(userId, 'notification', {
+          type: 'unread_count_update',
+          unreadCount: 0, // All notifications are now read
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      res.sendStatus(200);
+    } catch (error) {
+      next(error);
+    }
+  });
+  
+  // Route to mark a single notification as read
+  app.post('/api/notifications/:id/read', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      const notificationId = parseInt(req.params.id);
+      const userId = req.user.id;
+      
+      if (isNaN(notificationId)) {
+        return res.status(400).json({ error: 'Invalid notification ID' });
+      }
+
+      // Mark single notification as read
+      await db
+        .update(notifications)
+        .set({ read: true })
+        .where(
+          and(
+            eq(notifications.id, notificationId),
+            eq(notifications.userId, userId)
+          )
+        );
+      
+      // Get the updated count of unread notifications
+      const unreadCount = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(notifications)
+        .where(
+          and(
+            eq(notifications.userId, userId),
+            eq(notifications.read, false)
+          )
+        )
+        .then(result => result[0]?.count || 0);
+      
+      // Send a WebSocket notification to update badge count in real-time
+      if (app.locals.sendWebSocketNotification) {
+        app.locals.sendWebSocketNotification(userId, 'notification', {
+          type: 'unread_count_update',
+          unreadCount: unreadCount,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
       res.sendStatus(200);
     } catch (error) {
       next(error);
@@ -658,20 +734,78 @@ export async function registerRoutes(app: Express): Promise<Server> {
       case 'customer.subscription.created':
       case 'customer.subscription.updated': {
         const subscription = event.data.object as Stripe.Subscription;
-
+        
+        // Get subscription period information
+        const currentPeriodStart = new Date(subscription.current_period_start * 1000);
+        const currentPeriodEnd = new Date(subscription.current_period_end * 1000);
+        
+        // Determine the subscription tier from the product metadata
+        let subscriptionTier = 'free';
+        let receiptScansLimit = 3; // Default for free tier
+        let maxItems = 50; // Default for free tier
+        let maxSharedUsers = 1; // Default for free tier
+        const roleToAssign = 'User'; // Default role
+        
+        try {
+          // Get the price object to determine the product and tier
+          if (subscription.items.data.length > 0) {
+            const priceId = subscription.items.data[0].price.id;
+            
+            // Fetch the price details from Stripe
+            const price = await stripe!.prices.retrieve(priceId, {
+              expand: ['product']
+            });
+            
+            // Check product metadata for tier
+            const product = price.product as Stripe.Product;
+            if (product && product.metadata && product.metadata.tier) {
+              subscriptionTier = product.metadata.tier;
+              
+              // Set limits based on tier
+              if (subscriptionTier === 'smart') {
+                receiptScansLimit = 20;
+                maxItems = -1; // Unlimited
+                maxSharedUsers = 3;
+              } else if (subscriptionTier === 'pro') {
+                receiptScansLimit = -1; // Unlimited
+                maxItems = -1; // Unlimited
+                maxSharedUsers = 6;
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Error determining subscription tier:', error);
+        }
+        
+        // Update the user record with subscription details
         await db.update(users)
           .set({
             subscriptionStatus: subscription.status,
+            subscriptionTier: subscription.status === 'active' ? subscriptionTier : 'free',
+            receiptScansLimit: subscription.status === 'active' ? receiptScansLimit : 3,
+            maxItems: subscription.status === 'active' ? maxItems : 50,
+            maxSharedUsers: subscription.status === 'active' ? maxSharedUsers : 1,
+            currentBillingPeriodStart: subscription.status === 'active' ? currentPeriodStart : null,
+            currentBillingPeriodEnd: subscription.status === 'active' ? currentPeriodEnd : null,
             updatedAt: sql`CURRENT_TIMESTAMP`,
           })
           .where(eq(users.stripeSubscriptionId, subscription.id));
 
         if (subscription.status === 'active') {
-          const premiumRole = await db.query.roles.findFirst({
-            where: eq(roles.name, 'Premium'),
+          // Find the appropriate role based on tier
+          let roleName = 'User'; // Default
+          
+          if (subscriptionTier === 'smart') {
+            roleName = 'SmartPantry';
+          } else if (subscriptionTier === 'pro') {
+            roleName = 'FamilyPantryPro';
+          }
+          
+          const roleToAssign = await db.query.roles.findFirst({
+            where: eq(roles.name, roleName),
           });
 
-          if (premiumRole) {
+          if (roleToAssign) {
             const [user] = await db.select()
               .from(users)
               .where(eq(users.stripeSubscriptionId, subscription.id));
@@ -679,12 +813,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
             if (user) {
               await db.update(users)
                 .set({
-                  roleId: premiumRole.id,
+                  roleId: roleToAssign.id,
                   updatedAt: sql`CURRENT_TIMESTAMP`,
                 })
                 .where(eq(users.id, user.id));
+                
+              // Send a notification about the subscription
+              await sendNotification(
+                user.id, 
+                'subscription_updated', 
+                `Your ${subscriptionTier === 'smart' ? 'Smart Pantry' : 'Family Pantry Pro'} subscription is now active!`,
+                undefined,
+                { tier: subscriptionTier }
+              );
             }
           }
+        }
+        break;
+      }
+      case 'customer.subscription.deleted': {
+        const subscription = event.data.object as Stripe.Subscription;
+        
+        // Reset to free tier when subscription is cancelled
+        const [user] = await db.select()
+          .from(users)
+          .where(eq(users.stripeSubscriptionId, subscription.id));
+        
+        if (user) {
+          // Find basic user role
+          const basicRole = await db.query.roles.findFirst({
+            where: eq(roles.name, 'User'),
+          });
+          
+          await db.update(users)
+            .set({
+              subscriptionStatus: 'inactive',
+              subscriptionTier: 'free',
+              receiptScansLimit: 3,
+              maxItems: 50,
+              maxSharedUsers: 1,
+              roleId: basicRole ? basicRole.id : user.roleId,
+              currentBillingPeriodStart: null,
+              currentBillingPeriodEnd: null,
+              updatedAt: sql`CURRENT_TIMESTAMP`,
+            })
+            .where(eq(users.id, user.id));
+            
+          // Send a notification
+          await sendNotification(
+            user.id,
+            'subscription_cancelled',
+            'Your subscription has been cancelled. You have been downgraded to the free tier.'
+          );
         }
         break;
       }
@@ -925,6 +1105,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
+      // Check receipt item limits for free tier users
+      if (result.data.receiptId) {
+        // Get user's subscription tier
+        const user = await db.select().from(users).where(eq(users.id, req.user.id)).limit(1);
+        
+        if (user.length > 0 && user[0].subscriptionTier === 'free') {
+          // Count existing items for this receipt
+          const existingItemsCount = await db
+            .select({ count: sql`count(*)` })
+            .from(foodItems)
+            .where(and(
+              eq(foodItems.receiptId, result.data.receiptId),
+              eq(foodItems.userId, req.user.id)
+            ));
+            
+          const count = Number(existingItemsCount[0]?.count || 0);
+          
+          // If we've already hit the 50 item limit, don't add more
+          if (count >= 50) {
+            // Send a notification about the limit being reached
+            await sendNotification(
+              req.user.id,
+              'item_limit_reached',
+              `You've reached the 50-item limit for receipt items on your free plan. Upgrade to add more items.`,
+              undefined,
+              { 
+                receiptId: result.data.receiptId,
+                limit: 50,
+                count: count,
+                subscriptionTier: 'free'
+              }
+            );
+            
+            return res.status(403).json({ 
+              message: "Item limit reached",
+              error: 'FREE_TIER_ITEM_LIMIT',
+              details: 'Free tier accounts are limited to 50 items per receipt. Upgrade your plan to get unlimited items.',
+              limit: 50,
+              count: count
+            });
+          }
+        }
+      }
+      
       const foodItem = await storage.createFoodItem({
         ...result.data,
         userId: req.user.id
@@ -1141,6 +1365,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+// Helper function to update receipt scan usage via WebSocket
+const updateReceiptScanUsage = async (userId: number, scansUsed: number, scansLimit: number) => {
+  try {
+    // Send a notification about scan usage
+    await sendNotification(userId, 'receipt_scan_usage', `You have used ${scansUsed} out of ${scansLimit} receipt scans.`, undefined, {
+      scansUsed,
+      scansLimit
+    });
+    
+    // Use the specialized handler from the websockets module 
+    // but tell it to skip the database update since we already did that in routes.ts
+    await wsUpdateReceiptScanUsage(
+      userId,
+      scansUsed,
+      scansLimit,
+      getConnectedClients(), // Get the current connected clients map
+      true // Skip database update since we already did that
+    );
+    
+    log(`Updated and broadcast receipt scan usage for user ${userId}: ${scansUsed}/${scansLimit}`);
+  } catch (error) {
+    console.error('Error updating receipt scan usage:', error);
+  }
+};
+
   app.post('/api/receipts/upload', upload.single('receipt'), async (req: MulterRequest, res, next) => {
     try {
       if (!req.isAuthenticated()) {
@@ -1149,6 +1398,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });
+      }
+      
+      // Check receipt scan limits based on subscription tier
+      const user = req.user;
+      
+      // If user has a limit (not unlimited) and has reached it, block the upload
+      if (user.receiptScansLimit !== null && 
+          user.receiptScansLimit !== undefined && 
+          user.receiptScansLimit >= 0 && 
+          user.receiptScansUsed !== null &&
+          user.receiptScansUsed !== undefined &&
+          user.receiptScansUsed >= user.receiptScansLimit) {
+        
+        // Get the next tier name for the upgrade message
+        const nextTier = user.subscriptionTier === 'free' ? 'Smart Pantry' : 'Family Pantry Pro';
+        
+        // Send a notification to the user about reaching their limit
+        await sendNotification(
+          user.id, 
+          'subscription_limit', 
+          `You've reached your receipt scan limit of ${user.receiptScansLimit}. Please upgrade your subscription to continue scanning receipts.`,
+          undefined,
+          {
+            limitType: 'receipt_scans',
+            currentTier: user.subscriptionTier,
+            nextTier: user.subscriptionTier === 'pro' ? null : nextTier,
+            scanLimit: user.receiptScansLimit,
+            scansUsed: user.receiptScansUsed
+          }
+        );
+        
+        return res.status(403).json({ 
+          message: `You've reached your receipt scan limit (${user.receiptScansLimit}) for this billing period.`,
+          error: 'RECEIPT_LIMIT_REACHED',
+          tierInfo: {
+            currentTier: user.subscriptionTier,
+            scanLimit: user.receiptScansLimit,
+            scansUsed: user.receiptScansUsed,
+            nextTier: user.subscriptionTier === 'pro' ? null : nextTier
+          }
+        });
       }
 
       const receiptUrl = `/uploads/${req.file.filename}`;
@@ -1173,7 +1463,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           } = await import('./services/openai');
           
           // Process the receipt image with OpenAI OCR to extract items
-          extractedItems = await processReceiptImage(fullFilePath);
+          // Pass the subscription tier to limit items for free tier users
+          const userTier = typeof user.subscriptionTier === 'string' ? user.subscriptionTier : 'free';
+          extractedItems = await processReceiptImage(fullFilePath, userTier);
           
           // Extract store information from the receipt
           extractedStore = await extractStoreFromReceipt(fullFilePath);
@@ -1264,6 +1556,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         // Create the receipt with defensive error handling
         const receipt = await storage.createReceipt(receiptData);
+        
+        // Increment user's receipt scan count only if they have a limit (i.e., not unlimited)
+        if (user.receiptScansLimit !== null && 
+            user.receiptScansLimit !== undefined && 
+            user.receiptScansLimit >= 0) {
+          
+          // Update the receipt scans used count in the database
+          await db.update(users)
+            .set({
+              receiptScansUsed: sql`"receipt_scans_used" + 1`,
+              updatedAt: sql`CURRENT_TIMESTAMP`
+            })
+            .where(eq(users.id, user.id));
+            
+          const scansUsed = user.receiptScansUsed !== null && user.receiptScansUsed !== undefined ? user.receiptScansUsed + 1 : 1;
+          console.log(`Incremented receipt scans for user ${user.id} (now: ${scansUsed}/${user.receiptScansLimit})`);
+          
+          // Send WebSocket notification about usage (using our new function)
+          const scansLimit = user.receiptScansLimit || 0;
+          await updateReceiptScanUsage(user.id, scansUsed, scansLimit);
+        }
         
         // Send notification about the new receipt
         const storeName = storeData ? storeData.name : "Unknown Store";
@@ -1890,68 +2203,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Create HTTP server for the express app
   const httpServer = createServer(app);
-
-  const wss = new WebSocketServer({
-    server: httpServer,
-    path: '/api/ws'
-  });
-
-  wss.on('connection', (ws: WsWebSocket, request) => {
-    const userId = (request as any).userId;
-    console.log('WebSocket connected for user:', userId);
-
-    clients.set(userId, ws);
-
-    ws.on('close', () => {
-      console.log('WebSocket closed for user:', userId);
-      clients.delete(userId);
-    });
-
-    ws.on('error', (error) => {
-      console.error('WebSocket error for user:', userId, error);
-      clients.delete(userId);
-    });
-
-    ws.send(JSON.stringify({ type: 'connected' }));
-  });
-
-  wss.on('upgrade', (request, socket, head) => {
-    if (request.url?.startsWith('/api/ws')) {
-      const sessionParser = app._router.stack
-        .find((layer: any) => layer.name === 'session')?.handle;
-
-      if (!sessionParser) {
-        console.error('Session middleware not found');
-        socket.destroy();
-        return;
-      }
-
-      // Parse session before WebSocket upgrade
-      sessionParser(request, {} as any, async () => {
-        const session = (request as any).session;
-        console.log('WebSocket upgrade request session:', session);
-
-        if (!session?.passport?.user) {
-          console.error('WebSocket: User not authenticated');
-          socket.destroy();
-          return;
-        }
-
-        try {
-          (request as any).userId = session.passport.user;
-          console.log('WebSocket upgrade authenticated for user:', session.passport.user);
-
-          wss.handleUpgrade(request, socket, head, (ws: WsWebSocket) => {
-            wss.emit('connection', ws, request);
-          });
-        } catch (error) {
-          console.error('Error during WebSocket upgrade:', error);
-          socket.destroy();
-        }
-      });
-    }
-  });
+  
+  // WebSocket server is now fully implemented in websockets/index.ts
+  // Instead of creating and managing WebSockets here, all the functionality has been 
+  // modularized and moved to specialized handlers in the websockets directory.
+  // The implementation in websockets/index.ts contains improved error handling,
+  // connection tracking, and support for multiple device connections per user.
 
   app.locals.sendNotification = sendNotification;
 

@@ -18,23 +18,38 @@ import { Notification } from "@shared/schema";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrency } from "@/hooks/use-currency";
+import { useWebSocket } from "@/hooks/use-websocket";
 import { apiRequest } from "@/lib/queryClient";
 
 export function Navbar() {
-  const [socket, setSocket] = useState<WebSocket | null>(null);
-  const [isConnecting, setIsConnecting] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const { toast } = useToast();
   const { currency, currencySymbol } = useCurrency();
   const [, navigate] = useLocation();
+  const { isConnecting } = useWebSocket();
 
   const { data: notifications } = useQuery<Notification[]>({
     queryKey: ["/api/notifications"],
   });
   
-  const markAsReadMutation = useMutation({
+  const markAllAsReadMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest('/api/notifications/read', { method: 'POST' });
+      const result = await apiRequest('/api/notifications/read', { method: 'POST' });
+      // Immediately set unread count to 0 for a responsive UI
+      setUnreadCount(0);
+      return result;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+    }
+  });
+
+  const markSingleAsReadMutation = useMutation({
+    mutationFn: async (notificationId: number) => {
+      const result = await apiRequest(`/api/notifications/${notificationId}/read`, { method: 'POST' });
+      // Force a local update to the notification list
+      setUnreadCount(prev => Math.max(0, prev - 1));
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
@@ -42,83 +57,15 @@ export function Navbar() {
   });
 
   useEffect(() => {
-    let reconnectTimeout: NodeJS.Timeout;
-    const maxRetries = 5;
-    let retryCount = 0;
-
-    const connectWebSocket = () => {
-      if (isConnecting || socket?.readyState === WebSocket.OPEN) return;
-
-      setIsConnecting(true);
-
-      try {
-        // Construct WebSocket URL using window.location
-        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-        const wsUrl = `${protocol}//${window.location.host}/api/ws`;  // Changed from '/ws' to '/api/ws'
-        console.log('Attempting WebSocket connection to:', wsUrl);
-
-        const ws = new WebSocket(wsUrl);
-
-        ws.onopen = () => {
-          console.log('WebSocket connection established');
-          setIsConnecting(false);
-          retryCount = 0;
-          setSocket(ws);
-        };
-
-        ws.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            if (data.type === 'notification') {
-              queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
-            }
-          } catch (error) {
-            console.error('Failed to parse WebSocket message:', error);
-          }
-        };
-
-        ws.onclose = () => {
-          console.log('WebSocket connection closed');
-          setIsConnecting(false);
-          setSocket(null);
-
-          if (retryCount < maxRetries) {
-            retryCount++;
-            const delay = Math.min(1000 * Math.pow(2, retryCount), 30000);
-            reconnectTimeout = setTimeout(connectWebSocket, delay);
-          } else {
-            toast({
-              title: "Connection Error",
-              description: "Failed to connect to notification service. Please refresh the page.",
-              variant: "destructive",
-            });
-          }
-        };
-
-        ws.onerror = (error) => {
-          console.error('WebSocket connection error:', error);
-          setIsConnecting(false);
-          ws.close();
-        };
-      } catch (error) {
-        setIsConnecting(false);
-        console.error('Failed to create WebSocket connection:', error);
-      }
-    };
-
-    connectWebSocket();
-
-    return () => {
-      clearTimeout(reconnectTimeout);
-      if (socket) {
-        socket.close();
-      }
-    };
-  }, []);
-
-  useEffect(() => {
     if (notifications) {
-      setUnreadCount(notifications.filter(n => !n.read).length);
+      // Count only if notifications exist and have a valid 'read' property
+      const validUnreadNotifications = notifications.filter(n => n && n.read === false);
+      setUnreadCount(validUnreadNotifications.length);
+      
+      // Log for debugging
+      if (validUnreadNotifications.length > 0) {
+        console.log('Unread notifications:', validUnreadNotifications.length);
+      }
     }
   }, [notifications]);
 
@@ -149,7 +96,7 @@ export function Navbar() {
                 <Bell className={cn("h-5 w-5 text-gray-700", isConnecting && "animate-pulse")} />
                 {unreadCount > 0 && (
                   <Badge
-                    className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs bg-primary border-2 border-white text-white"
+                    className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs bg-red-600 border-2 border-white text-white font-bold"
                   >
                     {unreadCount}
                   </Badge>
@@ -180,7 +127,8 @@ export function Navbar() {
                     // Check notification type
                     const isStoreNotification = notification.type === 'store_created';
                     const isReceiptNotification = notification.type === 'receipt_created';
-                    const isClickable = isStoreNotification || isReceiptNotification;
+                    const isSubscriptionLimitNotification = notification.type === 'subscription_limit';
+                    const isClickable = isStoreNotification || isReceiptNotification || isSubscriptionLimitNotification;
                     
                     // Extract metadata from notification message
                     let itemName = null;
@@ -215,11 +163,15 @@ export function Navbar() {
                     const handleClick = () => {
                       if (!isClickable) return;
                       
-                      // Mark notification as read
-                      markAsReadMutation.mutate();
+                      // Mark only this notification as read
+                      if (notification.read === false) {
+                        markSingleAsReadMutation.mutate(notification.id);
+                      }
                       
                       // Navigate based on notification type
-                      if (isStoreNotification && storeId) {
+                      if (isSubscriptionLimitNotification) {
+                        navigate('/subscribe');
+                      } else if (isStoreNotification && storeId) {
                         navigate(`/stores/${storeId}`);
                       } else if (isReceiptNotification && receiptId) {
                         navigate(`/receipts/${receiptId}`);
@@ -243,6 +195,9 @@ export function Navbar() {
                     } else if (isReceiptNotification) {
                       notificationTitle = 'New Receipt';
                       actionText = 'Click to view receipt details';
+                    } else if (isSubscriptionLimitNotification) {
+                      notificationTitle = 'Subscription Limit Reached';
+                      actionText = 'Click to upgrade your plan';
                     }
                     
                     return (
@@ -250,13 +205,13 @@ export function Navbar() {
                         key={notification.id} 
                         className={cn(
                           "flex flex-col items-start gap-1 p-3 border-b border-gray-100 last:border-0",
-                          !notification.read && "bg-primary/5",
+                          notification.read === false && "bg-primary/5",
                           isClickable ? "cursor-pointer hover:bg-gray-50" : "cursor-default"
                         )}
                         onClick={handleClick}
                       >
                         <div className="flex w-full items-center mb-1">
-                          <span className={`w-2 h-2 rounded-full mr-2 flex-shrink-0 ${notification.read ? 'bg-gray-300' : 'bg-primary'}`}></span>
+                          <span className={`w-2 h-2 rounded-full mr-2 flex-shrink-0 ${notification.read === false ? 'bg-primary' : 'bg-gray-300'}`}></span>
                           <div className="font-medium text-sm flex-1 text-gray-800">
                             {notificationTitle}
                           </div>
@@ -271,7 +226,7 @@ export function Navbar() {
                                 {/* Display only the message part without metadata */}
                                 {displayMessage}
                               </span>
-                              {!notification.read && (
+                              {notification.read === false && (
                                 <div className="mt-1 flex items-center text-xs text-primary font-medium">
                                   <span className="inline-block mr-1">→</span> {actionText}
                                 </div>
@@ -294,7 +249,7 @@ export function Navbar() {
                     size="sm"
                     onClick={() => {
                       if (unreadCount > 0) {
-                        markAsReadMutation.mutate();
+                        markAllAsReadMutation.mutate();
                         toast({
                           title: "Notifications marked as read",
                           description: `${unreadCount} ${unreadCount === 1 ? 'notification' : 'notifications'} marked as read`,
@@ -302,9 +257,9 @@ export function Navbar() {
                         });
                       }
                     }}
-                    disabled={markAsReadMutation.isPending || unreadCount === 0}
+                    disabled={markAllAsReadMutation.isPending || unreadCount === 0}
                   >
-                    {markAsReadMutation.isPending ? (
+                    {markAllAsReadMutation.isPending ? (
                       <span className="inline-flex items-center">
                         <svg className="animate-spin -ml-1 mr-2 h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
