@@ -20,7 +20,7 @@ import { Button } from '@/components/ui/button';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { Link, useLocation, useRoute } from 'wouter';
-import { Eye, Trash2, ReceiptText, Plus, AlertCircle } from 'lucide-react';
+import { Eye, Trash2, ReceiptText, Plus, AlertCircle, Ban } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useCurrency } from '@/hooks/use-currency';
 import { toast } from '@/hooks/use-toast';
@@ -152,59 +152,97 @@ export function ReceiptsPage() {
             <Button 
               onClick={() => setIsUploading(true)}
               className="bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800"
+              disabled={
+                // Disable button if user has reached their scan limit
+                user?.receiptScansLimit !== null && 
+                user?.receiptScansLimit !== undefined && 
+                user?.receiptScansUsed !== null &&
+                user?.receiptScansUsed !== undefined &&
+                user?.receiptScansUsed >= user?.receiptScansLimit
+              }
             >
-              <Plus className="w-4 h-4 mr-2" /> Upload Receipt
+              {user?.receiptScansLimit !== null && 
+                user?.receiptScansLimit !== undefined && 
+                user?.receiptScansUsed !== null &&
+                user?.receiptScansUsed !== undefined &&
+                user?.receiptScansUsed >= user?.receiptScansLimit ? (
+                <>
+                  <Ban className="w-4 h-4 mr-2" /> Limit Reached
+                </>
+              ) : (
+                <>
+                  <Plus className="w-4 h-4 mr-2" /> Upload Receipt
+                </>
+              )}
             </Button>
           </div>
           
           {/* Subscription usage indicator */}
           {user && user.subscriptionTier !== 'pro' && (user.receiptScansLimit ?? 0) > 0 && (
-            <div className="flex items-center gap-2 rounded-lg p-2 bg-muted/50 text-sm">
-              <div className="flex flex-1 flex-col xs:flex-row xs:items-center gap-1">
-                <div className="flex items-center gap-2">
-                  <Badge variant={user.subscriptionTier === 'free' ? 'outline' : 'default'} className="capitalize">
-                    {user.subscriptionTier} Tier
-                  </Badge>
-                  
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div className="flex items-center">
-                          <AlertCircle className="h-4 w-4 text-muted-foreground" />
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <div className="w-[220px]">
-                          <p><strong>Receipt Scan Limits</strong></p>
-                          <p className="text-xs mt-1">• Free: 3 scans per period, 50 items per receipt</p>
-                          <p className="text-xs">• Smart Pantry: 20 scans per period</p>
-                          <p className="text-xs">• Family Pantry Pro: Unlimited scans</p>
-                          <div className="mt-1 text-xs">
-                            <Link to="/subscription" className="text-primary underline">
-                              Upgrade your plan
-                            </Link>
+            <>
+              <div className="flex items-center gap-2 rounded-lg p-2 bg-muted/50 text-sm">
+                <div className="flex flex-1 flex-col xs:flex-row xs:items-center gap-1">
+                  <div className="flex items-center gap-2">
+                    <Badge variant={user.subscriptionTier === 'free' ? 'outline' : 'default'} className="capitalize">
+                      {user.subscriptionTier} Tier
+                    </Badge>
+                    
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className="flex items-center">
+                            <AlertCircle className="h-4 w-4 text-muted-foreground" />
                           </div>
-                        </div>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <div className="w-[220px]">
+                            <p><strong>Receipt Scan Limits</strong></p>
+                            <p className="text-xs mt-1">• Free: 3 scans per period, 50 items per receipt</p>
+                            <p className="text-xs">• Smart Pantry: 20 scans per period</p>
+                            <p className="text-xs">• Family Pantry Pro: Unlimited scans</p>
+                            <div className="mt-1 text-xs">
+                              <Link to="/subscription" className="text-primary underline">
+                                Upgrade your plan
+                              </Link>
+                            </div>
+                          </div>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
 
-                <div className="text-muted-foreground flex-1">
-                  <span>
-                    Receipt Scans Remaining: <strong>{Math.max(0, (user.receiptScansLimit ?? 0) - (user.receiptScansUsed ?? 0))}/{user.receiptScansLimit ?? 0}</strong>
-                  </span>
+                  <div className="text-muted-foreground flex-1">
+                    <span>
+                      Receipt Scans Remaining: <strong>{Math.max(0, (user.receiptScansLimit ?? 0) - (user.receiptScansUsed ?? 0))}/{user.receiptScansLimit ?? 0}</strong>
+                    </span>
+                  </div>
                 </div>
+                
+                {user.subscriptionTier === 'free' && (
+                  <Button variant="outline" size="sm" asChild className="shrink-0">
+                    <Link to="/subscription">
+                      Upgrade
+                    </Link>
+                  </Button>
+                )}
               </div>
               
-              {user.subscriptionTier === 'free' && (
-                <Button variant="outline" size="sm" asChild className="shrink-0">
-                  <Link to="/subscription">
-                    Upgrade
-                  </Link>
-                </Button>
+              {/* Warning message when scan limit is reached */}
+              {user?.receiptScansLimit !== null && 
+               user?.receiptScansLimit !== undefined && 
+               user?.receiptScansUsed !== null &&
+               user?.receiptScansUsed !== undefined &&
+               user?.receiptScansUsed >= user?.receiptScansLimit && (
+                <div className="mt-2 text-amber-800 font-medium bg-amber-100 p-3 rounded-md border border-amber-300 flex justify-between items-center text-sm">
+                  <div>
+                    <span className="font-bold">Scan Limit Reached!</span> You've used all {user.receiptScansLimit} receipt scans for this billing period.
+                  </div>
+                  <Button variant="secondary" size="sm" asChild className="bg-amber-200 hover:bg-amber-300 h-8 ml-4 shrink-0">
+                    <Link to="/subscription">Upgrade Plan</Link>
+                  </Button>
+                </div>
               )}
-            </div>
+            </>
           )}
         </div>
 
@@ -225,12 +263,48 @@ export function ReceiptsPage() {
             <CardContent className="pt-6 text-center py-10">
               <ReceiptText className="w-12 h-12 mx-auto mb-4 text-gray-400" />
               <p className="text-lg font-medium">No receipts found</p>
-              <p className="text-muted-foreground mb-6">Upload your first receipt to get started.</p>
+              {user?.receiptScansLimit !== null && 
+               user?.receiptScansLimit !== undefined && 
+               user?.receiptScansUsed !== null &&
+               user?.receiptScansUsed !== undefined &&
+               user?.receiptScansUsed >= user?.receiptScansLimit ? (
+                <div className="mt-2 mb-6 mx-auto max-w-md">
+                  <div className="text-amber-800 font-medium bg-amber-100 p-3 rounded-md border border-amber-300 text-sm text-center">
+                    <p className="font-bold">Scan Limit Reached!</p>
+                    <p className="mt-1">You've used all {user.receiptScansLimit} receipt scans for this billing period.</p>
+                    <Button variant="secondary" size="sm" className="bg-amber-200 hover:bg-amber-300 h-8 mt-3">
+                      <Link to="/subscription">Upgrade Your Plan</Link>
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-muted-foreground mb-6">Upload your first receipt to get started.</p>
+              )}
               <Button 
                 onClick={() => setIsUploading(true)}
                 className="bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800"
+                disabled={
+                  // Disable button if user has reached their scan limit
+                  user?.receiptScansLimit !== null && 
+                  user?.receiptScansLimit !== undefined && 
+                  user?.receiptScansUsed !== null &&
+                  user?.receiptScansUsed !== undefined &&
+                  user?.receiptScansUsed >= user?.receiptScansLimit
+                }
               >
-                <Plus className="w-4 h-4 mr-2" /> Upload Receipt
+                {user?.receiptScansLimit !== null && 
+                 user?.receiptScansLimit !== undefined && 
+                 user?.receiptScansUsed !== null &&
+                 user?.receiptScansUsed !== undefined &&
+                 user?.receiptScansUsed >= user?.receiptScansLimit ? (
+                  <>
+                    <Ban className="w-4 h-4 mr-2" /> Limit Reached
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-4 h-4 mr-2" /> Upload Receipt
+                  </>
+                )}
               </Button>
             </CardContent>
           </Card>
