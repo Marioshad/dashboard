@@ -222,7 +222,8 @@ export function Navbar() {
                     // Check notification type
                     const isStoreNotification = notification.type === 'store_created';
                     const isReceiptNotification = notification.type === 'receipt_created';
-                    const isClickable = isStoreNotification || isReceiptNotification;
+                    const isSubscriptionLimitNotification = notification.type === 'subscription_limit';
+                    const isClickable = isStoreNotification || isReceiptNotification || isSubscriptionLimitNotification;
                     
                     // Extract metadata from notification message
                     let itemName = null;
@@ -261,7 +262,9 @@ export function Navbar() {
                       markAsReadMutation.mutate();
                       
                       // Navigate based on notification type
-                      if (isStoreNotification && storeId) {
+                      if (isSubscriptionLimitNotification) {
+                        navigate('/subscribe');
+                      } else if (isStoreNotification && storeId) {
                         navigate(`/stores/${storeId}`);
                       } else if (isReceiptNotification && receiptId) {
                         navigate(`/receipts/${receiptId}`);
@@ -285,6 +288,9 @@ export function Navbar() {
                     } else if (isReceiptNotification) {
                       notificationTitle = 'New Receipt';
                       actionText = 'Click to view receipt details';
+                    } else if (isSubscriptionLimitNotification) {
+                      notificationTitle = 'Subscription Limit Reached';
+                      actionText = 'Click to upgrade your plan';
                     }
                     
                     return (

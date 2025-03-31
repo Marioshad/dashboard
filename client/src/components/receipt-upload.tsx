@@ -96,7 +96,7 @@ export function ReceiptUpload({ onSuccess }: ReceiptUploadProps = {}) {
         if (errorData.error === 'RECEIPT_LIMIT_REACHED') {
           const { tierInfo } = errorData;
           const subscriptionLink = tierInfo.nextTier ? 
-            `<a href="/subscription" class="text-primary underline">Upgrade to ${tierInfo.nextTier}</a>` : 
+            `<a href="/subscribe" class="text-primary underline">Upgrade to ${tierInfo.nextTier}</a>` : 
             '';
             
           toast({
@@ -335,7 +335,7 @@ export function ReceiptUpload({ onSuccess }: ReceiptUploadProps = {}) {
               <span className="font-bold">Scan Limit Reached!</span> Upgrade your subscription to scan more receipts.
             </div>
             <Button variant="secondary" size="sm" className="bg-amber-200 hover:bg-amber-300 h-8 mt-1">
-              <a href="/subscription">Upgrade Plan</a>
+              <a href="/subscribe">Upgrade Plan</a>
             </Button>
           </div>
         )}

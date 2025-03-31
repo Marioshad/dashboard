@@ -201,7 +201,7 @@ export function ReceiptsPage() {
                             <p className="text-xs">• Smart Pantry: 20 scans per period</p>
                             <p className="text-xs">• Family Pantry Pro: Unlimited scans</p>
                             <div className="mt-1 text-xs">
-                              <Link to="/subscription" className="text-primary underline">
+                              <Link to="/subscribe" className="text-primary underline">
                                 Upgrade your plan
                               </Link>
                             </div>
@@ -220,7 +220,7 @@ export function ReceiptsPage() {
                 
                 {user.subscriptionTier === 'free' && (
                   <Button variant="outline" size="sm" asChild className="shrink-0">
-                    <Link to="/subscription">
+                    <Link to="/subscribe">
                       Upgrade
                     </Link>
                   </Button>
@@ -238,7 +238,7 @@ export function ReceiptsPage() {
                     <span className="font-bold">Scan Limit Reached!</span> You've used all {user.receiptScansLimit} receipt scans for this billing period.
                   </div>
                   <Button variant="secondary" size="sm" asChild className="bg-amber-200 hover:bg-amber-300 h-8 ml-4 shrink-0">
-                    <Link to="/subscription">Upgrade Plan</Link>
+                    <Link to="/subscribe">Upgrade Plan</Link>
                   </Button>
                 </div>
               )}
@@ -273,7 +273,7 @@ export function ReceiptsPage() {
                     <p className="font-bold">Scan Limit Reached!</p>
                     <p className="mt-1">You've used all {user.receiptScansLimit} receipt scans for this billing period.</p>
                     <Button variant="secondary" size="sm" className="bg-amber-200 hover:bg-amber-300 h-8 mt-3">
-                      <Link to="/subscription">Upgrade Your Plan</Link>
+                      <Link to="/subscribe">Upgrade Your Plan</Link>
                     </Button>
                   </div>
                 </div>
