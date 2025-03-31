@@ -83,7 +83,7 @@ export function Navbar() {
                 <Bell className={cn("h-5 w-5 text-gray-700", isConnecting && "animate-pulse")} />
                 {unreadCount > 0 && (
                   <Badge
-                    className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs bg-primary border-2 border-white text-white"
+                    className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs bg-red-600 border-2 border-white text-white font-bold"
                   >
                     {unreadCount}
                   </Badge>
