@@ -494,6 +494,7 @@ export class DatabaseStorage implements IStorage {
       if (receipt.receiptDate) values.receiptDate = receipt.receiptDate;
       if (receipt.paymentMethod) values.paymentMethod = receipt.paymentMethod;
       if (receipt.extractedData) values.extractedData = receipt.extractedData;
+      if (receipt.language) values.language = receipt.language;
       
       if (!values.uploadDate) {
         values.uploadDate = new Date();
@@ -594,6 +595,7 @@ export class DatabaseStorage implements IStorage {
       if (receipt.storeId) values.storeId = receipt.storeId;
       if (receipt.totalAmount !== undefined) values.totalAmount = String(receipt.totalAmount);
       if (receipt.receiptNumber) values.receiptNumber = receipt.receiptNumber;
+      if (receipt.language) values.language = receipt.language;
       
       const [result] = await db
         .update(receipts)
