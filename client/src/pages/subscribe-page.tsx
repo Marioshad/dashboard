@@ -1,7 +1,7 @@
 import { DashboardLayout } from "@/components/dashboard-layout";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { useAuth } from "@/hooks/use-auth";
-import { Shield, Check } from "lucide-react";
+import { Shield, Check, Zap, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { apiRequest } from "@/lib/queryClient";
@@ -9,6 +9,9 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useCurrency } from "@/hooks/use-currency";
+import { SUBSCRIPTION_TIERS } from "@shared/schema";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
 
 interface Price {
   id: string;
@@ -19,6 +22,9 @@ interface Price {
   product: {
     name: string;
     description: string;
+    metadata?: {
+      tier?: string;
+    };
   };
 }
 
@@ -80,17 +86,66 @@ export default function SubscribePage() {
   };
 
   if (user?.subscriptionStatus === 'active') {
+    // Find the current tier information
+    const currentTier = SUBSCRIPTION_TIERS.find(tier => tier.id === user.subscriptionTier) || SUBSCRIPTION_TIERS[0];
+    const tierIcon = currentTier.id === 'free' 
+      ? <Shield className="h-6 w-6 text-slate-500" />
+      : currentTier.id === 'smart'
+        ? <Zap className="h-6 w-6 text-amber-500" />
+        : <Users className="h-6 w-6 text-indigo-500" />;
+    
     return (
       <DashboardLayout>
         <div className="space-y-8">
-          <h1 className="text-3xl font-bold tracking-tight">Premium Subscription</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Active Subscription</h1>
           <Card>
             <CardHeader>
-              <CardTitle>Already Subscribed</CardTitle>
-              <CardDescription>
-                You are already a premium subscriber. Enjoy all the premium features!
-              </CardDescription>
+              <div className="flex items-center gap-3">
+                {tierIcon}
+                <div>
+                  <CardTitle>Current Plan: {currentTier.name}</CardTitle>
+                  <CardDescription>
+                    Your subscription is active. You have access to all {currentTier.name} features!
+                  </CardDescription>
+                </div>
+              </div>
             </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div>
+                  <h4 className="text-sm font-medium mb-2">Your Benefits:</h4>
+                  <ul className="space-y-2">
+                    {currentTier.features.map((feature, i) => (
+                      <li key={i} className="flex items-start text-sm">
+                        <Check className="mr-2 h-4 w-4 mt-0.5 text-primary flex-shrink-0" />
+                        <span>{feature}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                
+                {user.currentBillingPeriodEnd && (
+                  <div className="text-sm text-muted-foreground pt-4 border-t">
+                    <p>Current billing period ends: {new Date(user.currentBillingPeriodEnd).toLocaleDateString()}</p>
+                    {user.subscriptionTier !== 'free' && typeof user.receiptScansLimit === 'number' && (
+                      <p className="mt-1">
+                        Receipt scans used: {typeof user.receiptScansUsed === 'number' ? user.receiptScansUsed : 0} / 
+                        {user.receiptScansLimit > 0 ? user.receiptScansLimit : 'Unlimited'}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </CardContent>
+            <CardFooter>
+              <Button 
+                variant="outline"
+                onClick={() => setLocation("/subscribe")}
+                className="w-full"
+              >
+                Manage Subscription
+              </Button>
+            </CardFooter>
           </Card>
         </div>
       </DashboardLayout>
@@ -104,7 +159,7 @@ export default function SubscribePage() {
     return (
       <DashboardLayout>
         <div className="space-y-8">
-          <h1 className="text-3xl font-bold tracking-tight">Premium Subscription</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Subscription Plans</h1>
           <Card>
             <CardHeader>
               <CardTitle>
@@ -112,36 +167,99 @@ export default function SubscribePage() {
               </CardTitle>
               <CardDescription>
                 {isPaymentDisabled 
-                  ? "The premium subscription system is currently unavailable. Please contact the administrator for assistance."
+                  ? "Our subscription system is currently unavailable. Please contact the administrator for assistance."
                   : "We encountered an error loading the subscription plans. Please try again later."}
               </CardDescription>
             </CardHeader>
             {isPaymentDisabled && (
               <CardContent>
                 <p className="text-sm text-muted-foreground">
-                  Administrator: Please set STRIPE_SECRET_KEY and VITE_STRIPE_PUBLIC_KEY environment variables to enable payments.
+                  Administrator: Please set STRIPE_SECRET_KEY and VITE_STRIPE_PUBLIC_KEY environment variables to enable the payment system.
                 </p>
               </CardContent>
             )}
           </Card>
+          
+          {/* Show plan information even if Stripe is disabled */}
+          <div className="mt-8">
+            <h2 className="text-2xl font-bold mb-6">Available Plans</h2>
+            <div className="grid gap-6 md:grid-cols-3">
+              {SUBSCRIPTION_TIERS.map((tier) => (
+                <Card key={tier.id} className="relative">
+                  <CardHeader>
+                    <div className="flex items-center gap-2">
+                      {tier.id === 'free' 
+                        ? <Shield className="h-6 w-6 text-slate-500" />
+                        : tier.id === 'smart'
+                          ? <Zap className="h-6 w-6 text-amber-500" />
+                          : <Users className="h-6 w-6 text-indigo-500" />}
+                      <CardTitle>{tier.name}</CardTitle>
+                    </div>
+                    <CardDescription>
+                      {tier.description}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-3xl font-bold mb-4">
+                      {tier.id === 'free' 
+                        ? "Free" 
+                        : `${currencySymbol}${tier.price.monthly}/month or ${currencySymbol}${tier.price.yearly}/year`}
+                    </div>
+                    <div className="space-y-2">
+                      <h4 className="text-sm font-medium">Features:</h4>
+                      <ul className="space-y-2 text-sm">
+                        {tier.features.map((feature, i) => (
+                          <li key={i} className="flex items-start">
+                            <Check className="mr-2 h-4 w-4 mt-0.5 text-primary flex-shrink-0" />
+                            <span>{feature}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
         </div>
       </DashboardLayout>
     );
   }
 
+  // Get price map by tier and interval
+  const getPriceForTierAndInterval = (tierId: string, interval: 'monthly' | 'yearly') => {
+    return prices?.find(p => 
+      p.product.metadata?.tier === tierId && 
+      p.recurring.interval === (interval === 'monthly' ? 'month' : 'year')
+    );
+  };
+
+  const renderTierIcon = (tier: typeof SUBSCRIPTION_TIERS[number]) => {
+    switch(tier.id) {
+      case 'free':
+        return <Shield className="h-6 w-6 text-slate-500" />;
+      case 'smart':
+        return <Zap className="h-6 w-6 text-amber-500" />;
+      case 'pro':
+        return <Users className="h-6 w-6 text-indigo-500" />;
+      default:
+        return <Shield className="h-6 w-6 text-primary" />;
+    }
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-8">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Premium Subscription</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Subscription Plans</h1>
           <p className="text-muted-foreground">
-            Choose a plan that works for you
+            Choose a plan that works for your needs
           </p>
         </div>
 
         {isPricesLoading ? (
-          <div className="grid gap-4 md:grid-cols-2">
-            {[1, 2].map((i) => (
+          <div className="grid gap-6 md:grid-cols-3">
+            {[1, 2, 3].map((i) => (
               <Card key={i} className="animate-pulse">
                 <CardHeader className="space-y-4">
                   <div className="h-6 bg-muted rounded-md w-1/3" />
@@ -150,7 +268,7 @@ export default function SubscribePage() {
                 <CardContent className="space-y-6">
                   <div className="h-8 bg-muted rounded-md w-1/4" />
                   <div className="space-y-2">
-                    {[1, 2, 3].map((j) => (
+                    {[1, 2, 3, 4].map((j) => (
                       <div key={j} className="h-4 bg-muted rounded-md w-3/4" />
                     ))}
                   </div>
@@ -160,51 +278,177 @@ export default function SubscribePage() {
             ))}
           </div>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
-            {prices?.map((price) => (
-              <Card 
-                key={price.id} 
-                className="relative transition-all hover:border-primary"
-              >
-                <CardHeader>
-                  <div className="flex items-center gap-2">
-                    <Shield className="h-5 w-5 text-primary" />
-                    <CardTitle>{price.product.name}</CardTitle>
-                  </div>
-                  <CardDescription>
-                    {price.product.description}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="text-2xl font-bold">
-                    {formatPrice(price.unit_amount)}/{price.recurring.interval}
-                  </div>
-                  <ul className="space-y-2 text-sm">
-                    <li className="flex items-center">
-                      <Check className="mr-2 h-4 w-4 text-primary" />
-                      Premium role access
-                    </li>
-                    <li className="flex items-center">
-                      <Check className="mr-2 h-4 w-4 text-primary" />
-                      Enhanced features
-                    </li>
-                    <li className="flex items-center">
-                      <Check className="mr-2 h-4 w-4 text-primary" />
-                      Priority support
-                    </li>
-                  </ul>
-
-                  <Button 
-                    className="w-full"
-                    onClick={() => handleSubscribe(price.id)}
-                    disabled={loading !== undefined}
-                  >
-                    {loading === price.id ? "Processing..." : "Subscribe Now"}
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+          <>
+            <Tabs defaultValue="monthly" className="w-full">
+              <div className="flex justify-center mb-8">
+                <TabsList>
+                  <TabsTrigger value="monthly">Monthly</TabsTrigger>
+                  <TabsTrigger value="yearly">
+                    Yearly
+                    <Badge variant="outline" className="ml-2 bg-primary/10">Save up to 18%</Badge>
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+              
+              <TabsContent value="monthly" className="mt-0">
+                <div className="grid gap-6 md:grid-cols-3">
+                  {SUBSCRIPTION_TIERS.map((tier) => {
+                    const price = getPriceForTierAndInterval(tier.id, 'monthly');
+                    const isFree = tier.id === 'free';
+                    
+                    return (
+                      <Card 
+                        key={tier.id} 
+                        className={`relative transition-all ${
+                          tier.id === 'smart' ? 'border-primary' : 'hover:border-primary'
+                        }`}
+                      >
+                        {tier.id === 'smart' && (
+                          <div className="absolute -top-3 left-0 right-0 flex justify-center">
+                            <Badge className="bg-primary hover:bg-primary">Popular</Badge>
+                          </div>
+                        )}
+                        <CardHeader>
+                          <div className="flex items-center gap-2">
+                            {renderTierIcon(tier)}
+                            <CardTitle>{tier.name}</CardTitle>
+                          </div>
+                          <CardDescription>
+                            {tier.description}
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          <div className="text-3xl font-bold">
+                            {isFree ? (
+                              "Free"
+                            ) : (
+                              <>
+                                {currencySymbol}{tier.price.monthly}
+                                <span className="text-sm font-normal text-muted-foreground">/month</span>
+                              </>
+                            )}
+                          </div>
+                          
+                          <div className="space-y-2">
+                            <h4 className="text-sm font-medium">What's included:</h4>
+                            <ul className="space-y-2 text-sm">
+                              {tier.features.map((feature, i) => (
+                                <li key={i} className="flex items-start">
+                                  <Check className="mr-2 h-4 w-4 mt-0.5 text-primary flex-shrink-0" />
+                                  <span>{feature}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        </CardContent>
+                        <CardFooter>
+                          <Button 
+                            className={`w-full ${isFree ? 'bg-muted hover:bg-muted/80 text-foreground' : ''}`}
+                            onClick={() => price && handleSubscribe(price.id)}
+                            disabled={loading !== undefined || !price || (isFree && user?.subscriptionTier === 'free')}
+                            variant={isFree ? "outline" : "default"}
+                          >
+                            {loading === price?.id 
+                              ? "Processing..." 
+                              : isFree 
+                                ? user?.subscriptionTier === 'free' ? "Current Plan" : "Downgrade" 
+                                : "Subscribe"}
+                          </Button>
+                        </CardFooter>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </TabsContent>
+              
+              <TabsContent value="yearly" className="mt-0">
+                <div className="grid gap-6 md:grid-cols-3">
+                  {SUBSCRIPTION_TIERS.map((tier) => {
+                    const price = getPriceForTierAndInterval(tier.id, 'yearly');
+                    const isFree = tier.id === 'free';
+                    const savings = tier.id !== 'free' 
+                      ? Math.round(100 - (tier.price.yearly / (tier.price.monthly * 12)) * 100) 
+                      : 0;
+                    
+                    return (
+                      <Card 
+                        key={tier.id} 
+                        className={`relative transition-all ${
+                          tier.id === 'smart' ? 'border-primary' : 'hover:border-primary'
+                        }`}
+                      >
+                        {tier.id === 'smart' && (
+                          <div className="absolute -top-3 left-0 right-0 flex justify-center">
+                            <Badge className="bg-primary hover:bg-primary">Popular</Badge>
+                          </div>
+                        )}
+                        {!isFree && (
+                          <div className="absolute -top-3 right-4 flex justify-center">
+                            <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200">
+                              Save {savings}%
+                            </Badge>
+                          </div>
+                        )}
+                        <CardHeader>
+                          <div className="flex items-center gap-2">
+                            {renderTierIcon(tier)}
+                            <CardTitle>{tier.name}</CardTitle>
+                          </div>
+                          <CardDescription>
+                            {tier.description}
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          <div className="text-3xl font-bold">
+                            {isFree ? (
+                              "Free"
+                            ) : (
+                              <>
+                                {currencySymbol}{tier.price.yearly}
+                                <span className="text-sm font-normal text-muted-foreground">/year</span>
+                              </>
+                            )}
+                          </div>
+                          
+                          {!isFree && (
+                            <div className="text-sm text-muted-foreground">
+                              {currencySymbol}{(tier.price.yearly / 12).toFixed(2)} per month, billed annually
+                            </div>
+                          )}
+                          
+                          <div className="space-y-2">
+                            <h4 className="text-sm font-medium">What's included:</h4>
+                            <ul className="space-y-2 text-sm">
+                              {tier.features.map((feature, i) => (
+                                <li key={i} className="flex items-start">
+                                  <Check className="mr-2 h-4 w-4 mt-0.5 text-primary flex-shrink-0" />
+                                  <span>{feature}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        </CardContent>
+                        <CardFooter>
+                          <Button 
+                            className={`w-full ${isFree ? 'bg-muted hover:bg-muted/80 text-foreground' : ''}`}
+                            onClick={() => price && handleSubscribe(price.id)}
+                            disabled={loading !== undefined || !price || (isFree && user?.subscriptionTier === 'free')}
+                            variant={isFree ? "outline" : "default"}
+                          >
+                            {loading === price?.id 
+                              ? "Processing..." 
+                              : isFree 
+                                ? user?.subscriptionTier === 'free' ? "Current Plan" : "Downgrade" 
+                                : "Subscribe"}
+                          </Button>
+                        </CardFooter>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </TabsContent>
+            </Tabs>
+          </>
         )}
       </div>
     </DashboardLayout>
