@@ -2,6 +2,7 @@ import pg from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import * as schema from "@shared/schema";
 import { log } from './vite';
+import 'dotenv/config';
 
 const { Pool } = pg;
 
