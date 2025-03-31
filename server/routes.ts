@@ -510,6 +510,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       next(error);
     }
   });
+  
+  // Route to mark a single notification as read
+  app.post('/api/notifications/:id/read', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      const notificationId = parseInt(req.params.id);
+      
+      if (isNaN(notificationId)) {
+        return res.status(400).json({ error: 'Invalid notification ID' });
+      }
+
+      // Mark single notification as read
+      await db
+        .update(notifications)
+        .set({ read: true })
+        .where(
+          and(
+            eq(notifications.id, notificationId),
+            eq(notifications.userId, req.user.id)
+          )
+        );
+      
+      res.sendStatus(200);
+    } catch (error) {
+      next(error);
+    }
+  });
 
   app.get('/api/subscription/prices', async (req, res) => {
     try {
