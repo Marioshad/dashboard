@@ -89,6 +89,34 @@ export function ReceiptUpload({ onSuccess }: ReceiptUploadProps = {}) {
         body: formData,
       });
 
+      // Handle limit reached error specifically
+      if (response.status === 403) {
+        const errorData = await response.json();
+        
+        if (errorData.error === 'RECEIPT_LIMIT_REACHED') {
+          const { tierInfo } = errorData;
+          const subscriptionLink = tierInfo.nextTier ? 
+            `<a href="/subscription" class="text-primary underline">Upgrade to ${tierInfo.nextTier}</a>` : 
+            '';
+            
+          toast({
+            title: "Receipt Limit Reached",
+            description: (
+              <div dangerouslySetInnerHTML={{ 
+                __html: `You've used ${tierInfo.scansUsed}/${tierInfo.scanLimit} receipt scans for this billing period. ${subscriptionLink}` 
+              }} />
+            ),
+            variant: "destructive",
+            duration: 10000, // Show longer to give user time to see upgrade link
+          });
+          
+          setProcessingStage("error");
+          setProcessingError(`Receipt scan limit reached (${tierInfo.scansUsed}/${tierInfo.scanLimit}). Please upgrade your subscription for more scans.`);
+          setUploading(false);
+          return;
+        }
+      }
+      
       if (!response.ok) {
         throw new Error("Failed to upload receipt");
       }
@@ -289,6 +317,12 @@ export function ReceiptUpload({ onSuccess }: ReceiptUploadProps = {}) {
         <CardDescription>
           Upload your grocery receipt to automatically add items to your inventory
         </CardDescription>
+        {user?.receiptScansLimit !== null && user?.receiptScansLimit !== undefined && user?.receiptScansLimit > 0 && (
+          <div className="mt-2 text-xs flex items-center justify-between bg-muted p-2 rounded">
+            <span>Receipt Scans Used: <strong>{user.receiptScansUsed || 0}/{user.receiptScansLimit}</strong></span>
+            <span className="text-muted-foreground">Tier: {user.subscriptionTier || 'Free'}</span>
+          </div>
+        )}
         <div className="mt-2 text-xs text-muted-foreground bg-muted/30 p-3 rounded-md">
           <p className="font-medium mb-1">Expiration dates are calculated automatically based on food type:</p>
           <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5 list-disc list-inside">

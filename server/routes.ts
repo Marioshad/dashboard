@@ -1254,6 +1254,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });
       }
+      
+      // Check receipt scan limits based on subscription tier
+      const user = req.user;
+      
+      // If user has a limit (not unlimited) and has reached it, block the upload
+      if (user.receiptScansLimit !== null && 
+          user.receiptScansLimit !== undefined && 
+          user.receiptScansLimit >= 0 && 
+          user.receiptScansUsed !== null &&
+          user.receiptScansUsed !== undefined &&
+          user.receiptScansUsed >= user.receiptScansLimit) {
+        
+        // Get the next tier name for the upgrade message
+        const nextTier = user.subscriptionTier === 'free' ? 'Smart Pantry' : 'Family Pantry Pro';
+        
+        return res.status(403).json({ 
+          message: `You've reached your receipt scan limit (${user.receiptScansLimit}) for this billing period.`,
+          error: 'RECEIPT_LIMIT_REACHED',
+          tierInfo: {
+            currentTier: user.subscriptionTier,
+            scanLimit: user.receiptScansLimit,
+            scansUsed: user.receiptScansUsed,
+            nextTier: user.subscriptionTier === 'pro' ? null : nextTier
+          }
+        });
+      }
 
       const receiptUrl = `/uploads/${req.file.filename}`;
       const fullFilePath = path.join(uploadsDir, req.file.filename);
@@ -1368,6 +1394,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         // Create the receipt with defensive error handling
         const receipt = await storage.createReceipt(receiptData);
+        
+        // Increment user's receipt scan count only if they have a limit (i.e., not unlimited)
+        if (user.receiptScansLimit !== null && 
+            user.receiptScansLimit !== undefined && 
+            user.receiptScansLimit >= 0) {
+          
+          // Update the receipt scans used count in the database
+          await db.update(users)
+            .set({
+              receiptScansUsed: sql`"receipt_scans_used" + 1`,
+              updatedAt: sql`CURRENT_TIMESTAMP`
+            })
+            .where(eq(users.id, user.id));
+            
+          const scansUsed = user.receiptScansUsed !== null && user.receiptScansUsed !== undefined ? user.receiptScansUsed + 1 : 1;
+          console.log(`Incremented receipt scans for user ${user.id} (now: ${scansUsed}/${user.receiptScansLimit})`);
+        }
         
         // Send notification about the new receipt
         const storeName = storeData ? storeData.name : "Unknown Store";
