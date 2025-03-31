@@ -111,7 +111,7 @@ async function sendNotification(userId: number, type: string, message: string, a
       
       // Send to all open connections for this user
       userConnections.forEach(ws => {
-        if (ws.readyState === WebSocket.OPEN) {
+        if (ws.readyState === 1) { // 1 = OPEN in the ws library
           ws.send(webSocketMessage);
           sentCount++;
         }
@@ -133,7 +133,7 @@ async function sendNotification(userId: number, type: string, message: string, a
         
         // Send to all connections
         userConnections.forEach(ws => {
-          if (ws.readyState === WebSocket.OPEN) {
+          if (ws.readyState === 1) { // 1 = OPEN in the ws library
             ws.send(usageMessage);
           }
         });
@@ -1351,7 +1351,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       log(`Updated receipt scan usage for user ${userId}: ${scansUsed}/${scansLimit}`);
       
       // Access WebSocket connections
-      const userConnections = clients.get(userId);
+      const userConnections = connectedClients.get(userId);
       
       if (userConnections && userConnections.length > 0) {
         // Create a specialized message for receipt scan count updates
@@ -1366,8 +1366,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         // Send to all open connections
         let sentCount = 0;
-        userConnections.forEach(ws => {
-          if (ws.readyState === WebSocket.OPEN) {
+        userConnections.forEach((ws: WsWebSocket) => {
+          if (ws.readyState === 1) { // 1 = OPEN in the ws library
             ws.send(message);
             sentCount++;
           }
@@ -2232,7 +2232,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     // Add a ping/pong mechanism to keep connections alive
     const pingInterval = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) {
+      // ws.OPEN is 1 in the ws library (not WebSocket.OPEN as in browser)
+      if (ws.readyState === 1) {
         ws.ping();
       }
     }, 30000); // Send a ping every 30 seconds
@@ -2288,7 +2289,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let sentCount = 0;
       
       userConnections.forEach((ws: WsWebSocket) => {
-        if (ws.readyState === WebSocket.OPEN) {
+        if (ws.readyState === 1) { // 1 = OPEN in the ws library
           ws.send(message);
           sentCount++;
         }
