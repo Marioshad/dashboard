@@ -18,21 +18,21 @@ import { Notification } from "@shared/schema";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrency } from "@/hooks/use-currency";
+import { useWebSocket } from "@/hooks/use-websocket";
 import { apiRequest } from "@/lib/queryClient";
 
 export function Navbar() {
-  const [socket, setSocket] = useState<WebSocket | null>(null);
-  const [isConnecting, setIsConnecting] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const { toast } = useToast();
   const { currency, currencySymbol } = useCurrency();
   const [, navigate] = useLocation();
+  const { isConnecting } = useWebSocket();
 
   const { data: notifications } = useQuery<Notification[]>({
     queryKey: ["/api/notifications"],
   });
   
-  const markAsReadMutation = useMutation({
+  const markAllAsReadMutation = useMutation({
     mutationFn: async () => {
       return await apiRequest('/api/notifications/read', { method: 'POST' });
     },
@@ -41,122 +41,14 @@ export function Navbar() {
     }
   });
 
-  useEffect(() => {
-    let reconnectTimeout: NodeJS.Timeout;
-    const maxRetries = 5;
-    let retryCount = 0;
-
-    const connectWebSocket = () => {
-      if (isConnecting || socket?.readyState === WebSocket.OPEN) return;
-
-      setIsConnecting(true);
-
-      try {
-        // Get the current window location information
-        const currentUrl = window.location.href;
-        console.log('Current window location:', currentUrl);
-        
-        // Base the WebSocket URL on our current location
-        let wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-        let wsHost = window.location.host;
-        
-        // Handle Replit/Railway deployments which might have different URL patterns
-        if (!wsHost || wsHost === 'localhost:undefined') {
-          // Extract host from current URL if window.location.host fails
-          const urlObj = new URL(currentUrl);
-          wsHost = urlObj.host;
-          console.log('Extracted host from URL:', wsHost);
-        }
-        
-        // Create a clean WebSocket URL with no query parameters
-        const wsUrl = `${wsProtocol}//${wsHost}/api/ws`;
-        console.log('Final WebSocket URL:', wsUrl);
-
-        const ws = new WebSocket(wsUrl);
-
-        ws.onopen = () => {
-          console.log('WebSocket connection established');
-          setIsConnecting(false);
-          retryCount = 0;
-          setSocket(ws);
-        };
-
-        ws.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            
-            if (data.type === 'notification') {
-              queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
-            }
-            
-            // Handle receipt scan usage updates
-            if (data.type === 'scan_usage_update') {
-              console.log('Received scan usage update:', data.data);
-              // Invalidate the user data to update the UI with new scan usage count
-              queryClient.invalidateQueries({ queryKey: ["/api/user"] });
-              
-              // If we're on the receipts page, we could show a toast notification
-              const currentPath = window.location.pathname;
-              if (currentPath.includes('/receipts')) {
-                toast({
-                  title: "Receipt Scan Used",
-                  description: `You have ${data.data.scansRemaining} receipt scans remaining.`,
-                  duration: 3000,
-                });
-              }
-            }
-          } catch (error) {
-            console.error('Failed to parse WebSocket message:', error);
-          }
-        };
-
-        ws.onclose = () => {
-          console.log('WebSocket connection closed');
-          setIsConnecting(false);
-          setSocket(null);
-
-          if (retryCount < maxRetries) {
-            retryCount++;
-            const delay = Math.min(1000 * Math.pow(2, retryCount), 30000);
-            reconnectTimeout = setTimeout(connectWebSocket, delay);
-          } else {
-            toast({
-              title: "Connection Error",
-              description: "Failed to connect to notification service. Please refresh the page.",
-              variant: "destructive",
-            });
-          }
-        };
-
-        ws.onerror = (error) => {
-          console.error('WebSocket connection error:', error);
-          // Log additional details to help debugging
-          console.error('WebSocket URL was:', wsUrl);
-          console.error('Current location:', window.location.href);
-          setIsConnecting(false);
-          ws.close();
-        };
-      } catch (error) {
-        setIsConnecting(false);
-        console.error('Failed to create WebSocket connection:', error);
-        // Add fallback behavior without WebSocket
-        toast({
-          title: "WebSocket Connection Failed",
-          description: "Real-time updates for receipt scans will not work. You'll need to refresh the page to see updated counts.",
-          duration: 5000,
-        });
-      }
-    };
-
-    connectWebSocket();
-
-    return () => {
-      clearTimeout(reconnectTimeout);
-      if (socket) {
-        socket.close();
-      }
-    };
-  }, []);
+  const markSingleAsReadMutation = useMutation({
+    mutationFn: async (notificationId: number) => {
+      return await apiRequest(`/api/notifications/${notificationId}/read`, { method: 'POST' });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+    }
+  });
 
   useEffect(() => {
     if (notifications) {
@@ -258,8 +150,10 @@ export function Navbar() {
                     const handleClick = () => {
                       if (!isClickable) return;
                       
-                      // Mark notification as read
-                      markAsReadMutation.mutate();
+                      // Mark only this notification as read
+                      if (!notification.read) {
+                        markSingleAsReadMutation.mutate(notification.id);
+                      }
                       
                       // Navigate based on notification type
                       if (isSubscriptionLimitNotification) {
@@ -342,7 +236,7 @@ export function Navbar() {
                     size="sm"
                     onClick={() => {
                       if (unreadCount > 0) {
-                        markAsReadMutation.mutate();
+                        markAllAsReadMutation.mutate();
                         toast({
                           title: "Notifications marked as read",
                           description: `${unreadCount} ${unreadCount === 1 ? 'notification' : 'notifications'} marked as read`,
@@ -350,9 +244,9 @@ export function Navbar() {
                         });
                       }
                     }}
-                    disabled={markAsReadMutation.isPending || unreadCount === 0}
+                    disabled={markAllAsReadMutation.isPending || unreadCount === 0}
                   >
-                    {markAsReadMutation.isPending ? (
+                    {markAllAsReadMutation.isPending ? (
                       <span className="inline-flex items-center">
                         <svg className="animate-spin -ml-1 mr-2 h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
