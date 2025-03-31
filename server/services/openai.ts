@@ -56,13 +56,13 @@ export interface ReceiptDetails {
  * @param filePath Path to the uploaded receipt image
  * @returns Array of extracted food items
  */
-export async function processReceiptImage(filePath: string): Promise<ExtractedItem[]> {
+export async function processReceiptImage(filePath: string, subscriptionTier?: string): Promise<ExtractedItem[]> {
   try {
     if (!process.env.OPENAI_API_KEY) {
       throw new Error("OpenAI API key not configured");
     }
     
-    console.log(`Processing receipt image with OpenAI model: ${openaiModel}`);
+    console.log(`Processing receipt image with OpenAI model: ${openaiModel} (subscription tier: ${subscriptionTier || 'unknown'})`);
 
     const absolutePath = path.resolve(filePath);
     const fileBuffer = fs.readFileSync(absolutePath);
@@ -133,7 +133,15 @@ export async function processReceiptImage(filePath: string): Promise<ExtractedIt
     // Clean up any explanatory text before or after the JSON array
     jsonStr = jsonStr.trim();
     if (jsonStr.startsWith("[") && jsonStr.endsWith("]")) {
-      const extractedItems = JSON.parse(jsonStr) as Array<any>;
+      let extractedItems = JSON.parse(jsonStr) as Array<any>;
+      
+      // If we have a free tier subscription, limit the number of items to 50
+      if (subscriptionTier === 'free') {
+        console.log(`Free tier user - limiting items to 50 (found ${extractedItems.length})`);
+        if (extractedItems.length > 50) {
+          extractedItems = extractedItems.slice(0, 50);
+        }
+      }
       
       // Map and validate the extracted items
       const processedItems: ExtractedItem[] = extractedItems.map(item => {
