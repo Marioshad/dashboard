@@ -658,20 +658,78 @@ export async function registerRoutes(app: Express): Promise<Server> {
       case 'customer.subscription.created':
       case 'customer.subscription.updated': {
         const subscription = event.data.object as Stripe.Subscription;
-
+        
+        // Get subscription period information
+        const currentPeriodStart = new Date(subscription.current_period_start * 1000);
+        const currentPeriodEnd = new Date(subscription.current_period_end * 1000);
+        
+        // Determine the subscription tier from the product metadata
+        let subscriptionTier = 'free';
+        let receiptScansLimit = 3; // Default for free tier
+        let maxItems = 50; // Default for free tier
+        let maxSharedUsers = 1; // Default for free tier
+        const roleToAssign = 'User'; // Default role
+        
+        try {
+          // Get the price object to determine the product and tier
+          if (subscription.items.data.length > 0) {
+            const priceId = subscription.items.data[0].price.id;
+            
+            // Fetch the price details from Stripe
+            const price = await stripe!.prices.retrieve(priceId, {
+              expand: ['product']
+            });
+            
+            // Check product metadata for tier
+            const product = price.product as Stripe.Product;
+            if (product && product.metadata && product.metadata.tier) {
+              subscriptionTier = product.metadata.tier;
+              
+              // Set limits based on tier
+              if (subscriptionTier === 'smart') {
+                receiptScansLimit = 20;
+                maxItems = -1; // Unlimited
+                maxSharedUsers = 3;
+              } else if (subscriptionTier === 'pro') {
+                receiptScansLimit = -1; // Unlimited
+                maxItems = -1; // Unlimited
+                maxSharedUsers = 6;
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Error determining subscription tier:', error);
+        }
+        
+        // Update the user record with subscription details
         await db.update(users)
           .set({
             subscriptionStatus: subscription.status,
+            subscriptionTier: subscription.status === 'active' ? subscriptionTier : 'free',
+            receiptScansLimit: subscription.status === 'active' ? receiptScansLimit : 3,
+            maxItems: subscription.status === 'active' ? maxItems : 50,
+            maxSharedUsers: subscription.status === 'active' ? maxSharedUsers : 1,
+            currentBillingPeriodStart: subscription.status === 'active' ? currentPeriodStart : null,
+            currentBillingPeriodEnd: subscription.status === 'active' ? currentPeriodEnd : null,
             updatedAt: sql`CURRENT_TIMESTAMP`,
           })
           .where(eq(users.stripeSubscriptionId, subscription.id));
 
         if (subscription.status === 'active') {
-          const premiumRole = await db.query.roles.findFirst({
-            where: eq(roles.name, 'Premium'),
+          // Find the appropriate role based on tier
+          let roleName = 'User'; // Default
+          
+          if (subscriptionTier === 'smart') {
+            roleName = 'SmartPantry';
+          } else if (subscriptionTier === 'pro') {
+            roleName = 'FamilyPantryPro';
+          }
+          
+          const roleToAssign = await db.query.roles.findFirst({
+            where: eq(roles.name, roleName),
           });
 
-          if (premiumRole) {
+          if (roleToAssign) {
             const [user] = await db.select()
               .from(users)
               .where(eq(users.stripeSubscriptionId, subscription.id));
@@ -679,12 +737,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
             if (user) {
               await db.update(users)
                 .set({
-                  roleId: premiumRole.id,
+                  roleId: roleToAssign.id,
                   updatedAt: sql`CURRENT_TIMESTAMP`,
                 })
                 .where(eq(users.id, user.id));
+                
+              // Send a notification about the subscription
+              await sendNotification(
+                user.id, 
+                'subscription_updated', 
+                `Your ${subscriptionTier === 'smart' ? 'Smart Pantry' : 'Family Pantry Pro'} subscription is now active!`,
+                undefined,
+                { tier: subscriptionTier }
+              );
             }
           }
+        }
+        break;
+      }
+      case 'customer.subscription.deleted': {
+        const subscription = event.data.object as Stripe.Subscription;
+        
+        // Reset to free tier when subscription is cancelled
+        const [user] = await db.select()
+          .from(users)
+          .where(eq(users.stripeSubscriptionId, subscription.id));
+        
+        if (user) {
+          // Find basic user role
+          const basicRole = await db.query.roles.findFirst({
+            where: eq(roles.name, 'User'),
+          });
+          
+          await db.update(users)
+            .set({
+              subscriptionStatus: 'inactive',
+              subscriptionTier: 'free',
+              receiptScansLimit: 3,
+              maxItems: 50,
+              maxSharedUsers: 1,
+              roleId: basicRole ? basicRole.id : user.roleId,
+              currentBillingPeriodStart: null,
+              currentBillingPeriodEnd: null,
+              updatedAt: sql`CURRENT_TIMESTAMP`,
+            })
+            .where(eq(users.id, user.id));
+            
+          // Send a notification
+          await sendNotification(
+            user.id,
+            'subscription_cancelled',
+            'Your subscription has been cancelled. You have been downgraded to the free tier.'
+          );
         }
         break;
       }

@@ -18,6 +18,71 @@ export const SUPPORTED_CURRENCIES = [
   { code: "MXN", symbol: "$", name: "Mexican Peso" },
 ] as const;
 
+// Subscription tier definitions
+export const SUBSCRIPTION_TIERS = [
+  { 
+    id: "free", 
+    name: "Basic Pantry",
+    price: { monthly: 0, yearly: 0 },
+    icon: "⬆️",
+    maxItems: 50,
+    receiptScansPerMonth: 3,
+    maxSharedUsers: 1,
+    description: "Free plan for casual users and small households",
+    features: [
+      "Track up to 50 items",
+      "Receipt scanning up to 3 times per month",
+      "Expiration reminders (email or in-app)",
+      "Manual grocery input",
+      "Simple shopping list",
+      "Basic analytics: estimated savings / waste",
+      "1 shared user/device",
+      "Limited categories"
+    ]
+  },
+  {
+    id: "smart",
+    name: "Smart Pantry",
+    price: { monthly: 4.99, yearly: 49 },
+    icon: "💡",
+    maxItems: -1, // unlimited
+    receiptScansPerMonth: 20,
+    maxSharedUsers: 3,
+    description: "For organized households looking to save money",
+    features: [
+      "Unlimited items",
+      "Receipt scanning up to 20 times per month",
+      "Smart reminders (customizable thresholds)",
+      "Auto-sorting food categories",
+      "AI-powered suggestions: 'Use These Soon' recipes",
+      "Smart shopping list based on inventory + history",
+      "Household sharing (up to 3 users)",
+      "Export pantry data (PDF/CSV)",
+      "Gamification: track waste reduction over time"
+    ]
+  },
+  {
+    id: "pro", 
+    name: "Family Pantry Pro",
+    price: { monthly: 9.99, yearly: 99 },
+    icon: "🧑‍🍳",
+    maxItems: -1, // unlimited
+    receiptScansPerMonth: -1, // unlimited
+    maxSharedUsers: 6,
+    description: "For families, meal planners, and power users",
+    features: [
+      "Everything in Smart Pantry",
+      "Share with up to 6 users/devices",
+      "Meal planning calendar",
+      "Barcode scanner or voice entry",
+      "Pantry sync & cloud backup",
+      "Pantry zones (fridge, freezer, garage, etc.)",
+      "Advanced analytics (food waste %, savings by category)",
+      "Priority email/chat support"
+    ]
+  }
+] as const;
+
 export type CurrencyCode = typeof SUPPORTED_CURRENCIES[number]['code'];
 
 // Add new table for global settings
@@ -57,6 +122,13 @@ export const users = pgTable("users", {
   stripeCustomerId: text("stripe_customer_id"),
   stripeSubscriptionId: text("stripe_subscription_id"),
   subscriptionStatus: text("subscription_status").default("inactive"),
+  subscriptionTier: text("subscription_tier").default("free"), // free, smart, pro tiers
+  receiptScansUsed: integer("receipt_scans_used").default(0), // Used in current billing period
+  receiptScansLimit: integer("receipt_scans_limit").default(3), // Based on subscription tier
+  maxItems: integer("max_items").default(50), // Based on subscription tier (50, -1=unlimited, -1=unlimited)
+  maxSharedUsers: integer("max_shared_users").default(1), // Based on subscription tier (1, 3, 6)
+  currentBillingPeriodStart: timestamp("current_billing_period_start"), // For tracking receipt scan resets
+  currentBillingPeriodEnd: timestamp("current_billing_period_end"), // For tracking receipt scan resets
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   deletedAt: timestamp("deleted_at")
@@ -161,6 +233,36 @@ export const foodItemTags = pgTable("food_item_tags", {
   }
 });
 
+// Subscription tiers table for storing tier definitions
+export const subscriptionTiers = pgTable("subscription_tiers", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  tier: text("tier").notNull(), // free, smart, pro
+  priceMonthly: decimal("price_monthly", { precision: 10, scale: 2 }).notNull(),
+  priceYearly: decimal("price_yearly", { precision: 10, scale: 2 }).notNull(),
+  maxItems: integer("max_items").notNull(),
+  receiptScansPerMonth: integer("receipt_scans_per_month").notNull(),
+  maxSharedUsers: integer("max_shared_users").notNull(),
+  description: text("description").notNull(),
+  features: jsonb("features").notNull(), // Storing features as JSON
+  stripePriceIdMonthly: text("stripe_price_id_monthly"),
+  stripePriceIdYearly: text("stripe_price_id_yearly"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Table for shared pantry users (premium feature)
+export const sharedPantryUsers = pgTable("shared_pantry_users", {
+  id: serial("id").primaryKey(),
+  ownerId: integer("owner_id").notNull().references(() => users.id),
+  sharedWithId: integer("shared_with_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => {
+  return {
+    ownerSharedIdx: uniqueIndex("owner_shared_idx").on(table.ownerId, table.sharedWithId),
+  }
+});
+
 export const foodItems = pgTable("food_items", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
@@ -196,6 +298,8 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   foodItems: many(foodItems),
   stores: many(stores),
   receipts: many(receipts),
+  sharedPantries: many(sharedPantryUsers, { relationName: "owner" }),
+  sharedWithPantries: many(sharedPantryUsers, { relationName: "sharedWith" }),
 }));
 
 export const rolesRelations = relations(roles, ({ many }) => ({
@@ -305,6 +409,25 @@ export const foodItemTagsRelations = relations(foodItemTags, ({ one }) => ({
     fields: [foodItemTags.tagId],
     references: [tags.id],
     relationName: "tagToFoodItems",
+  }),
+}));
+
+// Subscription tier relations
+export const subscriptionTiersRelations = relations(subscriptionTiers, ({ many }) => ({
+  users: many(users),
+}));
+
+// Shared pantry user relations
+export const sharedPantryUsersRelations = relations(sharedPantryUsers, ({ one }) => ({
+  owner: one(users, {
+    fields: [sharedPantryUsers.ownerId],
+    references: [users.id],
+    relationName: "owner",
+  }),
+  sharedWith: one(users, {
+    fields: [sharedPantryUsers.sharedWithId],
+    references: [users.id],
+    relationName: "sharedWith",
   }),
 }));
 
@@ -568,3 +691,7 @@ export type Receipt = BaseReceipt & {
 // Product types
 export type Product = typeof products.$inferSelect;
 export type ProductAlias = typeof productAliases.$inferSelect;
+
+// Subscription types
+export type SubscriptionTier = typeof subscriptionTiers.$inferSelect;
+export type SharedPantryUser = typeof sharedPantryUsers.$inferSelect;

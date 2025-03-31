@@ -158,7 +158,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                 location === "/subscribe" && "active"
               )}>
                 <Shield className="nav-link-icon" />
-                Premium
+                Subscription
               </div>
             </Link>
 
