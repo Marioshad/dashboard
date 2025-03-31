@@ -1334,6 +1334,21 @@ const updateReceiptScanUsage = async (userId: number, scansUsed: number, scansLi
         // Get the next tier name for the upgrade message
         const nextTier = user.subscriptionTier === 'free' ? 'Smart Pantry' : 'Family Pantry Pro';
         
+        // Send a notification to the user about reaching their limit
+        await sendNotification(
+          user.id, 
+          'subscription_limit', 
+          `You've reached your receipt scan limit of ${user.receiptScansLimit}. Please upgrade your subscription to continue scanning receipts.`,
+          undefined,
+          {
+            limitType: 'receipt_scans',
+            currentTier: user.subscriptionTier,
+            nextTier: user.subscriptionTier === 'pro' ? null : nextTier,
+            scanLimit: user.receiptScansLimit,
+            scansUsed: user.receiptScansUsed
+          }
+        );
+        
         return res.status(403).json({ 
           message: `You've reached your receipt scan limit (${user.receiptScansLimit}) for this billing period.`,
           error: 'RECEIPT_LIMIT_REACHED',
