@@ -323,6 +323,22 @@ export function ReceiptUpload({ onSuccess }: ReceiptUploadProps = {}) {
             <span className="text-muted-foreground">Tier: {user.subscriptionTier || 'Free'}</span>
           </div>
         )}
+        
+        {/* Warning when scan limit is reached */}
+        {user?.receiptScansLimit !== null && 
+         user?.receiptScansLimit !== undefined && 
+         user?.receiptScansUsed !== null &&
+         user?.receiptScansUsed !== undefined &&
+         user?.receiptScansUsed >= user?.receiptScansLimit && (
+          <div className="mt-2 text-xs text-amber-800 font-medium bg-amber-100 p-3 rounded-md border border-amber-300 flex justify-between items-center">
+            <div>
+              <span className="font-bold">Scan Limit Reached!</span> Upgrade your subscription to scan more receipts.
+            </div>
+            <Button variant="secondary" size="sm" className="bg-amber-200 hover:bg-amber-300 h-8 mt-1">
+              <a href="/subscription">Upgrade Plan</a>
+            </Button>
+          </div>
+        )}
         <div className="mt-2 text-xs text-muted-foreground bg-muted/30 p-3 rounded-md">
           <p className="font-medium mb-1">Expiration dates are calculated automatically based on food type:</p>
           <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5 list-disc list-inside">
@@ -412,13 +428,33 @@ export function ReceiptUpload({ onSuccess }: ReceiptUploadProps = {}) {
       <CardFooter>
         <Button
           onClick={handleUpload}
-          disabled={!receipt || uploading || processingStage === "processing" || processingStage === "uploading"}
+          disabled={
+            !receipt || 
+            uploading || 
+            processingStage === "processing" || 
+            processingStage === "uploading" ||
+            // Disable button if user has reached their scan limit
+            (user?.receiptScansLimit !== null && 
+             user?.receiptScansLimit !== undefined && 
+             user?.receiptScansUsed !== null &&
+             user?.receiptScansUsed !== undefined &&
+             user?.receiptScansUsed >= user?.receiptScansLimit)
+          }
           className="w-full"
         >
           {uploading ? (
             <>
               <RotateCw className="mr-2 h-4 w-4 animate-spin" />
               Processing...
+            </>
+          ) : user?.receiptScansLimit !== null && 
+              user?.receiptScansLimit !== undefined && 
+              user?.receiptScansUsed !== null &&
+              user?.receiptScansUsed !== undefined &&
+              user?.receiptScansUsed >= user?.receiptScansLimit ? (
+            <>
+              <Upload className="mr-2 h-4 w-4" />
+              Limit Reached
             </>
           ) : (
             <>
