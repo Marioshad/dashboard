@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/dashboard-layout';
 import { 
   Card, 
@@ -42,7 +42,61 @@ export function ReceiptsPage() {
   const { formatCurrency } = useCurrency();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [receiptToDelete, setReceiptToDelete] = useState<number | null>(null);
-  const { user } = useAuth();
+  const { user, setUser } = useAuth();
+  const [socket, setSocket] = useState<WebSocket | null>(null);
+  
+  // Setup WebSocket connection
+  useEffect(() => {
+    // Only create WebSocket if user is logged in
+    if (!user || !user.id) return;
+    
+    // Create WebSocket connection
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/ws`;
+    
+    console.log('Connecting to WebSocket:', wsUrl);
+    const newSocket = new WebSocket(wsUrl);
+    
+    newSocket.onopen = () => {
+      console.log('WebSocket connection established');
+    };
+    
+    newSocket.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        console.log('WebSocket message received:', data);
+        
+        // Handle receipt scan count updates
+        if (data.type === 'receipt_scan_count_update' && data.userId === user.id) {
+          console.log('Updating receipt scan count:', data);
+          setUser({
+            ...user,
+            receiptScansUsed: data.scansUsed
+          });
+        }
+      } catch (error) {
+        console.error('Error processing WebSocket message:', error);
+      }
+    };
+    
+    newSocket.onerror = (error) => {
+      console.error('WebSocket error:', error);
+    };
+    
+    newSocket.onclose = (event) => {
+      console.log('WebSocket connection closed:', event);
+    };
+    
+    setSocket(newSocket);
+    
+    // Cleanup on unmount
+    return () => {
+      if (newSocket.readyState === WebSocket.OPEN) {
+        console.log('Closing WebSocket connection');
+        newSocket.close();
+      }
+    };
+  }, [user?.id, setUser]);
   
   const { data: receipts = [], isLoading, error } = useQuery<Receipt[]>({
     queryKey: ['/api/receipts'],

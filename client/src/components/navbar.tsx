@@ -52,13 +52,25 @@ export function Navbar() {
       setIsConnecting(true);
 
       try {
-        // Construct WebSocket URL using window.location
-        // Make sure to use the current host instead of hardcoded values
-        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-        const host = window.location.host || document.location.host;
-        // Don't add query parameters as they can cause issues
-        const wsUrl = `${protocol}//${host}/api/ws`;
-        console.log('Attempting WebSocket connection to:', wsUrl);
+        // Get the current window location information
+        const currentUrl = window.location.href;
+        console.log('Current window location:', currentUrl);
+        
+        // Base the WebSocket URL on our current location
+        let wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        let wsHost = window.location.host;
+        
+        // Handle Replit/Railway deployments which might have different URL patterns
+        if (!wsHost || wsHost === 'localhost:undefined') {
+          // Extract host from current URL if window.location.host fails
+          const urlObj = new URL(currentUrl);
+          wsHost = urlObj.host;
+          console.log('Extracted host from URL:', wsHost);
+        }
+        
+        // Create a clean WebSocket URL with no query parameters
+        const wsUrl = `${wsProtocol}//${wsHost}/api/ws`;
+        console.log('Final WebSocket URL:', wsUrl);
 
         const ws = new WebSocket(wsUrl);
 
@@ -118,12 +130,21 @@ export function Navbar() {
 
         ws.onerror = (error) => {
           console.error('WebSocket connection error:', error);
+          // Log additional details to help debugging
+          console.error('WebSocket URL was:', wsUrl);
+          console.error('Current location:', window.location.href);
           setIsConnecting(false);
           ws.close();
         };
       } catch (error) {
         setIsConnecting(false);
         console.error('Failed to create WebSocket connection:', error);
+        // Add fallback behavior without WebSocket
+        toast({
+          title: "WebSocket Connection Failed",
+          description: "Real-time updates for receipt scans will not work. You'll need to refresh the page to see updated counts.",
+          duration: 5000,
+        });
       }
     };
 
