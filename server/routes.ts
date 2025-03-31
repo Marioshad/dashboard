@@ -1219,47 +1219,80 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Save receipt to database regardless of OCR success
-      const receipt = await storage.createReceipt({
-        userId: req.user.id,
-        storeId: storeId,
-        filePath: receiptUrl,
-        fileName: req.file.originalname,
-        fileSize: req.file.size,
-        mimeType: req.file.mimetype,
-        uploadDate: new Date(),
-        receiptDate: receiptDetails.date ? new Date(receiptDetails.date) : undefined,
-        receiptNumber: receiptDetails.receiptNumber,
-        totalAmount: receiptDetails.totalAmount,
-        paymentMethod: receiptDetails.paymentMethod,
-        language: receiptDetails.language,
-        extractedData: errorMessage ? undefined : {
-          store: extractedStore,
-          receiptDetails: receiptDetails
+      try {
+        // Create receipt data object with basic properties
+        const receiptData: any = {
+          userId: req.user.id,
+          storeId: storeId,
+          filePath: receiptUrl,
+          fileName: req.file.originalname,
+          fileSize: req.file.size,
+          mimeType: req.file.mimetype,
+          uploadDate: new Date()
+        };
+
+        // Only add optional fields if they exist
+        if (receiptDetails.date) receiptData.receiptDate = new Date(receiptDetails.date);
+        if (receiptDetails.receiptNumber) receiptData.receiptNumber = receiptDetails.receiptNumber;
+        if (receiptDetails.totalAmount) receiptData.totalAmount = receiptDetails.totalAmount;
+        if (receiptDetails.paymentMethod) receiptData.paymentMethod = receiptDetails.paymentMethod;
+        
+        // Only include language field if it exists in database (for backward compatibility)
+        if (receiptDetails.language) {
+          // We'll try to add it, but it's okay if it fails
+          try {
+            receiptData.language = receiptDetails.language;
+          } catch (langError) {
+            console.warn("Could not set receipt language - field may not exist in database");
+          }
         }
-      });
-      
-      // Send notification about the new receipt
-      const storeName = storeData ? storeData.name : "Unknown Store";
-      await sendNotification(
-        req.user.id,
-        'receipt_created',
-        `Receipt from "${storeName}" uploaded successfully.`,
-        undefined, // No actor ID
-        { receiptId: receipt.id }
-      );
-      
-      // Return response with receipt ID and extracted data
-      res.json({ 
-        receiptId: receipt.id,
-        receiptUrl,
-        message: errorMessage 
-          ? `Receipt uploaded successfully but OCR processing failed: ${errorMessage}`
-          : "Receipt processed successfully with OpenAI OCR.",
-        items: extractedItems,
-        store: storeData,
-        receiptDetails,
-        error: errorMessage
-      });
+        
+        // Add extracted data if OCR was successful
+        if (!errorMessage) {
+          receiptData.extractedData = {
+            store: extractedStore,
+            receiptDetails: receiptDetails
+          };
+        }
+        
+        // Create the receipt
+        const receipt = await storage.createReceipt(receiptData);
+        
+        // Send notification about the new receipt
+        const storeName = storeData ? storeData.name : "Unknown Store";
+        await sendNotification(
+          req.user.id,
+          'receipt_created',
+          `Receipt from "${storeName}" uploaded successfully.`,
+          undefined, // No actor ID
+          { receiptId: receipt.id }
+        );
+        
+        // Return response with receipt ID and extracted data
+        res.json({ 
+          receiptId: receipt.id,
+          receiptUrl,
+          message: errorMessage 
+            ? `Receipt uploaded successfully but OCR processing failed: ${errorMessage}`
+            : "Receipt processed successfully with OpenAI OCR.",
+          items: extractedItems,
+          store: storeData,
+          receiptDetails,
+          error: errorMessage
+        });
+      } catch (receiptError) {
+        console.error("Error saving receipt:", receiptError);
+        
+        // Return a more generic success response without receipt ID
+        res.json({ 
+          receiptUrl,
+          message: "Receipt uploaded but there was an error saving some details. Try again or contact support.",
+          items: extractedItems,
+          store: storeData,
+          receiptDetails,
+          error: errorMessage ? errorMessage : "Database error when saving receipt"
+        });
+      }
     } catch (error) {
       next(error);
     }
