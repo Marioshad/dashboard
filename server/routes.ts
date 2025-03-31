@@ -1460,6 +1460,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const systemColumnName = columnCheckResult.rows[0].column_name;
       console.log(`Using ${systemColumnName} as the system tag column for query`);
       
+      // Log what user ID we're using for the query
+      console.log(`Fetching tags for user ID: ${req.user.id}`);
+      
       // Use the appropriate column name in the query
       let result;
       if (systemColumnName === 'is_system') {
@@ -1478,7 +1481,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         `);
       }
       
-      res.json(result.rows);
+      // Convert boolean values properly for the frontend
+      const processedResults = result.rows.map(row => ({
+        ...row,
+        isSystem: row.isSystem === 't' || row.isSystem === true // Convert PostgreSQL 't' to boolean true
+      }));
+      
+      console.log(`Found ${processedResults.length} tags, with ${processedResults.filter(t => t.isSystem).length} system tags`);
+      
+      res.json(processedResults);
     } catch (error) {
       console.error('Error fetching tags:', error);
       next(error);
@@ -1664,7 +1675,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         `);
       }
       
-      res.json(result.rows);
+      // Convert boolean values properly for the frontend
+      const processedResults = result.rows.map(row => ({
+        ...row,
+        isSystem: row.isSystem === 't' || row.isSystem === true // Convert PostgreSQL 't' to boolean true
+      }));
+      
+      res.json(processedResults);
     } catch (error) {
       console.error('Error fetching food item tags:', error);
       next(error);
