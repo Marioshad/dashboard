@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 
 type AuthContextType = {
   user: SelectUser | null;
+  setUser: (user: SelectUser) => void;
   isLoading: boolean;
   error: Error | null;
   loginMutation: UseMutationResult<SelectUser, Error, LoginData>;
@@ -106,10 +107,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
   });
 
+  // Function to update user data in real-time
+  const setUser = (updatedUser: SelectUser) => {
+    // Update the user data in the query cache
+    queryClient.setQueryData(["/api/user"], updatedUser);
+  };
+  
   return (
     <AuthContext.Provider
       value={{
         user: user ?? null,
+        setUser,
         isLoading,
         error,
         loginMutation,
