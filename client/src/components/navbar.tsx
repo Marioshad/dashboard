@@ -53,8 +53,11 @@ export function Navbar() {
 
       try {
         // Construct WebSocket URL using window.location
+        // Make sure to use the current host instead of hardcoded values
         const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-        const wsUrl = `${protocol}//${window.location.host}/api/ws`;  // Changed from '/ws' to '/api/ws'
+        const host = window.location.host || document.location.host;
+        // Don't add query parameters as they can cause issues
+        const wsUrl = `${protocol}//${host}/api/ws`;
         console.log('Attempting WebSocket connection to:', wsUrl);
 
         const ws = new WebSocket(wsUrl);
