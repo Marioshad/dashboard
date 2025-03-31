@@ -34,7 +34,10 @@ export function Navbar() {
   
   const markAllAsReadMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest('/api/notifications/read', { method: 'POST' });
+      const result = await apiRequest('/api/notifications/read', { method: 'POST' });
+      // Immediately set unread count to 0 for a responsive UI
+      setUnreadCount(0);
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
@@ -43,7 +46,10 @@ export function Navbar() {
 
   const markSingleAsReadMutation = useMutation({
     mutationFn: async (notificationId: number) => {
-      return await apiRequest(`/api/notifications/${notificationId}/read`, { method: 'POST' });
+      const result = await apiRequest(`/api/notifications/${notificationId}/read`, { method: 'POST' });
+      // Force a local update to the notification list
+      setUnreadCount(prev => Math.max(0, prev - 1));
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
@@ -52,7 +58,14 @@ export function Navbar() {
 
   useEffect(() => {
     if (notifications) {
-      setUnreadCount(notifications.filter(n => !n.read).length);
+      // Count only if notifications exist and have a valid 'read' property
+      const validUnreadNotifications = notifications.filter(n => n && n.read === false);
+      setUnreadCount(validUnreadNotifications.length);
+      
+      // Log for debugging
+      if (validUnreadNotifications.length > 0) {
+        console.log('Unread notifications:', validUnreadNotifications.length);
+      }
     }
   }, [notifications]);
 
@@ -151,7 +164,7 @@ export function Navbar() {
                       if (!isClickable) return;
                       
                       // Mark only this notification as read
-                      if (!notification.read) {
+                      if (notification.read === false) {
                         markSingleAsReadMutation.mutate(notification.id);
                       }
                       
@@ -192,13 +205,13 @@ export function Navbar() {
                         key={notification.id} 
                         className={cn(
                           "flex flex-col items-start gap-1 p-3 border-b border-gray-100 last:border-0",
-                          !notification.read && "bg-primary/5",
+                          notification.read === false && "bg-primary/5",
                           isClickable ? "cursor-pointer hover:bg-gray-50" : "cursor-default"
                         )}
                         onClick={handleClick}
                       >
                         <div className="flex w-full items-center mb-1">
-                          <span className={`w-2 h-2 rounded-full mr-2 flex-shrink-0 ${notification.read ? 'bg-gray-300' : 'bg-primary'}`}></span>
+                          <span className={`w-2 h-2 rounded-full mr-2 flex-shrink-0 ${notification.read === false ? 'bg-primary' : 'bg-gray-300'}`}></span>
                           <div className="font-medium text-sm flex-1 text-gray-800">
                             {notificationTitle}
                           </div>
@@ -213,7 +226,7 @@ export function Navbar() {
                                 {/* Display only the message part without metadata */}
                                 {displayMessage}
                               </span>
-                              {!notification.read && (
+                              {notification.read === false && (
                                 <div className="mt-1 flex items-center text-xs text-primary font-medium">
                                   <span className="inline-block mr-1">→</span> {actionText}
                                 </div>
