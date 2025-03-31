@@ -7,7 +7,7 @@ import multer, { FileFilterCallback } from "multer";
 import path from "path";
 import fs from "fs";
 import express from 'express';
-import { db } from "./db";
+import { db, pool } from "./db";
 import { format } from "date-fns";
 import { 
   roles, permissions, rolePermissions, users, appSettings, notifications,
@@ -1442,54 +1442,93 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.sendStatus(401);
       }
       
-      // Check which column name is used in the database (is_system or issystem)
-      const columnCheckResult = await db.execute(sql`
-        SELECT column_name 
-        FROM information_schema.columns 
-        WHERE table_name = 'tags' 
-        AND (column_name = 'is_system' OR column_name = 'issystem')
-      `);
-      
-      // If neither column exists, return an empty array
-      if (columnCheckResult.rows.length === 0) {
-        console.log("Tags table is missing the system column");
-        return res.json([]);
-      }
-      
-      // Determine which column name to use
-      const systemColumnName = columnCheckResult.rows[0].column_name;
-      console.log(`Using ${systemColumnName} as the system tag column for query`);
-      
-      // Log what user ID we're using for the query
-      console.log(`Fetching tags for user ID: ${req.user.id}`);
-      
-      // Use the appropriate column name in the query
-      let result;
-      if (systemColumnName === 'is_system') {
-        result = await db.execute(sql`
-          SELECT id, name, color, is_system as "isSystem", userid as "userId"
+      // Execute a more robust query to safely handle column name differences
+      try {
+        const query = `
+          SELECT 
+            id, 
+            name, 
+            color, 
+            CASE 
+              WHEN EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tags' AND column_name = 'is_system')
+              THEN is_system
+              ELSE issystem
+            END as "isSystem",
+            CASE 
+              WHEN EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tags' AND column_name = 'user_id')
+              THEN user_id
+              ELSE userid
+            END as "userId"
           FROM tags 
-          WHERE userid = ${req.user.id} OR is_system = true
+          WHERE 
+            (
+              EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tags' AND column_name = 'user_id') AND user_id = $1
+              OR 
+              EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tags' AND column_name = 'userid') AND userid = $1
+            )
+            OR 
+            (
+              EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tags' AND column_name = 'is_system') AND is_system = true
+              OR 
+              EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tags' AND column_name = 'issystem') AND issystem = true
+            )
           ORDER BY name ASC
-        `);
-      } else {
-        result = await db.execute(sql`
-          SELECT id, name, color, issystem as "isSystem", userid as "userId"
-          FROM tags 
-          WHERE userid = ${req.user.id} OR issystem = true
-          ORDER BY name ASC
-        `);
+        `;
+        
+        console.log(`Fetching tags for user ID: ${req.user.id}`);
+        const result = await pool.query(query, [req.user.id]);
+        
+        // Convert boolean values properly for the frontend
+        const processedResults = result.rows.map(row => ({
+          ...row,
+          isSystem: row.isSystem === 't' || row.isSystem === true // Convert PostgreSQL 't' to boolean true
+        }));
+        
+        console.log(`Found ${processedResults.length} tags, with ${processedResults.filter(t => t.isSystem).length} system tags`);
+        
+        res.json(processedResults);
+      } catch (error) {
+        console.error('Error with dynamic column query, trying fallback approach:', error);
+        
+        // Fallback approach - get all tags and manually filter
+        try {
+          const simplifiedQuery = `
+            SELECT * 
+            FROM tags
+            ORDER BY name ASC
+          `;
+          
+          const result = await pool.query(simplifiedQuery);
+          console.log('Fallback query returned rows:', result.rows.length);
+          
+          // Process the results to ensure consistent property names
+          const processedResults = result.rows.map(row => {
+            // Convert camelCase names to the frontend expected format
+            return {
+              id: row.id,
+              name: row.name,
+              color: row.color,
+              // Handle boolean field using both possible column names
+              isSystem: row.is_system === 't' || row.is_system === true || 
+                        row.issystem === 't' || row.issystem === true,
+              // Handle user ID field using both possible column names  
+              userId: row.user_id || row.userid
+            };
+          });
+          
+          // Filter for the current user or system tags
+          const filteredResults = processedResults.filter(tag => 
+            tag.userId === req.user.id || tag.isSystem === true
+          );
+          
+          console.log(`Found ${filteredResults.length} tags, with ${filteredResults.filter(t => t.isSystem).length} system tags`);
+          
+          res.json(filteredResults);
+        } catch (finalError) {
+          console.error('All tag retrieval attempts failed:', finalError);
+          res.status(500).json({ message: 'Failed to retrieve tags' });
+        }
       }
-      
-      // Convert boolean values properly for the frontend
-      const processedResults = result.rows.map(row => ({
-        ...row,
-        isSystem: row.isSystem === 't' || row.isSystem === true // Convert PostgreSQL 't' to boolean true
-      }));
-      
-      console.log(`Found ${processedResults.length} tags, with ${processedResults.filter(t => t.isSystem).length} system tags`);
-      
-      res.json(processedResults);
     } catch (error) {
       console.error('Error fetching tags:', error);
       next(error);
@@ -1640,48 +1679,126 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "Access denied" });
       }
       
-      // Check which column name is used in the database
-      const columnCheckResult = await db.execute(sql`
-        SELECT column_name 
-        FROM information_schema.columns 
-        WHERE table_name = 'tags' 
-        AND (column_name = 'is_system' OR column_name = 'issystem')
+      // First, check which junction table exists - food_item_tags or food_items_tags
+      const tableCheckResult = await pool.query(`
+        SELECT tablename 
+        FROM pg_tables 
+        WHERE schemaname = 'public' 
+        AND (tablename = 'food_item_tags' OR tablename = 'food_items_tags')
       `);
       
-      // If neither column exists, return an empty array
-      if (columnCheckResult.rows.length === 0) {
-        console.log("Tags table is missing the system column");
+      // If neither table exists, return an empty array
+      if (tableCheckResult.rows.length === 0) {
+        console.log("No junction table found for food items and tags");
         return res.json([]);
       }
       
-      // Determine which column name to use
-      const systemColumnName = columnCheckResult.rows[0].column_name;
+      // Determine which table to use
+      const junctionTable = tableCheckResult.rows[0].tablename;
+      console.log(`Using junction table ${junctionTable} for food item tags query`);
       
-      // Use appropriate column in query
-      let result;
-      if (systemColumnName === 'is_system') {
-        result = await db.execute(sql`
-          SELECT t.id, t.name, t.color, t.is_system as "isSystem", t.userid as "userId"
+      try {
+        // Check column names in junction table
+        const junctionColumnsResult = await pool.query(`
+          SELECT column_name 
+          FROM information_schema.columns 
+          WHERE table_name = $1
+          ORDER BY column_name
+        `, [junctionTable]);
+        
+        console.log(`Junction table columns:`, junctionColumnsResult.rows.map(r => r.column_name));
+        
+        // Check if the junction table has fooditemid or food_item_id
+        const hasItemIdColumn = junctionColumnsResult.rows.some(r => 
+          r.column_name === 'fooditemid' || r.column_name === 'food_item_id'
+        );
+        
+        // Check if the junction table has tagid or tag_id
+        const hasTagIdColumn = junctionColumnsResult.rows.some(r => 
+          r.column_name === 'tagid' || r.column_name === 'tag_id'
+        );
+        
+        if (!hasItemIdColumn || !hasTagIdColumn) {
+          console.log("Junction table is missing required columns");
+          return res.json([]);
+        }
+        
+        const query = `
+          SELECT 
+            t.id, 
+            t.name, 
+            t.color, 
+            CASE 
+              WHEN EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tags' AND column_name = 'is_system')
+              THEN t.is_system
+              ELSE t.issystem
+            END as "isSystem",
+            CASE 
+              WHEN EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tags' AND column_name = 'user_id')
+              THEN t.user_id
+              ELSE t.userid
+            END as "userId"
           FROM tags t
-          JOIN food_item_tags fit ON t.id = fit.tag_id
-          WHERE fit.food_item_id = ${itemId}
-        `);
-      } else {
-        result = await db.execute(sql`
-          SELECT t.id, t.name, t.color, t.issystem as "isSystem", t.userid as "userId"
-          FROM tags t
-          JOIN food_item_tags fit ON t.id = fit.tag_id
-          WHERE fit.food_item_id = ${itemId}
-        `);
+          JOIN ${junctionTable} j ON t.id = 
+            CASE 
+              WHEN EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = $1 AND column_name = 'tag_id')
+              THEN j.tag_id
+              ELSE j.tagid
+            END
+          WHERE 
+            CASE 
+              WHEN EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = $1 AND column_name = 'food_item_id')
+              THEN j.food_item_id = $2
+              ELSE j.fooditemid = $2
+            END
+        `;
+        
+        const result = await pool.query(query, [junctionTable, itemId]);
+        
+        // Convert boolean values properly for the frontend
+        const processedResults = result.rows.map(row => ({
+          ...row,
+          isSystem: row.isSystem === 't' || row.isSystem === true // Convert PostgreSQL 't' to boolean true
+        }));
+        
+        res.json(processedResults);
+      } catch (error) {
+        console.error('Error with dynamic column query for food item tags:', error);
+        
+        // Fallback to getting all tags for the food item using a simpler query
+        try {
+          // Get all tags first
+          const allTags = await pool.query(`SELECT * FROM tags`);
+          
+          // Get the junction records for this food item from the appropriate table
+          const junctionRecords = await pool.query(`
+            SELECT * FROM ${junctionTable} 
+            WHERE 
+              ${junctionTable === 'food_item_tags' ? 'food_item_id' : 'fooditemid'} = $1
+          `, [itemId]);
+          
+          // Map tag IDs from junction records 
+          const tagIds = junctionRecords.rows.map(r => r.tagid || r.tag_id);
+          
+          // Filter tags to only include those in the tagIds array
+          const filteredTags = allTags.rows.filter(tag => tagIds.includes(tag.id));
+          
+          // Process tags for frontend format
+          const processedResults = filteredTags.map(row => ({
+            id: row.id,
+            name: row.name,
+            color: row.color,
+            isSystem: row.is_system === 't' || row.is_system === true || 
+                      row.issystem === 't' || row.issystem === true,
+            userId: row.user_id || row.userid
+          }));
+          
+          res.json(processedResults);
+        } catch (finalError) {
+          console.error('All food item tag retrieval attempts failed:', finalError);
+          res.status(500).json({ message: 'Failed to retrieve food item tags' });
+        }
       }
-      
-      // Convert boolean values properly for the frontend
-      const processedResults = result.rows.map(row => ({
-        ...row,
-        isSystem: row.isSystem === 't' || row.isSystem === true // Convert PostgreSQL 't' to boolean true
-      }));
-      
-      res.json(processedResults);
     } catch (error) {
       console.error('Error fetching food item tags:', error);
       next(error);
@@ -1714,19 +1831,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "tagIds array is required" });
       }
       
-      // Remove existing tags
-      await db.delete(foodItemTags)
-        .where(eq(foodItemTags.foodItemId, itemId));
+      // First, check which junction table exists - food_item_tags or food_items_tags
+      const tableCheckResult = await pool.query(`
+        SELECT tablename 
+        FROM pg_tables 
+        WHERE schemaname = 'public' 
+        AND (tablename = 'food_item_tags' OR tablename = 'food_items_tags')
+      `);
       
-      // Add new tags
+      // If neither table exists, return an error
+      if (tableCheckResult.rows.length === 0) {
+        console.log("No junction table found for food items and tags");
+        return res.status(500).json({ message: "Tag association table not found in database" });
+      }
+      
+      // Determine which table to use
+      const junctionTable = tableCheckResult.rows[0].tablename;
+      console.log(`Using junction table ${junctionTable} for updating food item tags`);
+      
+      // Check column names in junction table
+      const junctionColumnsResult = await pool.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = $1
+        ORDER BY column_name
+      `, [junctionTable]);
+      
+      console.log(`Junction table columns:`, junctionColumnsResult.rows.map((r: any) => r.column_name));
+      
+      // Identify the food item ID column and tag ID column
+      const foodItemIdColumn = junctionColumnsResult.rows.some((r: any) => r.column_name === 'food_item_id') 
+        ? 'food_item_id' 
+        : 'fooditemid';
+        
+      const tagIdColumn = junctionColumnsResult.rows.some((r: any) => r.column_name === 'tag_id') 
+        ? 'tag_id' 
+        : 'tagid';
+      
+      // Remove existing tags
+      await pool.query(`DELETE FROM ${junctionTable} WHERE ${foodItemIdColumn} = $1`, [itemId]);
+      
+      // Add new tags - if there are any to add
       if (tagIds.length > 0) {
-        await db.insert(foodItemTags)
-          .values(
-            tagIds.map(tagId => ({
-              foodItemId: itemId,
-              tagId: tagId
-            }))
-          );
+        // Prepare the insert values
+        const insertValues = tagIds.map((tagId: number) => `(${itemId}, ${tagId})`).join(', ');
+        
+        // Execute the direct SQL insert
+        await pool.query(`
+          INSERT INTO ${junctionTable} (${foodItemIdColumn}, ${tagIdColumn})
+          VALUES ${insertValues}
+        `);
       }
       
       res.status(200).json({ message: "Tags updated successfully" });
