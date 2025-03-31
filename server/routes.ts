@@ -495,15 +495,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.sendStatus(401);
       }
 
+      const userId = req.user.id;
+
+      // Get the count of unread notifications before update
+      const unreadCountBefore = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(notifications)
+        .where(
+          and(
+            eq(notifications.userId, userId),
+            eq(notifications.read, false)
+          )
+        )
+        .then(result => result[0]?.count || 0);
+
+      // Skip update if there are no unread notifications
+      if (unreadCountBefore === 0) {
+        return res.sendStatus(200);
+      }
+
       await db
         .update(notifications)
         .set({ read: true })
         .where(
           and(
-            eq(notifications.userId, req.user.id),
+            eq(notifications.userId, userId),
             eq(notifications.read, false)
           )
         );
+
+      // Send a WebSocket notification to update badge count in real-time
+      if (app.locals.sendWebSocketNotification) {
+        app.locals.sendWebSocketNotification(userId, 'notification', {
+          type: 'unread_count_update',
+          unreadCount: 0, // All notifications are now read
+          timestamp: new Date().toISOString()
+        });
+      }
 
       res.sendStatus(200);
     } catch (error) {
@@ -519,6 +547,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const notificationId = parseInt(req.params.id);
+      const userId = req.user.id;
       
       if (isNaN(notificationId)) {
         return res.status(400).json({ error: 'Invalid notification ID' });
@@ -531,9 +560,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .where(
           and(
             eq(notifications.id, notificationId),
-            eq(notifications.userId, req.user.id)
+            eq(notifications.userId, userId)
           )
         );
+      
+      // Get the updated count of unread notifications
+      const unreadCount = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(notifications)
+        .where(
+          and(
+            eq(notifications.userId, userId),
+            eq(notifications.read, false)
+          )
+        )
+        .then(result => result[0]?.count || 0);
+      
+      // Send a WebSocket notification to update badge count in real-time
+      if (app.locals.sendWebSocketNotification) {
+        app.locals.sendWebSocketNotification(userId, 'notification', {
+          type: 'unread_count_update',
+          unreadCount: unreadCount,
+          timestamp: new Date().toISOString()
+        });
+      }
       
       res.sendStatus(200);
     } catch (error) {
