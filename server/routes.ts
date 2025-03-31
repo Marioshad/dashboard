@@ -1249,13 +1249,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         // Add extracted data if OCR was successful
         if (!errorMessage) {
-          receiptData.extractedData = {
-            store: extractedStore,
-            receiptDetails: receiptDetails
-          };
+          try {
+            receiptData.extractedData = {
+              store: extractedStore,
+              receiptDetails: receiptDetails
+            };
+          } catch (e) {
+            console.warn("Could not set extractedData field - may not exist in database");
+          }
         }
         
-        // Create the receipt
+        // Log what we're about to create
+        console.log('Creating receipt with these fields:', Object.keys(receiptData).join(', '));
+        
+        // Create the receipt with defensive error handling
         const receipt = await storage.createReceipt(receiptData);
         
         // Send notification about the new receipt

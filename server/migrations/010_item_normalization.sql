@@ -117,7 +117,6 @@ BEGIN
                   NULL);
         END IF;
       END IF;
-      END IF;
     ELSE
       -- If is_system doesn't exist, check based on name only
       IF NOT EXISTS (SELECT 1 FROM tags WHERE name = category) THEN
