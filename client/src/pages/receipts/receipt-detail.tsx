@@ -294,7 +294,7 @@ export function ReceiptDetailPage() {
                       </>
                     )}
                     <div className="mt-2">
-                      <Link to="/subscription" className="text-primary text-xs font-medium hover:underline">
+                      <Link to="/subscribe" className="text-primary text-xs font-medium hover:underline">
                         Upgrade to Smart Pantry tier → Unlimited items per receipt
                       </Link>
                     </div>
