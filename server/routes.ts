@@ -69,8 +69,8 @@ const upload = multer({
   }
 });
 
-// Store WebSocket clients
-const clients = new Map<number, WsWebSocket[]>();
+// Store WebSocket clients - shared map for all WebSocket connections
+let connectedClients = new Map<number, WsWebSocket[]>();
 
 async function sendNotification(userId: number, type: string, message: string, actorId?: number, metadata?: any) {
   try {
@@ -98,7 +98,7 @@ async function sendNotification(userId: number, type: string, message: string, a
     log(`Notification saved to database with ID ${notification.id}`);
     
     // Get user connections from the map
-    const userConnections = clients.get(userId);
+    const userConnections = connectedClients.get(userId);
     
     if (userConnections && userConnections.length > 0) {
       // Prepare message
@@ -2180,13 +2180,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   const httpServer = createServer(app);
 
-  // Map to track active client connections
-  const clients = new Map<number, WsWebSocket[]>();
+  // Using the existing connectedClients map from line 73
+  // for tracking all client connections
   
   // Setup WebSocket Server for real-time notifications
+  // We'll use verifyClient to handle session validation
   const wss = new WebSocketServer({ 
-    server: httpServer,
-    path: '/api/ws',
+    noServer: true,  // Don't attach to server, we'll handle upgrade manually
     // Increase timeout values for more stability
     clientTracking: true,
     perMessageDeflate: {
@@ -2205,7 +2205,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   log('WebSocket server initialized with enhanced stability options');
 
-  wss.on('connection', (ws: WsWebSocket, request) => {
+  wss.on('connection', (ws: WsWebSocket, request: IncomingMessage & { session?: any }) => {
     log('WebSocket connected for user: ' + request.session?.passport?.user);
 
     // You can authenticate the WebSocket connection here similar to how Express routes are authenticated
@@ -2216,12 +2216,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       (ws as any).userId = userId;
       
       // Store connection in our tracking map
-      if (!clients.has(userId)) {
-        clients.set(userId, []);
+      if (!connectedClients.has(userId)) {
+        connectedClients.set(userId, []);
       }
-      clients.get(userId)?.push(ws);
+      connectedClients.get(userId)?.push(ws);
       
-      log(`User ${userId} added to active WebSocket connections. Total connections for user: ${clients.get(userId)?.length}`);
+      log(`User ${userId} added to active WebSocket connections. Total connections for user: ${connectedClients.get(userId)?.length}`);
       
       // Send a welcome message to verify connection
       ws.send(JSON.stringify({ 
@@ -2249,7 +2249,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (request.session?.passport?.user) {
         const userId = parseInt(request.session.passport.user, 10);
-        const userConnections = clients.get(userId);
+        const userConnections = connectedClients.get(userId);
         
         if (userConnections) {
           // Remove this specific connection
@@ -2260,7 +2260,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           // If no more connections for this user, remove the entry
           if (userConnections.length === 0) {
-            clients.delete(userId);
+            connectedClients.delete(userId);
             log(`User ${userId} removed from active WebSocket connections`);
           } else {
             log(`User ${userId} now has ${userConnections.length} active WebSocket connections`);
@@ -2280,14 +2280,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   // Function to send notifications through WebSockets
   const sendWebSocketNotification = (userId: number, type: string, data: any) => {
-    const userConnections = clients.get(userId);
+    const userConnections = connectedClients.get(userId);
     
     if (userConnections && userConnections.length > 0) {
       const message = JSON.stringify({ type, data });
       
       let sentCount = 0;
       
-      userConnections.forEach(ws => {
+      userConnections.forEach((ws: WsWebSocket) => {
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(message);
           sentCount++;
@@ -2306,63 +2306,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Handle upgrade of WebSocket connections for Express
   httpServer.on('upgrade', (request: IncomingMessage, socket: Socket, head: Buffer) => {
-    log(`WebSocket upgrade request received for URL: ${request.url}`);
-    
-    // Parse the cookies from the request
-    const cookies = parse(request.headers.cookie || '');
-    
-    // Get the Express session ID from the cookie
-    const sid = cookies['connect.sid'];
-    
-    if (!sid) {
-      log('WebSocket upgrade rejected: No connect.sid cookie found');
-      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-      socket.destroy();
-      return;
-    }
-
-    // Decode the session ID
-    const sessionId = cookieSignature.unsign(sid.slice(2), SESSION_SECRET || 'keyboard cat');
-    
-    if (!sessionId) {
-      log('WebSocket upgrade rejected: Invalid session signature');
-      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-      socket.destroy();
-      return;
-    }
-
-    // Get the session from the session store
-    storage.sessionStore.get(sessionId, (err, session) => {
-      if (err) {
-        log(`WebSocket upgrade rejected: Session store error: ${err.message}`);
-        socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
-        socket.destroy();
-        return;
-      }
+    // Only process WebSocket upgrade requests for our specific path
+    if (request.url === '/api/ws') {
+      log(`WebSocket upgrade request received for URL: ${request.url}`);
       
-      if (!session) {
-        log('WebSocket upgrade rejected: Session not found');
+      // Parse the cookies from the request
+      const cookies = parse(request.headers.cookie || '');
+      
+      // Get the Express session ID from the cookie
+      const sid = cookies['connect.sid'];
+      
+      if (!sid) {
+        log('WebSocket upgrade rejected: No connect.sid cookie found');
         socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
         socket.destroy();
         return;
       }
 
-      // Attach the session to the request
-      (request as any).session = session;
-
-      // Check if this is a WebSocket upgrade
-      if (request.headers.upgrade?.toLowerCase() !== 'websocket') {
-        log('Request is not a WebSocket upgrade');
-        socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
+      // Decode the session ID
+      const sessionId = cookieSignature.unsign(sid.slice(2), SESSION_SECRET || 'keyboard cat');
+      
+      if (!sessionId) {
+        log('WebSocket upgrade rejected: Invalid session signature');
+        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
         socket.destroy();
         return;
       }
 
-      // Let the WebSocketServer handle the upgrade for any path that starts with /api/ws
-      // This allows for path variants like /api/ws?token=xyz which some clients might use
-      if (request.url && (request.url.startsWith('/api/ws') || request.url === '/ws')) {
+      // Get the session from the session store
+      storage.sessionStore.get(sessionId, (err, session) => {
+        if (err) {
+          log(`WebSocket upgrade rejected: Session store error: ${err.message}`);
+          socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
+          socket.destroy();
+          return;
+        }
+        
+        if (!session) {
+          log('WebSocket upgrade rejected: Session not found');
+          socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+          socket.destroy();
+          return;
+        }
+
+        // Attach the session to the request
+        (request as any).session = session;
+
         try {
-          log('Handling WebSocket upgrade');
+          // Use the WebSocketServer to handle the upgrade
           wss.handleUpgrade(request, socket, head, (ws: WsWebSocket) => {
             wss.emit('connection', ws, request);
           });
@@ -2370,12 +2361,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.error('Error during WebSocket upgrade:', error);
           socket.destroy();
         }
-      } else {
-        log(`WebSocket upgrade rejected: Path not supported: ${request.url}`);
-        socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
-        socket.destroy();
-      }
-    });
+      });
+    }
   });
 
   app.locals.sendNotification = sendNotification;
