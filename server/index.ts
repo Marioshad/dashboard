@@ -6,9 +6,15 @@ import { runMigrations } from "./migration-runner";
 import { tags } from "@shared/schema";
 import { sql, eq } from "drizzle-orm";
 import dotenv from 'dotenv';
+import { createServer } from "http";
+import { initializeWebSocketServer } from './websockets';
+import { storage } from './storage';
 
 // Load environment variables from .env file
 dotenv.config();
+
+// Session secret for cookie validation
+const SESSION_SECRET = process.env.SESSION_SECRET || 'keyboard cat';
 
 // System tags configuration
 const SYSTEM_TAGS = [
@@ -250,8 +256,18 @@ app.use((req, res, next) => {
     // Ensure system tags are created
     await ensureSystemTags();
 
+    // Setting up routes (does not initialize http server)
     log("Setting up routes...");
-    const server = await registerRoutes(app);
+    await registerRoutes(app);
+    
+    // Create HTTP server using createServer within routes.ts
+    log("Creating HTTP server...");
+    const httpServer = createServer(app);
+    
+    // Initialize WebSocket server with modular implementation
+    log("Initializing WebSocket server with modular implementation...");
+    initializeWebSocketServer(httpServer, app, storage, SESSION_SECRET);
+    log("WebSocket server initialized with enhanced stability options");
     log("Routes registered successfully");
 
     app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
@@ -266,7 +282,7 @@ app.use((req, res, next) => {
 
     if (app.get("env") === "development") {
       log("Starting in development mode...");
-      await setupVite(app, server);
+      await setupVite(app, httpServer);
     } else {
       log("Starting in production mode...");
       try {
@@ -281,7 +297,7 @@ app.use((req, res, next) => {
     log(`Attempting to start server on port ${port}...`);
     log(`Using host: 0.0.0.0`);
 
-    server.listen({
+    httpServer.listen({
       port,
       host: "0.0.0.0",
     }, () => {

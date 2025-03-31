@@ -69,81 +69,27 @@ const upload = multer({
   }
 });
 
-// Store WebSocket clients - shared map for all WebSocket connections
-let connectedClients = new Map<number, WsWebSocket[]>();
+// Import the WebSocket handlers
+import { sendNotification as wsSendNotification } from './websockets/handlers/notificationHandler';
+import { updateReceiptScanUsage as wsUpdateReceiptScanUsage } from './websockets/handlers/usageUpdateHandler';
+import { getConnectedClients } from './websockets/index';
 
 async function sendNotification(userId: number, type: string, message: string, actorId?: number, metadata?: any) {
   try {
     log(`Sending notification to user ${userId}: ${type} - ${message}`);
     
-    // Create a notification object with the metadata included in the message
-    const notificationData = {
+    // Use the specialized notification handler from the websockets module 
+    // which handles both database and WebSocket operations
+    const notification = await wsSendNotification(
       userId,
       type,
       message,
-      actorId
-    };
+      actorId,
+      metadata,
+      getConnectedClients() // Get the current connected clients map
+    );
     
-    // If metadata is provided, convert it to JSON string and attach to message
-    if (metadata) {
-      notificationData.message = `${message}|${JSON.stringify(metadata)}`;
-    }
-    
-    // Save notification to database
-    const [notification] = await db
-      .insert(notifications)
-      .values(notificationData)
-      .returning();
-
-    log(`Notification saved to database with ID ${notification.id}`);
-    
-    // Get user connections from the map
-    const userConnections = connectedClients.get(userId);
-    
-    if (userConnections && userConnections.length > 0) {
-      // Prepare message
-      const webSocketMessage = JSON.stringify({
-        type: 'notification',
-        data: notification
-      });
-      
-      let sentCount = 0;
-      
-      // Send to all open connections for this user
-      userConnections.forEach(ws => {
-        if (ws.readyState === 1) { // 1 = OPEN in the ws library
-          ws.send(webSocketMessage);
-          sentCount++;
-        }
-      });
-      
-      log(`Real-time notification sent to ${sentCount}/${userConnections.length} connections for user ${userId}`);
-      
-      // Special handling for 'receipt_scan_usage' type to update the scan count in real-time
-      if (type === 'receipt_scan_usage' && metadata && metadata.scansUsed !== undefined && metadata.scansLimit !== undefined) {
-        // Send a specialized scan usage update message
-        const usageMessage = JSON.stringify({
-          type: 'scan_usage_update',
-          data: {
-            scansUsed: metadata.scansUsed,
-            scansLimit: metadata.scansLimit,
-            scansRemaining: metadata.scansLimit - metadata.scansUsed
-          }
-        });
-        
-        // Send to all connections
-        userConnections.forEach(ws => {
-          if (ws.readyState === 1) { // 1 = OPEN in the ws library
-            ws.send(usageMessage);
-          }
-        });
-        
-        log(`Scan usage update sent to user ${userId}: ${metadata.scansUsed}/${metadata.scansLimit}`);
-      }
-    } else {
-      log(`No active WebSocket connections for user ${userId}`);
-    }
-
+    log(`Notification sent and saved with ID ${notification.id}`);
     return notification;
   } catch (error) {
     console.error('Error sending notification:', error);
@@ -1339,46 +1285,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Helper function to update receipt scan usage via WebSocket
-  const updateReceiptScanUsage = async (userId: number, scansUsed: number, scansLimit: number) => {
-    try {
-      // Send a notification about scan usage
-      await sendNotification(userId, 'receipt_scan_usage', `You have used ${scansUsed} out of ${scansLimit} receipt scans.`, undefined, {
-        scansUsed,
-        scansLimit
-      });
-      
-      log(`Updated receipt scan usage for user ${userId}: ${scansUsed}/${scansLimit}`);
-      
-      // Access WebSocket connections
-      const userConnections = connectedClients.get(userId);
-      
-      if (userConnections && userConnections.length > 0) {
-        // Create a specialized message for receipt scan count updates
-        const message = JSON.stringify({
-          type: 'receipt_scan_count_update',
-          userId: userId,
-          scansUsed: scansUsed,
-          scansLimit: scansLimit,
-          scansRemaining: scansLimit - scansUsed,
-          timestamp: new Date().toISOString()
-        });
-        
-        // Send to all open connections
-        let sentCount = 0;
-        userConnections.forEach((ws: WsWebSocket) => {
-          if (ws.readyState === 1) { // 1 = OPEN in the ws library
-            ws.send(message);
-            sentCount++;
-          }
-        });
-        
-        log(`Sent receipt scan count update to ${sentCount}/${userConnections.length} connections for user ${userId}`);
-      }
-    } catch (error) {
-      console.error('Error updating receipt scan usage:', error);
-    }
-  };
+// Helper function to update receipt scan usage via WebSocket
+const updateReceiptScanUsage = async (userId: number, scansUsed: number, scansLimit: number) => {
+  try {
+    // Send a notification about scan usage
+    await sendNotification(userId, 'receipt_scan_usage', `You have used ${scansUsed} out of ${scansLimit} receipt scans.`, undefined, {
+      scansUsed,
+      scansLimit
+    });
+    
+    // Use the specialized handler from the websockets module 
+    // but tell it to skip the database update since we already did that in routes.ts
+    await wsUpdateReceiptScanUsage(
+      userId,
+      scansUsed,
+      scansLimit,
+      getConnectedClients(), // Get the current connected clients map
+      true // Skip database update since we already did that
+    );
+    
+    log(`Updated and broadcast receipt scan usage for user ${userId}: ${scansUsed}/${scansLimit}`);
+  } catch (error) {
+    console.error('Error updating receipt scan usage:', error);
+  }
+};
 
   app.post('/api/receipts/upload', upload.single('receipt'), async (req: MulterRequest, res, next) => {
     try {
@@ -2178,193 +2108,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Create HTTP server for the express app
   const httpServer = createServer(app);
-
-  // Using the existing connectedClients map from line 73
-  // for tracking all client connections
   
-  // Setup WebSocket Server for real-time notifications
-  // We'll use verifyClient to handle session validation
-  const wss = new WebSocketServer({ 
-    noServer: true,  // Don't attach to server, we'll handle upgrade manually
-    // Increase timeout values for more stability
-    clientTracking: true,
-    perMessageDeflate: {
-      zlibDeflateOptions: {
-        chunkSize: 1024,
-        memLevel: 7,
-        level: 3
-      },
-      zlibInflateOptions: {
-        chunkSize: 10 * 1024
-      },
-      concurrencyLimit: 10,
-      threshold: 1024
-    }
-  });
-
-  log('WebSocket server initialized with enhanced stability options');
-
-  wss.on('connection', (ws: WsWebSocket, request: IncomingMessage & { session?: any }) => {
-    log('WebSocket connected for user: ' + request.session?.passport?.user);
-
-    // You can authenticate the WebSocket connection here similar to how Express routes are authenticated
-    if (request.session && request.session.passport && request.session.passport.user) {
-      const userId = parseInt(request.session.passport.user, 10);
-      
-      // Store the userId on the WebSocket
-      (ws as any).userId = userId;
-      
-      // Store connection in our tracking map
-      if (!connectedClients.has(userId)) {
-        connectedClients.set(userId, []);
-      }
-      connectedClients.get(userId)?.push(ws);
-      
-      log(`User ${userId} added to active WebSocket connections. Total connections for user: ${connectedClients.get(userId)?.length}`);
-      
-      // Send a welcome message to verify connection
-      ws.send(JSON.stringify({ 
-        type: 'connected',
-        data: { message: 'WebSocket connection established successfully' }
-      }));
-    }
-
-    // Add a ping/pong mechanism to keep connections alive
-    const pingInterval = setInterval(() => {
-      // ws.OPEN is 1 in the ws library (not WebSocket.OPEN as in browser)
-      if (ws.readyState === 1) {
-        ws.ping();
-      }
-    }, 30000); // Send a ping every 30 seconds
-
-    ws.on('pong', () => {
-      // Ping-pong successful
-    });
-
-    ws.on('close', () => {
-      log('WebSocket closed for user: ' + request.session?.passport?.user);
-      
-      // Clean up on connection close
-      clearInterval(pingInterval);
-      
-      if (request.session?.passport?.user) {
-        const userId = parseInt(request.session.passport.user, 10);
-        const userConnections = connectedClients.get(userId);
-        
-        if (userConnections) {
-          // Remove this specific connection
-          const index = userConnections.indexOf(ws);
-          if (index !== -1) {
-            userConnections.splice(index, 1);
-          }
-          
-          // If no more connections for this user, remove the entry
-          if (userConnections.length === 0) {
-            connectedClients.delete(userId);
-            log(`User ${userId} removed from active WebSocket connections`);
-          } else {
-            log(`User ${userId} now has ${userConnections.length} active WebSocket connections`);
-          }
-        }
-      }
-    });
-    
-    ws.on('error', (error) => {
-      log('WebSocket error: ' + error.message);
-      if (request.session?.passport?.user) {
-        const userId = parseInt(request.session.passport.user, 10);
-        log(`WebSocket error for user ${userId}`);
-      }
-    });
-  });
-  
-  // Function to send notifications through WebSockets
-  const sendWebSocketNotification = (userId: number, type: string, data: any) => {
-    const userConnections = connectedClients.get(userId);
-    
-    if (userConnections && userConnections.length > 0) {
-      const message = JSON.stringify({ type, data });
-      
-      let sentCount = 0;
-      
-      userConnections.forEach((ws: WsWebSocket) => {
-        if (ws.readyState === 1) { // 1 = OPEN in the ws library
-          ws.send(message);
-          sentCount++;
-        }
-      });
-      
-      log(`WebSocket notification sent to ${sentCount}/${userConnections.length} connections for user ${userId}`);
-      return true;
-    }
-    
-    return false;
-  };
-  
-  // Store the function in the app for use in other routes
-  app.locals.sendWebSocketNotification = sendWebSocketNotification;
-
-  // Handle upgrade of WebSocket connections for Express
-  httpServer.on('upgrade', (request: IncomingMessage, socket: Socket, head: Buffer) => {
-    // Only process WebSocket upgrade requests for our specific path
-    if (request.url === '/api/ws') {
-      log(`WebSocket upgrade request received for URL: ${request.url}`);
-      
-      // Parse the cookies from the request
-      const cookies = parse(request.headers.cookie || '');
-      
-      // Get the Express session ID from the cookie
-      const sid = cookies['connect.sid'];
-      
-      if (!sid) {
-        log('WebSocket upgrade rejected: No connect.sid cookie found');
-        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-        socket.destroy();
-        return;
-      }
-
-      // Decode the session ID
-      const sessionId = cookieSignature.unsign(sid.slice(2), SESSION_SECRET || 'keyboard cat');
-      
-      if (!sessionId) {
-        log('WebSocket upgrade rejected: Invalid session signature');
-        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-        socket.destroy();
-        return;
-      }
-
-      // Get the session from the session store
-      storage.sessionStore.get(sessionId, (err, session) => {
-        if (err) {
-          log(`WebSocket upgrade rejected: Session store error: ${err.message}`);
-          socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
-          socket.destroy();
-          return;
-        }
-        
-        if (!session) {
-          log('WebSocket upgrade rejected: Session not found');
-          socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-          socket.destroy();
-          return;
-        }
-
-        // Attach the session to the request
-        (request as any).session = session;
-
-        try {
-          // Use the WebSocketServer to handle the upgrade
-          wss.handleUpgrade(request, socket, head, (ws: WsWebSocket) => {
-            wss.emit('connection', ws, request);
-          });
-        } catch (error) {
-          console.error('Error during WebSocket upgrade:', error);
-          socket.destroy();
-        }
-      });
-    }
-  });
+  // WebSocket server is now fully implemented in websockets/index.ts
+  // Instead of creating and managing WebSockets here, all the functionality has been 
+  // modularized and moved to specialized handlers in the websockets directory.
+  // The implementation in websockets/index.ts contains improved error handling,
+  // connection tracking, and support for multiple device connections per user.
 
   app.locals.sendNotification = sendNotification;
 
