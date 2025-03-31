@@ -6,3 +6,9 @@ vite.config.ts.*
 *.tar.gz
 .idea
 uploads
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
