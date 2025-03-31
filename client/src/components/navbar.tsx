@@ -69,8 +69,26 @@ export function Navbar() {
         ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
+            
             if (data.type === 'notification') {
               queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+            }
+            
+            // Handle receipt scan usage updates
+            if (data.type === 'scan_usage_update') {
+              console.log('Received scan usage update:', data.data);
+              // Invalidate the user data to update the UI with new scan usage count
+              queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+              
+              // If we're on the receipts page, we could show a toast notification
+              const currentPath = window.location.pathname;
+              if (currentPath.includes('/receipts')) {
+                toast({
+                  title: "Receipt Scan Used",
+                  description: `You have ${data.data.scansRemaining} receipt scans remaining.`,
+                  duration: 3000,
+                });
+              }
             }
           } catch (error) {
             console.error('Failed to parse WebSocket message:', error);

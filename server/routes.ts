@@ -1456,6 +1456,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
             
           const scansUsed = user.receiptScansUsed !== null && user.receiptScansUsed !== undefined ? user.receiptScansUsed + 1 : 1;
           console.log(`Incremented receipt scans for user ${user.id} (now: ${scansUsed}/${user.receiptScansLimit})`);
+          
+          // Send WebSocket update about scan usage
+          const ws = clients.get(user.id);
+          if (ws?.readyState === 1) { // WebSocket.OPEN
+            ws.send(JSON.stringify({
+              type: 'scan_usage_update',
+              data: {
+                scansUsed,
+                scansLimit: user.receiptScansLimit,
+                scansRemaining: Math.max(0, user.receiptScansLimit - scansUsed)
+              }
+            }));
+          }
         }
         
         // Send notification about the new receipt
