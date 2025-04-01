@@ -1,4 +1,4 @@
-import { DashboardLayout } from "@/components/dashboard-layout";
+import DashboardLayout from "@/components/dashboard-layout";
 import { ReceiptUpload } from "@/components/receipt-upload";
 
 export function ReceiptUploadPage() {

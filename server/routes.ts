@@ -2203,6 +2203,301 @@ const updateReceiptScanUsage = async (userId: number, scansUsed: number, scansLi
     }
   });
 
+  // Billing API endpoints
+  app.get('/api/billing/subscription', async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      if (!stripe) {
+        return res.status(503).json({ 
+          message: 'Payment service unavailable. Please contact administrator.',
+          stripeDisabled: true
+        });
+      }
+
+      const user = req.user;
+
+      if (!user.stripeCustomerId || !user.stripeSubscriptionId) {
+        return res.json({ 
+          subscription: null,
+          tier: 'free'
+        });
+      }
+
+      try {
+        const subscription = await stripe.subscriptions.retrieve(user.stripeSubscriptionId, {
+          expand: ['default_payment_method', 'items.data.price.product']
+        });
+
+        const subscriptionData = {
+          id: subscription.id,
+          status: subscription.status,
+          currentPeriodStart: new Date(subscription.current_period_start * 1000),
+          currentPeriodEnd: new Date(subscription.current_period_end * 1000),
+          cancelAtPeriodEnd: subscription.cancel_at_period_end,
+          tier: user.subscriptionTier,
+          paymentMethod: subscription.default_payment_method,
+          items: subscription.items.data.map(item => ({
+            id: item.id,
+            price: {
+              id: item.price.id,
+              unitAmount: item.price.unit_amount,
+              currency: item.price.currency,
+              interval: item.price.recurring?.interval,
+              product: {
+                name: (item.price.product as any).name,
+                description: (item.price.product as any).description
+              }
+            }
+          }))
+        };
+
+        res.json({ subscription: subscriptionData });
+      } catch (err) {
+        console.error('Error retrieving subscription:', err);
+        return res.json({ 
+          subscription: null,
+          tier: user.subscriptionTier || 'free',
+          error: 'Could not retrieve subscription details'
+        });
+      }
+    } catch (error: any) {
+      console.error('Subscription retrieval error:', error);
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.get('/api/billing/invoices', async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      if (!stripe) {
+        return res.status(503).json({ 
+          message: 'Payment service unavailable. Please contact administrator.',
+          stripeDisabled: true
+        });
+      }
+
+      const user = req.user;
+
+      if (!user.stripeCustomerId) {
+        return res.json({ invoices: [] });
+      }
+
+      const invoices = await stripe.invoices.list({
+        customer: user.stripeCustomerId,
+        limit: 10,
+        expand: ['data.subscription']
+      });
+
+      const formattedInvoices = invoices.data.map(invoice => ({
+        id: invoice.id,
+        number: invoice.number,
+        amount: invoice.amount_paid,
+        currency: invoice.currency,
+        status: invoice.status,
+        created: new Date(invoice.created * 1000),
+        periodStart: invoice.period_start ? new Date(invoice.period_start * 1000) : null,
+        periodEnd: invoice.period_end ? new Date(invoice.period_end * 1000) : null,
+        pdfUrl: invoice.invoice_pdf,
+        hostedUrl: invoice.hosted_invoice_url,
+        subscriptionId: invoice.subscription
+      }));
+
+      res.json({ invoices: formattedInvoices });
+    } catch (error: any) {
+      console.error('Invoices retrieval error:', error);
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.get('/api/billing/payment-methods', async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      if (!stripe) {
+        return res.status(503).json({ 
+          message: 'Payment service unavailable. Please contact administrator.',
+          stripeDisabled: true
+        });
+      }
+
+      const user = req.user;
+
+      if (!user.stripeCustomerId) {
+        return res.json({ paymentMethods: [] });
+      }
+
+      const paymentMethods = await stripe.paymentMethods.list({
+        customer: user.stripeCustomerId,
+        type: 'card'
+      });
+
+      const formattedPaymentMethods = paymentMethods.data.map(method => ({
+        id: method.id,
+        type: method.type,
+        billingDetails: method.billing_details,
+        card: method.card ? {
+          brand: method.card.brand,
+          last4: method.card.last4,
+          expMonth: method.card.exp_month,
+          expYear: method.card.exp_year
+        } : null
+      }));
+
+      res.json({ paymentMethods: formattedPaymentMethods });
+    } catch (error: any) {
+      console.error('Payment methods retrieval error:', error);
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/billing/cancel-subscription', async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      if (!stripe) {
+        return res.status(503).json({ 
+          message: 'Payment service unavailable. Please contact administrator.',
+          stripeDisabled: true
+        });
+      }
+
+      const user = req.user;
+
+      if (!user.stripeSubscriptionId) {
+        return res.status(400).json({ message: 'No active subscription found' });
+      }
+
+      // Cancel at period end instead of immediately
+      const subscription = await stripe.subscriptions.update(user.stripeSubscriptionId, {
+        cancel_at_period_end: true
+      });
+
+      // Send notification about cancellation
+      await sendNotification(
+        user.id,
+        'subscription_update',
+        'Your subscription has been scheduled to cancel at the end of the billing period.',
+        undefined,
+        { 
+          action: 'cancel_scheduled',
+          periodEnd: new Date(subscription.current_period_end * 1000)
+        }
+      );
+
+      res.json({ 
+        success: true, 
+        cancelAtPeriodEnd: subscription.cancel_at_period_end,
+        currentPeriodEnd: new Date(subscription.current_period_end * 1000)
+      });
+    } catch (error: any) {
+      console.error('Subscription cancellation error:', error);
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/billing/resume-subscription', async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      if (!stripe) {
+        return res.status(503).json({ 
+          message: 'Payment service unavailable. Please contact administrator.',
+          stripeDisabled: true
+        });
+      }
+
+      const user = req.user;
+
+      if (!user.stripeSubscriptionId) {
+        return res.status(400).json({ message: 'No active subscription found' });
+      }
+
+      // Resume subscription by setting cancel_at_period_end to false
+      const subscription = await stripe.subscriptions.update(user.stripeSubscriptionId, {
+        cancel_at_period_end: false
+      });
+
+      // Send notification about resumed subscription
+      await sendNotification(
+        user.id,
+        'subscription_update',
+        'Your subscription has been resumed and will renew automatically.',
+        undefined,
+        { action: 'resume' }
+      );
+
+      res.json({ 
+        success: true, 
+        cancelAtPeriodEnd: subscription.cancel_at_period_end
+      });
+    } catch (error: any) {
+      console.error('Subscription resume error:', error);
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/billing/update-payment-method', async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      if (!stripe) {
+        return res.status(503).json({ 
+          message: 'Payment service unavailable. Please contact administrator.',
+          stripeDisabled: true
+        });
+      }
+
+      const { paymentMethodId } = req.body;
+      if (!paymentMethodId) {
+        return res.status(400).json({ message: 'Payment method ID is required' });
+      }
+
+      const user = req.user;
+
+      if (!user.stripeCustomerId) {
+        return res.status(400).json({ message: 'No customer profile found' });
+      }
+
+      // Attach the payment method to the customer
+      await stripe.paymentMethods.attach(paymentMethodId, {
+        customer: user.stripeCustomerId,
+      });
+
+      // Set as default payment method
+      await stripe.customers.update(user.stripeCustomerId, {
+        invoice_settings: {
+          default_payment_method: paymentMethodId,
+        },
+      });
+
+      // If there's an active subscription, update that too
+      if (user.stripeSubscriptionId) {
+        await stripe.subscriptions.update(user.stripeSubscriptionId, {
+          default_payment_method: paymentMethodId,
+        });
+      }
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('Payment method update error:', error);
+      res.status(400).json({ message: error.message });
+    }
+  });
+
   // Create HTTP server for the express app
   const httpServer = createServer(app);
   
