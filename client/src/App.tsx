@@ -15,6 +15,7 @@ import SettingsPage from "@/pages/settings-page";
 import UsersPage from "@/pages/users-page";
 import SubscribePage from "@/pages/subscribe-page";
 import CheckoutPage from "@/pages/checkout-page";
+import BillingPage from "@/pages/billing-page";
 // Import food tracking pages
 import InventoryPage from "@/pages/inventory-page";
 import LocationsPage from "@/pages/locations-page";
@@ -40,6 +41,7 @@ function Router() {
       <ProtectedRoute path="/users" component={UsersPage} />
       <ProtectedRoute path="/subscribe" component={SubscribePage} />
       <ProtectedRoute path="/checkout" component={CheckoutPage} />
+      <ProtectedRoute path="/billing" component={BillingPage} />
       {/* Food inventory routes */}
       <ProtectedRoute path="/inventory" component={InventoryPage} />
       <ProtectedRoute path="/locations" component={LocationsPage} />

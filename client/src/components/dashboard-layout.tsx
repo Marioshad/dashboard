@@ -19,6 +19,7 @@ import {
   Menu,
   X,
   Tag,
+  CreditCard,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import {
@@ -159,6 +160,17 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               )}>
                 <Shield className="nav-link-icon" />
                 Subscription
+              </div>
+            </Link>
+            
+            {/* Billing Section */}
+            <Link href="/billing">
+              <div className={cn(
+                "nav-link",
+                location === "/billing" && "active"
+              )}>
+                <CreditCard className="nav-link-icon" />
+                Billing
               </div>
             </Link>
 
@@ -373,3 +385,5 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
+
+export default DashboardLayout;
