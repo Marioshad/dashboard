@@ -9,7 +9,7 @@ let stripeAvailable = false;
 try {
   if (process.env.STRIPE_SECRET_KEY) {
     stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-      apiVersion: '2025-02-24.acacia',
+      apiVersion: '2025-03-31.basil',
     });
     stripeAvailable = true;
     log('Stripe initialized successfully', 'stripe');
