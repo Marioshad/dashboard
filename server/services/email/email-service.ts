@@ -149,6 +149,121 @@ export async function sendSubscriptionEmail(
 }
 
 /**
+ * Send an invoice notification email
+ * @param to Recipient email
+ * @param invoiceDetails Invoice details
+ * @returns True if email was sent successfully, false otherwise
+ */
+export async function sendInvoiceEmail(
+  to: string,
+  invoiceDetails: {
+    invoiceNumber: string;
+    invoiceDate: Date;
+    amount: number;
+    currency: string;
+    status: string;
+    tierName: string;
+    invoiceUrl?: string;
+    pdfUrl?: string;
+  }
+): Promise<boolean> {
+  if (!sendgridAvailable) {
+    return false;
+  }
+
+  const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'noreply@foodvault.com';
+  const subject = invoiceDetails.status === 'paid' 
+    ? 'Payment Receipt - FoodVault' 
+    : 'Invoice from FoodVault';
+  
+  const formattedAmount = formatCurrency(invoiceDetails.amount, invoiceDetails.currency);
+  const dateStr = new Date(invoiceDetails.invoiceDate).toLocaleDateString('en-US', { 
+    year: 'numeric', 
+    month: 'long', 
+    day: 'numeric' 
+  });
+
+  // Status specific content
+  const statusSpecificContent = invoiceDetails.status === 'paid'
+    ? `
+      <div style="background-color: #e6f7e6; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #4CAF50;">
+        <h3 style="margin-top: 0; color: #2e7d32;">Payment Successful</h3>
+        <p>Your payment has been processed successfully. Thank you for your continued subscription.</p>
+      </div>
+    `
+    : `
+      <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #3f51b5;">
+        <h3 style="margin-top: 0; color: #3f51b5;">Invoice Created</h3>
+        <p>Your invoice has been created and is ready for payment.</p>
+      </div>
+    `;
+
+  // Button link text and URL
+  const buttonText = invoiceDetails.status === 'paid' ? 'View Receipt' : 'View Invoice';
+  const buttonUrl = invoiceDetails.status === 'paid' 
+    ? (invoiceDetails.pdfUrl || invoiceDetails.invoiceUrl || '#') 
+    : (invoiceDetails.invoiceUrl || '#');
+
+  // Email template
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 5px;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h1 style="color: #333; margin-bottom: 5px;">${subject}</h1>
+        <p style="color: #666; margin-top: 0;">Invoice #${invoiceDetails.invoiceNumber}</p>
+      </div>
+
+      ${statusSpecificContent}
+      
+      <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;">
+        <h3 style="margin-top: 0; color: #333;">Invoice Details</h3>
+        <table style="width: 100%; border-collapse: collapse;">
+          <tr>
+            <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Invoice Number:</strong></td>
+            <td style="padding: 8px 0; border-bottom: 1px solid #eee; text-align: right;">${invoiceDetails.invoiceNumber}</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Date:</strong></td>
+            <td style="padding: 8px 0; border-bottom: 1px solid #eee; text-align: right;">${dateStr}</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Plan:</strong></td>
+            <td style="padding: 8px 0; border-bottom: 1px solid #eee; text-align: right;">${invoiceDetails.tierName}</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Status:</strong></td>
+            <td style="padding: 8px 0; border-bottom: 1px solid #eee; text-align: right; ${invoiceDetails.status === 'paid' ? 'color: #4CAF50;' : ''}">${invoiceDetails.status === 'paid' ? 'Paid' : 'Open'}</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 0;"><strong>Amount:</strong></td>
+            <td style="padding: 8px 0; text-align: right; font-size: 18px; font-weight: bold;">${formattedAmount}</td>
+          </tr>
+        </table>
+      </div>
+      
+      <div style="margin: 25px 0; text-align: center;">
+        <a href="${buttonUrl}" 
+           style="background-color: #4361ee; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+          ${buttonText}
+        </a>
+      </div>
+      
+      <p>If you have any questions about this invoice, please contact our support team.</p>
+      
+      <p style="margin-top: 30px; font-size: 12px; color: #777; border-top: 1px solid #eee; padding-top: 15px;">
+        This email was sent from FoodVault, a food inventory management system.
+      </p>
+    </div>
+  `;
+
+  return sendEmail({
+    to,
+    from: fromEmail,
+    subject,
+    html,
+  });
+}
+
+/**
  * Send a receipt scan notification email
  * @param to Recipient email
  * @param receiptDetails Receipt details
