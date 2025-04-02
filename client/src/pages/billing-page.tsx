@@ -159,9 +159,13 @@ export default function BillingPage() {
   return (
     <DashboardLayout>
       <div className="space-y-8">
-        <div className="flex justify-between items-center">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <h1 className="text-3xl font-bold tracking-tight">Billing & Subscription</h1>
           <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2">
+              {tierIcon}
+              <span className="font-medium mr-2">{currentTier.name}</span>
+            </div>
             {getStatusBadge()}
           </div>
         </div>
