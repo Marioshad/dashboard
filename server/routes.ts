@@ -595,20 +595,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/subscription/prices', async (req, res) => {
     try {
-      // Check if Stripe is configured
-      if (!stripe || !process.env.STRIPE_PRICE_ID) {
-        console.log('Stripe service not available or misconfigured. Returning subscription tiers from schema.');
+      // Function to get database settings
+      async function getDbSettings() {
+        try {
+          const client = await pool.connect();
+          try {
+            // Get settings from the database
+            const result = await client.query(`
+              SELECT 
+                stripe_smart_product_id,
+                stripe_pro_product_id,
+                stripe_smart_monthly_price_id,
+                stripe_smart_yearly_price_id,
+                stripe_pro_monthly_price_id,
+                stripe_pro_yearly_price_id
+              FROM app_settings 
+              WHERE id = 1
+            `);
+            
+            return result.rows[0] || {};
+          } finally {
+            client.release();
+          }
+        } catch (dbError) {
+          console.error('Error fetching Stripe settings from database:', dbError);
+          return {};
+        }
+      }
+      
+      // Function to create a set of manual prices using DB settings if available
+      async function createManualPrices() {
+        const dbSettings = await getDbSettings();
         
-        // Return manually constructed prices based on our schema when Stripe is unavailable
-        // This ensures the frontend still works without Stripe configuration
-        const manualPrices = [
+        return [
           {
-            id: 'price_smart_monthly',
+            id: dbSettings.stripe_smart_monthly_price_id || 'price_smart_monthly',
             unit_amount: 999, // $9.99
             recurring: {
               interval: 'month'
             },
             product: {
+              id: dbSettings.stripe_smart_product_id || 'prod_smart',
               name: 'Smart Pantry Monthly',
               description: 'Smart Pantry subscription billed monthly',
               metadata: {
@@ -617,12 +644,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           },
           {
-            id: 'price_smart_yearly',
+            id: dbSettings.stripe_smart_yearly_price_id || 'price_smart_yearly',
             unit_amount: 9999, // $99.99
             recurring: {
               interval: 'year'
             },
             product: {
+              id: dbSettings.stripe_smart_product_id || 'prod_smart',
               name: 'Smart Pantry Yearly',
               description: 'Smart Pantry subscription billed yearly',
               metadata: {
@@ -631,12 +659,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           },
           {
-            id: 'price_pro_monthly',
+            id: dbSettings.stripe_pro_monthly_price_id || 'price_pro_monthly',
             unit_amount: 1999, // $19.99
             recurring: {
               interval: 'month'
             },
             product: {
+              id: dbSettings.stripe_pro_product_id || 'prod_pro',
               name: 'Family Pantry Pro Monthly',
               description: 'Family Pantry Pro subscription billed monthly',
               metadata: {
@@ -645,12 +674,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           },
           {
-            id: 'price_pro_yearly',
+            id: dbSettings.stripe_pro_yearly_price_id || 'price_pro_yearly',
             unit_amount: 19999, // $199.99
             recurring: {
               interval: 'year'
             },
             product: {
+              id: dbSettings.stripe_pro_product_id || 'prod_pro',
               name: 'Family Pantry Pro Yearly',
               description: 'Family Pantry Pro subscription billed yearly',
               metadata: {
@@ -659,82 +689,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           }
         ];
+      }
+      
+      // Check if Stripe is configured
+      if (!stripe) {
+        console.log('Stripe service not available. Returning subscription tiers from database settings and schema.');
         
+        // Return manually constructed prices with database settings if available
+        const manualPrices = await createManualPrices();
         return res.json(manualPrices);
       }
 
       // If Stripe is configured, fetch real prices
       try {
-        const prices = await stripe.prices.list({
-          product: process.env.STRIPE_PRICE_ID,
+        // Get settings from database
+        const dbSettings = await getDbSettings();
+        
+        // Get product IDs from database or fallback to environment variables
+        const smartProductId = dbSettings.stripe_smart_product_id || process.env.STRIPE_PRODUCT_SMART;
+        const proProductId = dbSettings.stripe_pro_product_id || process.env.STRIPE_PRODUCT_PRO;
+        
+        // Get all active prices
+        const { data: prices } = await stripe.prices.list({
           active: true,
           expand: ['data.product'],
+          limit: 100,
         });
         
-        res.json(prices.data);
+        // Filter prices for our subscription products based on product IDs or metadata
+        const subscriptionPrices = prices.filter(price => {
+          const product = price.product as Stripe.Product;
+          
+          // Check if product ID matches one of our product IDs from database/env
+          if (smartProductId && product.id === smartProductId) {
+            // Set metadata tier to 'smart' if not already set
+            if (!product.metadata?.tier) {
+              (product.metadata = product.metadata || {}).tier = 'smart';
+            }
+            return true;
+          }
+          
+          if (proProductId && product.id === proProductId) {
+            // Set metadata tier to 'pro' if not already set
+            if (!product.metadata?.tier) {
+              (product.metadata = product.metadata || {}).tier = 'pro';
+            }
+            return true;
+          }
+          
+          // Fallback to metadata tier check
+          return product.metadata?.tier === 'smart' || product.metadata?.tier === 'pro';
+        });
+        
+        if (subscriptionPrices.length > 0) {
+          return res.json(subscriptionPrices);
+        }
+        
+        // If no prices found, fall back to manually constructed prices
+        const manualPrices = await createManualPrices();
+        return res.json(manualPrices);
       } catch (stripeError: any) {
         console.error('Error fetching prices from Stripe:', stripeError);
         
-        // If Stripe API call fails, return the same manual prices as above
-        const manualPrices = [
-          {
-            id: 'price_smart_monthly',
-            unit_amount: 999, // $9.99
-            recurring: {
-              interval: 'month'
-            },
-            product: {
-              name: 'Smart Pantry Monthly',
-              description: 'Smart Pantry subscription billed monthly',
-              metadata: {
-                tier: 'smart'
-              }
-            }
-          },
-          {
-            id: 'price_smart_yearly',
-            unit_amount: 9999, // $99.99
-            recurring: {
-              interval: 'year'
-            },
-            product: {
-              name: 'Smart Pantry Yearly',
-              description: 'Smart Pantry subscription billed yearly',
-              metadata: {
-                tier: 'smart'
-              }
-            }
-          },
-          {
-            id: 'price_pro_monthly',
-            unit_amount: 1999, // $19.99
-            recurring: {
-              interval: 'month'
-            },
-            product: {
-              name: 'Family Pantry Pro Monthly',
-              description: 'Family Pantry Pro subscription billed monthly',
-              metadata: {
-                tier: 'pro'
-              }
-            }
-          },
-          {
-            id: 'price_pro_yearly',
-            unit_amount: 19999, // $199.99
-            recurring: {
-              interval: 'year'
-            },
-            product: {
-              name: 'Family Pantry Pro Yearly',
-              description: 'Family Pantry Pro subscription billed yearly',
-              metadata: {
-                tier: 'pro'
-              }
-            }
-          }
-        ];
-        
+        // If Stripe API call fails, return manually constructed prices with database settings
+        const manualPrices = await createManualPrices();
         return res.json(manualPrices);
       }
     } catch (error: any) {
@@ -834,8 +852,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     }
     
-    if (!process.env.STRIPE_WEBHOOK_SECRET) {
-      console.error('Missing Stripe webhook secret');
+    // Get webhook secret from database settings if available
+    let webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    
+    try {
+      const client = await pool.connect();
+      try {
+        // Get settings from the database
+        const result = await client.query(`
+          SELECT stripe_webhook_secret
+          FROM app_settings 
+          WHERE id = 1
+        `);
+        
+        const dbSettings = result.rows[0] || {};
+        if (dbSettings.stripe_webhook_secret) {
+          webhookSecret = dbSettings.stripe_webhook_secret;
+        }
+      } finally {
+        client.release();
+      }
+    } catch (dbError) {
+      console.error('Error fetching Stripe webhook secret from database:', dbError);
+    }
+    
+    if (!webhookSecret) {
+      console.error('Missing Stripe webhook secret - not found in environment or database');
       return res.status(500).json({ message: 'Payment webhook misconfigured' });
     }
 
@@ -846,7 +888,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       event = stripe!.webhooks.constructEvent(
         req.body,
         sig as string,
-        process.env.STRIPE_WEBHOOK_SECRET
+        webhookSecret
       );
     } catch (err: any) {
       console.error('Webhook error:', err.message);

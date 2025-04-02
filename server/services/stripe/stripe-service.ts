@@ -1,6 +1,7 @@
 import Stripe from 'stripe';
 import { User } from '@shared/schema';
 import { log } from '../../vite';
+import { pool } from '../../db';
 
 // Initialize Stripe client
 let stripe: Stripe | null = null;
@@ -20,17 +21,61 @@ try {
   log(`Error initializing Stripe: ${error}`, 'stripe');
 }
 
-// Tier price mapping
-const TIER_PRICE_MAP: Record<string, { monthly: string; yearly: string }> = {
-  'smart_pantry': {
-    monthly: process.env.STRIPE_SMART_PANTRY_MONTHLY_PRICE_ID || '',
-    yearly: process.env.STRIPE_SMART_PANTRY_YEARLY_PRICE_ID || '',
-  },
-  'family_pantry_pro': {
-    monthly: process.env.STRIPE_FAMILY_PANTRY_PRO_MONTHLY_PRICE_ID || '',
-    yearly: process.env.STRIPE_FAMILY_PANTRY_PRO_YEARLY_PRICE_ID || '',
+// Get the price IDs from app_settings table
+async function getStripePriceIds(): Promise<Record<string, { monthly: string; yearly: string }>> {
+  try {
+    const client = await pool.connect();
+    try {
+      // Ensure we have a settings record
+      await client.query(`
+        INSERT INTO app_settings (id, require_2fa, updated_at)
+        SELECT 1, false, NOW()
+        WHERE NOT EXISTS (SELECT 1 FROM app_settings WHERE id = 1)
+      `);
+      
+      // Get the settings from the database
+      const result = await client.query(`
+        SELECT 
+          stripe_smart_product_id,
+          stripe_pro_product_id,
+          stripe_smart_monthly_price_id,
+          stripe_smart_yearly_price_id,
+          stripe_pro_monthly_price_id,
+          stripe_pro_yearly_price_id
+        FROM app_settings 
+        WHERE id = 1
+      `);
+      
+      const dbSettings = result.rows[0] || {};
+      
+      return {
+        'smart': {
+          monthly: dbSettings.stripe_smart_monthly_price_id || process.env.STRIPE_PRICE_SMART_MONTHLY || '',
+          yearly: dbSettings.stripe_smart_yearly_price_id || process.env.STRIPE_PRICE_SMART_YEARLY || '',
+        },
+        'pro': {
+          monthly: dbSettings.stripe_pro_monthly_price_id || process.env.STRIPE_PRICE_PRO_MONTHLY || '',
+          yearly: dbSettings.stripe_pro_yearly_price_id || process.env.STRIPE_PRICE_PRO_YEARLY || '',
+        }
+      };
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error('Error fetching Stripe settings:', error);
+    // Fallback to environment variables if database query fails
+    return {
+      'smart': {
+        monthly: process.env.STRIPE_PRICE_SMART_MONTHLY || '',
+        yearly: process.env.STRIPE_PRICE_SMART_YEARLY || '',
+      },
+      'pro': {
+        monthly: process.env.STRIPE_PRICE_PRO_MONTHLY || '',
+        yearly: process.env.STRIPE_PRICE_PRO_YEARLY || '',
+      }
+    };
   }
-};
+}
 
 /**
  * Check if Stripe service is available
@@ -83,7 +128,17 @@ export async function createSubscription(
     throw new Error('Stripe service is not available');
   }
 
-  const priceId = TIER_PRICE_MAP[tierId]?.[interval];
+  // Get up-to-date price IDs from the database
+  const priceMaps = await getStripePriceIds();
+  
+  // Map tierId to our database key format
+  const tierKey = tierId === 'smart_pantry' ? 'smart' : tierId === 'family_pantry_pro' ? 'pro' : '';
+  
+  if (!tierKey) {
+    throw new Error(`Invalid tier ID: ${tierId}`);
+  }
+  
+  const priceId = priceMaps[tierKey]?.[interval];
   if (!priceId) {
     throw new Error(`No price ID found for tier ${tierId} with interval ${interval}`);
   }
