@@ -19,7 +19,12 @@ export default function SubscribePage() {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const { formatPrice, currencySymbol } = useCurrency();
-  const { getPriceForTierAndInterval, isPricesLoading, isStripeDisabled } = useSubscriptionPricing();
+  const { 
+    getPriceForTierAndInterval, 
+    isPricesLoading, 
+    isStripeDisabled,
+    maxDiscountPercentage 
+  } = useSubscriptionPricing();
 
   const handleSubscribe = async (priceId: string) => {
     if (user?.subscriptionStatus === 'active') {
@@ -250,7 +255,7 @@ export default function SubscribePage() {
                   <TabsTrigger value="monthly">Monthly</TabsTrigger>
                   <TabsTrigger value="yearly">
                     Yearly
-                    <Badge variant="outline" className="ml-2 bg-primary/10">Save up to 18%</Badge>
+                    <Badge variant="outline" className="ml-2 bg-primary/10">Save up to {maxDiscountPercentage}%</Badge>
                   </TabsTrigger>
                 </TabsList>
               </div>
@@ -288,8 +293,17 @@ export default function SubscribePage() {
                               "Free"
                             ) : (
                               <>
-                                {currencySymbol}{tier.price.monthly}
-                                <span className="text-sm font-normal text-muted-foreground">/month</span>
+                                {price ? (
+                                  <>
+                                    {currencySymbol}{(price.unit_amount / 100).toFixed(2)}
+                                    <span className="text-sm font-normal text-muted-foreground">/month</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    {currencySymbol}{tier.price.monthly}
+                                    <span className="text-sm font-normal text-muted-foreground">/month</span>
+                                  </>
+                                )}
                               </>
                             )}
                           </div>
@@ -359,11 +373,34 @@ export default function SubscribePage() {
                               "Free"
                             ) : (
                               <>
-                                {currencySymbol}{tier.price.yearly}
-                                <span className="text-sm font-normal text-muted-foreground">/year</span>
+                                {price ? (
+                                  <>
+                                    {currencySymbol}{(price.unit_amount / 100).toFixed(2)}
+                                    <span className="text-sm font-normal text-muted-foreground">/year</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    {currencySymbol}{tier.price.yearly}
+                                    <span className="text-sm font-normal text-muted-foreground">/year</span>
+                                  </>
+                                )}
                               </>
                             )}
                           </div>
+                          
+                          {!isFree && price?.discount_percentage && (
+                            <div className="flex flex-col gap-1 text-sm">
+                              <div className="inline-flex items-center text-emerald-600 font-medium">
+                                <span className="mr-1">Save {price.discount_percentage}%</span>
+                                <Badge variant="outline" className="bg-emerald-50 text-emerald-600 border-emerald-200">
+                                  {currencySymbol}{(price.total_savings! / 100).toFixed(2)}
+                                </Badge>
+                              </div>
+                              <div className="text-muted-foreground">
+                                Equals {currencySymbol}{(price.monthly_equivalent! / 100).toFixed(2)}/month
+                              </div>
+                            </div>
+                          )}
                           
                           <div className="space-y-2">
                             <h4 className="text-sm font-medium">What's included:</h4>
