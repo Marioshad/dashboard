@@ -39,7 +39,19 @@ export default function StripeSettingsPage() {
     const fetchSettings = async () => {
       setIsLoading(true);
       try {
-        const response = await apiRequest('GET', '/api/admin/stripe-settings', {});
+        // Use fetch directly for more control
+        const response = await fetch('/api/admin/stripe-settings', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          credentials: 'include'
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+        }
+        
         const data = await response.json();
         setSettings(data);
       } catch (error) {
@@ -61,10 +73,20 @@ export default function StripeSettingsPage() {
   const handleSave = async () => {
     setIsLoading(true);
     try {
-      const response = await apiRequest('POST', '/api/admin/stripe-settings', { 
+      // Use fetch directly for more control
+      const response = await fetch('/api/admin/stripe-settings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
         body: JSON.stringify(settings),
-        headers: { 'Content-Type': 'application/json' }
+        credentials: 'include'
       });
+      
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+      }
+      
       const data = await response.json();
       
       if (data.success) {
@@ -99,9 +121,19 @@ export default function StripeSettingsPage() {
     setTestResult(null);
     
     try {
-      const response = await apiRequest('POST', '/api/admin/stripe-test-connection', {
-        headers: { 'Content-Type': 'application/json' }
+      // Use fetch directly for more control
+      const response = await fetch('/api/admin/stripe-test-connection', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include'
       });
+      
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+      }
+      
       const data = await response.json();
       
       if (data.success) {
@@ -155,9 +187,19 @@ export default function StripeSettingsPage() {
     setResetLoading(true);
     
     try {
-      const response = await apiRequest('POST', '/api/admin/reset-all-subscriptions', {
-        headers: { 'Content-Type': 'application/json' }
+      // Use fetch directly for more control
+      const response = await fetch('/api/admin/reset-all-subscriptions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include'
       });
+      
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+      }
+      
       const data = await response.json();
       
       if (data.success) {
