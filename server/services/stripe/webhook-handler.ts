@@ -10,7 +10,7 @@ let stripe: Stripe | null = null;
 try {
   if (process.env.STRIPE_SECRET_KEY) {
     stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-      apiVersion: '2025-02-24.acacia',
+      apiVersion: '2025-03-31.basil',
     });
   }
 } catch (error) {
@@ -212,6 +212,7 @@ async function handlePaymentSucceeded(
     }
     
     // Find the invoice associated with this payment
+    // @ts-ignore - payment_intent is not in the TypeScript definitions but is supported by the API
     const { data: invoices } = await stripe.invoices.list({
       payment_intent: paymentIntent.id,
     });
@@ -308,6 +309,7 @@ async function handlePaymentFailed(
     }
     
     // Find the invoice associated with this payment
+    // @ts-ignore - payment_intent is not in the TypeScript definitions but is supported by the API
     const { data: invoices } = await stripe.invoices.list({
       payment_intent: paymentIntent.id,
     });
