@@ -2619,6 +2619,56 @@ const updateReceiptScanUsage = async (userId: number, scansUsed: number, scansLi
       res.status(400).json({ message: error.message });
     }
   });
+  
+  // Reset user's Stripe subscription data (for recovery from issues)
+  app.post('/api/billing/reset-subscription', async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      // Get the user
+      const user = req.user;
+      
+      // Reset Stripe-related fields in the user record
+      const updatedUser = await storage.updateUserSubscription(user.id, {
+        stripeSubscriptionId: undefined, // Use undefined instead of null
+        subscriptionStatus: 'inactive',
+        subscriptionTier: 'free',
+        currentBillingPeriodStart: null,
+        currentBillingPeriodEnd: null
+      });
+      
+      // Also clear the customer ID if requested
+      if (req.body.resetCustomerId) {
+        await storage.updateStripeCustomerId(user.id, ''); // Use empty string instead of null
+      }
+      
+      // Log the action
+      console.log(`Reset Stripe subscription data for user ${user.id}`);
+      
+      // Send notification about the reset
+      await sendNotification(
+        user.id,
+        'subscription_updated',
+        'Your subscription data has been reset. You can now resubscribe.',
+        undefined,
+        { status: 'reset' }
+      );
+      
+      res.json({ 
+        success: true, 
+        message: 'Stripe subscription data reset successfully',
+        user: updatedUser 
+      });
+    } catch (error: any) {
+      console.error('Error resetting Stripe subscription data:', error);
+      res.status(500).json({ 
+        message: 'Failed to reset subscription data', 
+        error: error.message 
+      });
+    }
+  });
 
   // Register billing routes
   registerBillingRoutes(app, sendNotification);
