@@ -68,7 +68,17 @@ export default function SubscribePage() {
       }
 
       // Redirect to checkout page with subscription data
-      setLocation(`/checkout?secret=${data.clientSecret}`);
+      // Extract the tier ID from the price ID (e.g., price_1234_smart_monthly -> smart)
+      const parts = priceId.split('_');
+      const tierId = parts.length >= 3 ? parts[2] : undefined;
+      
+      if (tierId) {
+        // If we have a tier ID, include it in the URL path
+        setLocation(`/checkout/${tierId}?secret=${data.clientSecret}`);
+      } else {
+        // Otherwise use the query parameter approach
+        setLocation(`/checkout?secret=${data.clientSecret}`);
+      }
     } catch (error: any) {
       toast({
         title: "Error",
