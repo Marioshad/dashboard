@@ -23,6 +23,7 @@ import { parse } from 'cookie';
 import cookieSignature from 'cookie-signature';
 import { log } from './vite';
 import { registerBillingRoutes } from './services/stripe/billing-routes';
+import { registerAdminRoutes } from './services/admin/admin-routes';
 
 const SESSION_SECRET = process.env.SESSION_SECRET || 'keyboard cat';
 
@@ -2672,6 +2673,7 @@ const updateReceiptScanUsage = async (userId: number, scansUsed: number, scansLi
 
   // Register billing routes
   registerBillingRoutes(app, sendNotification);
+  registerAdminRoutes(app);
 
   // Create HTTP server for the express app
   const httpServer = createServer(app);
