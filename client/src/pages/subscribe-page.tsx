@@ -6,27 +6,12 @@ import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useCurrency } from "@/hooks/use-currency";
 import { SUBSCRIPTION_TIERS } from "@shared/schema";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-
-interface Price {
-  id: string;
-  unit_amount: number;
-  recurring: {
-    interval: string;
-  };
-  product: {
-    name: string;
-    description: string;
-    metadata?: {
-      tier?: string;
-    };
-  };
-}
+import { useSubscriptionPricing } from "@/hooks/use-subscription-pricing";
 
 export default function SubscribePage() {
   const { user } = useAuth();
@@ -34,10 +19,7 @@ export default function SubscribePage() {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const { formatPrice, currencySymbol } = useCurrency();
-
-  const { data: prices, isLoading: isPricesLoading, error: pricesError } = useQuery<Price[]>({
-    queryKey: ["/api/subscription/prices"],
-  });
+  const { getPriceForTierAndInterval, isPricesLoading, isStripeDisabled } = useSubscriptionPricing();
 
   const handleSubscribe = async (priceId: string) => {
     if (user?.subscriptionStatus === 'active') {
@@ -152,32 +134,23 @@ export default function SubscribePage() {
     );
   }
 
-  if (pricesError) {
-    const error = pricesError as any;
-    const isPaymentDisabled = error?.stripeDisabled;
-
+  if (isStripeDisabled) {
     return (
       <DashboardLayout>
         <div className="space-y-8">
           <h1 className="text-3xl font-bold tracking-tight">Subscription Plans</h1>
           <Card>
             <CardHeader>
-              <CardTitle>
-                {isPaymentDisabled ? "Payment System Disabled" : "Error Loading Plans"}
-              </CardTitle>
+              <CardTitle>Payment System Disabled</CardTitle>
               <CardDescription>
-                {isPaymentDisabled 
-                  ? "Our subscription system is currently unavailable. Please contact the administrator for assistance."
-                  : "We encountered an error loading the subscription plans. Please try again later."}
+                Our subscription system is currently unavailable. Please contact the administrator for assistance.
               </CardDescription>
             </CardHeader>
-            {isPaymentDisabled && (
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  Administrator: Please set STRIPE_SECRET_KEY and VITE_STRIPE_PUBLIC_KEY environment variables to enable the payment system.
-                </p>
-              </CardContent>
-            )}
+            <CardContent>
+              <p className="text-sm text-muted-foreground">
+                Administrator: Please set STRIPE_SECRET_KEY and VITE_STRIPE_PUBLIC_KEY environment variables to enable the payment system.
+              </p>
+            </CardContent>
           </Card>
           
           {/* Show plan information even if Stripe is disabled */}
@@ -225,14 +198,6 @@ export default function SubscribePage() {
       </DashboardLayout>
     );
   }
-
-  // Get price map by tier and interval
-  const getPriceForTierAndInterval = (tierId: string, interval: 'monthly' | 'yearly') => {
-    return prices?.find(p => 
-      p.product.metadata?.tier === tierId && 
-      p.recurring.interval === (interval === 'monthly' ? 'month' : 'year')
-    );
-  };
 
   const renderTierIcon = (tier: typeof SUBSCRIPTION_TIERS[number]) => {
     switch(tier.id) {
@@ -345,14 +310,14 @@ export default function SubscribePage() {
                           <Button 
                             className={`w-full ${isFree ? 'bg-muted hover:bg-muted/80 text-foreground' : ''}`}
                             onClick={() => price && handleSubscribe(price.id)}
-                            disabled={loading !== undefined || !price || (isFree && user?.subscriptionTier === 'free')}
+                            disabled={loading !== undefined || (isFree && user?.subscriptionTier === 'free')}
                             variant={isFree ? "outline" : "default"}
                           >
                             {loading === price?.id 
                               ? "Processing..." 
                               : isFree 
                                 ? user?.subscriptionTier === 'free' ? "Current Plan" : "Downgrade" 
-                                : "Subscribe"}
+                                : price ? "Subscribe" : "Loading Plan..."}
                           </Button>
                         </CardFooter>
                       </Card>
@@ -366,9 +331,6 @@ export default function SubscribePage() {
                   {SUBSCRIPTION_TIERS.map((tier) => {
                     const price = getPriceForTierAndInterval(tier.id, 'yearly');
                     const isFree = tier.id === 'free';
-                    const savings = tier.id !== 'free' 
-                      ? Math.round(100 - (tier.price.yearly / (tier.price.monthly * 12)) * 100) 
-                      : 0;
                     
                     return (
                       <Card 
@@ -380,13 +342,6 @@ export default function SubscribePage() {
                         {tier.id === 'smart' && (
                           <div className="absolute -top-3 left-0 right-0 flex justify-center">
                             <Badge className="bg-primary hover:bg-primary">Popular</Badge>
-                          </div>
-                        )}
-                        {!isFree && (
-                          <div className="absolute -top-3 right-4 flex justify-center">
-                            <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200">
-                              Save {savings}%
-                            </Badge>
                           </div>
                         )}
                         <CardHeader>
@@ -410,12 +365,6 @@ export default function SubscribePage() {
                             )}
                           </div>
                           
-                          {!isFree && (
-                            <div className="text-sm text-muted-foreground">
-                              {currencySymbol}{(tier.price.yearly / 12).toFixed(2)} per month, billed annually
-                            </div>
-                          )}
-                          
                           <div className="space-y-2">
                             <h4 className="text-sm font-medium">What's included:</h4>
                             <ul className="space-y-2 text-sm">
@@ -429,17 +378,17 @@ export default function SubscribePage() {
                           </div>
                         </CardContent>
                         <CardFooter>
-                          <Button 
+                          <Button
                             className={`w-full ${isFree ? 'bg-muted hover:bg-muted/80 text-foreground' : ''}`}
                             onClick={() => price && handleSubscribe(price.id)}
-                            disabled={loading !== undefined || !price || (isFree && user?.subscriptionTier === 'free')}
+                            disabled={loading !== undefined || (isFree && user?.subscriptionTier === 'free')}
                             variant={isFree ? "outline" : "default"}
                           >
                             {loading === price?.id 
                               ? "Processing..." 
                               : isFree 
                                 ? user?.subscriptionTier === 'free' ? "Current Plan" : "Downgrade" 
-                                : "Subscribe"}
+                                : price ? "Subscribe" : "Loading Plan..."}
                           </Button>
                         </CardFooter>
                       </Card>

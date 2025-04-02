@@ -44,9 +44,12 @@ export default function CheckoutPage() {
       
       try {
         // Create the subscription to get the client secret
-        const response = await apiRequest('POST', '/api/billing/create-subscription', { 
-          tierId,
-          interval: 'monthly' // We could make this configurable later
+        const response = await apiRequest('/api/billing/create-subscription', { 
+          method: 'POST',
+          body: JSON.stringify({ 
+            tierId,
+            interval: 'monthly' // We could make this configurable later
+          })
         });
         
         const data = await response.json();
@@ -77,10 +80,10 @@ export default function CheckoutPage() {
   }, [tierId, toast, setLocation]);
   
   // Stripe Elements options
-  const options = {
+  const options = clientSecret ? {
     clientSecret,
     appearance: {
-      theme: 'stripe',
+      theme: 'stripe' as const,
       variables: {
         colorPrimary: '#4f46e5',
         colorBackground: '#ffffff',
@@ -90,7 +93,7 @@ export default function CheckoutPage() {
         borderRadius: '8px',
       },
     },
-  };
+  } : {};
   
   return (
     <DashboardLayout>
@@ -119,7 +122,7 @@ export default function CheckoutPage() {
           <Elements stripe={stripePromise} options={options}>
             <CheckoutForm 
               clientSecret={clientSecret} 
-              tierId={tierId} 
+              tierId={tierId || ""} 
               returnUrl="/billing"
             />
           </Elements>
