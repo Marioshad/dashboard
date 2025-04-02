@@ -2,7 +2,7 @@ import Stripe from 'stripe';
 import { storage } from '../../storage';
 import { SendNotificationFn } from '../../routes';
 import { log } from '../../vite';
-import { sendSubscriptionEmail } from '../email/email-service';
+import { sendSubscriptionEmail, sendInvoiceEmail } from '../email/email-service';
 
 // Initialize Stripe client
 let stripe: Stripe | null = null;
@@ -400,6 +400,157 @@ async function handleTrialWillEnd(
 }
 
 /**
+ * Handle invoice finalization
+ * @param invoice Stripe invoice
+ * @param sendNotification Function to send notifications
+ */
+async function handleInvoiceFinalized(
+  invoice: Stripe.Invoice,
+  sendNotification: SendNotificationFn
+): Promise<void> {
+  try {
+    if (!stripe) {
+      log('Stripe not initialized in webhook handler', 'stripe-webhook');
+      return;
+    }
+    
+    const customerId = invoice.customer as string;
+    
+    // Get user from database by Stripe customer ID
+    const user = await storage.getUserByStripeCustomerId(customerId);
+    if (!user) {
+      log(`No user found with Stripe customer ID: ${customerId}`, 'stripe-webhook');
+      return;
+    }
+    
+    // Get formatted invoice details for notification
+    const amount = invoice.amount_due / 100;
+    const currency = invoice.currency;
+    const invoiceNumber = invoice.number || invoice.id;
+    const invoiceUrl = invoice.hosted_invoice_url;
+    
+    // Send notification to user
+    await sendNotification(
+      user.id,
+      'invoice_created',
+      `Your invoice #${invoiceNumber} for ${amount.toFixed(2)} ${currency.toUpperCase()} has been created.`,
+      undefined,
+      { 
+        invoiceId: invoice.id,
+        invoiceNumber,
+        amount,
+        currency,
+        invoiceUrl,
+        status: invoice.status
+      }
+    );
+    
+    // Send invoice email if user has an email
+    if (user.email && invoiceUrl) {
+      const tierName = user.subscriptionTier === 'smart_pantry' 
+        ? 'Smart Pantry' 
+        : user.subscriptionTier === 'family_pantry_pro' 
+          ? 'Family Pantry Pro' 
+          : 'Free';
+      
+      await sendInvoiceEmail(
+        user.email,
+        {
+          invoiceNumber,
+          invoiceDate: new Date(invoice.created * 1000),
+          amount,
+          currency,
+          status: invoice.status || 'open',
+          tierName,
+          invoiceUrl
+        }
+      );
+    }
+    
+    log(`Invoice finalized for user ${user.id}`, 'stripe-webhook');
+  } catch (error) {
+    log(`Error handling invoice finalized: ${error}`, 'stripe-webhook');
+  }
+}
+
+/**
+ * Handle invoice paid
+ * @param invoice Stripe invoice
+ * @param sendNotification Function to send notifications
+ */
+async function handleInvoicePaid(
+  invoice: Stripe.Invoice,
+  sendNotification: SendNotificationFn
+): Promise<void> {
+  try {
+    if (!stripe) {
+      log('Stripe not initialized in webhook handler', 'stripe-webhook');
+      return;
+    }
+    
+    const customerId = invoice.customer as string;
+    
+    // Get user from database by Stripe customer ID
+    const user = await storage.getUserByStripeCustomerId(customerId);
+    if (!user) {
+      log(`No user found with Stripe customer ID: ${customerId}`, 'stripe-webhook');
+      return;
+    }
+    
+    // Get formatted invoice details for notification
+    const amount = invoice.amount_paid / 100;
+    const currency = invoice.currency;
+    const invoiceNumber = invoice.number || invoice.id;
+    const invoiceUrl = invoice.hosted_invoice_url;
+    const pdfUrl = invoice.invoice_pdf;
+    
+    // Send notification to user
+    await sendNotification(
+      user.id,
+      'invoice_paid',
+      `Your payment of ${amount.toFixed(2)} ${currency.toUpperCase()} for invoice #${invoiceNumber} has been processed successfully.`,
+      undefined,
+      { 
+        invoiceId: invoice.id,
+        invoiceNumber,
+        amount,
+        currency,
+        invoiceUrl,
+        pdfUrl,
+        status: 'paid'
+      }
+    );
+    
+    // Send receipt email if user has an email
+    if (user.email) {
+      const tierName = user.subscriptionTier === 'smart_pantry' 
+        ? 'Smart Pantry' 
+        : user.subscriptionTier === 'family_pantry_pro' 
+          ? 'Family Pantry Pro' 
+          : 'Free';
+      
+      await sendInvoiceEmail(
+        user.email,
+        {
+          invoiceNumber,
+          invoiceDate: new Date(invoice.created * 1000),
+          amount,
+          currency,
+          status: 'paid',
+          tierName,
+          invoiceUrl,
+          pdfUrl
+        }
+      );
+    }
+    
+    log(`Invoice paid for user ${user.id}`, 'stripe-webhook');
+  } catch (error) {
+    log(`Error handling invoice paid: ${error}`, 'stripe-webhook');
+  }
+}
+
+/**
  * Handle Stripe webhook events
  * @param event Stripe event
  * @param sendNotification Function to send notifications
@@ -446,6 +597,20 @@ export async function handleStripeWebhookEvent(
       case 'customer.subscription.trial_will_end':
         await handleTrialWillEnd(
           event.data.object as Stripe.Subscription,
+          sendNotification
+        );
+        break;
+        
+      case 'invoice.finalized':
+        await handleInvoiceFinalized(
+          event.data.object as Stripe.Invoice,
+          sendNotification
+        );
+        break;
+        
+      case 'invoice.paid':
+        await handleInvoicePaid(
+          event.data.object as Stripe.Invoice,
           sendNotification
         );
         break;
