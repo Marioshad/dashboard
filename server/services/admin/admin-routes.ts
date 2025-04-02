@@ -55,16 +55,42 @@ export function registerAdminRoutes(app: Express) {
   // Get Stripe settings
   app.get('/api/admin/stripe-settings', async (req, res) => {
     try {
-      // Get settings from app_settings table or environment variables
-      // In this example we're just using default values
-      res.json({
-        priceSmartMonthly: process.env.STRIPE_PRICE_SMART_MONTHLY || "price_smart_monthly",
-        priceSmartYearly: process.env.STRIPE_PRICE_SMART_YEARLY || "price_smart_yearly",
-        priceProMonthly: process.env.STRIPE_PRICE_PRO_MONTHLY || "price_pro_monthly",
-        priceProYearly: process.env.STRIPE_PRICE_PRO_YEARLY || "price_pro_yearly",
-        prodSmart: process.env.STRIPE_PRODUCT_SMART || "prod_smart",
-        prodPro: process.env.STRIPE_PRODUCT_PRO || "prod_pro",
-      });
+      const client = await pool.connect();
+      try {
+        // Ensure we have a settings record
+        await client.query(`
+          INSERT INTO app_settings (id, require_2fa, updated_at)
+          SELECT 1, false, NOW()
+          WHERE NOT EXISTS (SELECT 1 FROM app_settings WHERE id = 1)
+        `);
+        
+        // Get the settings from the database
+        const result = await client.query(`
+          SELECT 
+            stripe_smart_product_id,
+            stripe_pro_product_id,
+            stripe_smart_monthly_price_id,
+            stripe_smart_yearly_price_id,
+            stripe_pro_monthly_price_id,
+            stripe_pro_yearly_price_id
+          FROM app_settings 
+          WHERE id = 1
+        `);
+        
+        const dbSettings = result.rows[0] || {};
+        
+        // Fallback to environment variables if database values are not set
+        res.json({
+          priceSmartMonthly: dbSettings.stripe_smart_monthly_price_id || process.env.STRIPE_PRICE_SMART_MONTHLY || "price_smart_monthly",
+          priceSmartYearly: dbSettings.stripe_smart_yearly_price_id || process.env.STRIPE_PRICE_SMART_YEARLY || "price_smart_yearly",
+          priceProMonthly: dbSettings.stripe_pro_monthly_price_id || process.env.STRIPE_PRICE_PRO_MONTHLY || "price_pro_monthly",
+          priceProYearly: dbSettings.stripe_pro_yearly_price_id || process.env.STRIPE_PRICE_PRO_YEARLY || "price_pro_yearly",
+          prodSmart: dbSettings.stripe_smart_product_id || process.env.STRIPE_PRODUCT_SMART || "prod_smart",
+          prodPro: dbSettings.stripe_pro_product_id || process.env.STRIPE_PRODUCT_PRO || "prod_pro",
+        });
+      } finally {
+        client.release();
+      }
     } catch (error: any) {
       console.error('Error fetching Stripe settings:', error);
       res.status(500).json({ message: error.message });
@@ -83,21 +109,60 @@ export function registerAdminRoutes(app: Express) {
         prodPro
       } = req.body;
 
-      // Here you would save the settings to your database or .env
-      // For this implementation, we'll assume successful update
-      
-      res.json({ 
-        success: true,
-        message: "Stripe settings updated successfully",
-        settings: {
-          priceSmartMonthly, 
-          priceSmartYearly, 
-          priceProMonthly, 
-          priceProYearly,
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        
+        // Ensure we have a settings record
+        await client.query(`
+          INSERT INTO app_settings (id, require_2fa, updated_at)
+          SELECT 1, false, NOW()
+          WHERE NOT EXISTS (SELECT 1 FROM app_settings WHERE id = 1)
+        `);
+        
+        // Update the settings
+        await client.query(`
+          UPDATE app_settings
+          SET 
+            stripe_smart_product_id = $1,
+            stripe_pro_product_id = $2,
+            stripe_smart_monthly_price_id = $3,
+            stripe_smart_yearly_price_id = $4,
+            stripe_pro_monthly_price_id = $5,
+            stripe_pro_yearly_price_id = $6,
+            updated_at = NOW(),
+            updated_by = $7
+          WHERE id = 1
+        `, [
           prodSmart,
-          prodPro
-        }
-      });
+          prodPro,
+          priceSmartMonthly,
+          priceSmartYearly,
+          priceProMonthly,
+          priceProYearly,
+          req.user.id
+        ]);
+        
+        await client.query('COMMIT');
+        
+        res.json({ 
+          success: true,
+          message: "Stripe settings updated successfully",
+          settings: {
+            priceSmartMonthly, 
+            priceSmartYearly, 
+            priceProMonthly, 
+            priceProYearly,
+            prodSmart,
+            prodPro
+          }
+        });
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
     } catch (error: any) {
       console.error('Error saving Stripe settings:', error);
       res.status(500).json({ message: error.message });

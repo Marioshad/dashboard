@@ -91,6 +91,13 @@ export const appSettings = pgTable("app_settings", {
   require2FA: boolean("require_2fa").default(false).notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   updatedBy: integer("updated_by").references(() => users.id),
+  // Stripe settings
+  stripeSmartProductId: text("stripe_smart_product_id"),
+  stripeProProductId: text("stripe_pro_product_id"),
+  stripeSmartMonthlyPriceId: text("stripe_smart_monthly_price_id"),
+  stripeSmartYearlyPriceId: text("stripe_smart_yearly_price_id"),
+  stripeProMonthlyPriceId: text("stripe_pro_monthly_price_id"),
+  stripeProYearlyPriceId: text("stripe_pro_yearly_price_id"),
 });
 
 export const notifications = pgTable("notifications", {
