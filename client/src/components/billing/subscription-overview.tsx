@@ -81,7 +81,7 @@ export function SubscriptionOverview({
               )}
             </div>
             
-            {subscription && (
+            {subscription && currentTier.id !== 'free' && (
               <>
                 <Separator />
                 
@@ -137,7 +137,7 @@ export function SubscriptionOverview({
           </div>
         </CardContent>
         <CardFooter className="flex flex-col sm:flex-row gap-4">
-          {subscription && (
+          {subscription && currentTier.id !== 'free' && (
             <Button
               variant={subscription.cancelAtPeriodEnd ? "default" : "outline"}
               onClick={onManageClick}
