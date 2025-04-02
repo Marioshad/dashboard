@@ -31,7 +31,7 @@ export default function BillingPage() {
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
 
   // Fetch subscription details
-  const { data: subscriptionData, isLoading: isLoadingSubscription } = useQuery({
+  const { data: subscriptionData, isLoading: isLoadingSubscription, error: subscriptionError } = useQuery({
     queryKey: ["/api/billing/subscription"],
     retry: 1,
     refetchOnWindowFocus: false,
@@ -93,6 +93,36 @@ export default function BillingPage() {
       toast({
         title: "Error",
         description: error.message || "Failed to resume subscription",
+        variant: "destructive",
+      });
+    },
+  });
+  
+  // Reset subscription data mutation (for fixing "No such subscription" errors)
+  const resetSubscriptionMutation = useMutation({
+    mutationFn: async (resetCustomerId: boolean = false) => {
+      return await apiRequest("/api/billing/reset-subscription", {
+        method: "POST",
+        body: JSON.stringify({ resetCustomerId })
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/billing/subscription"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/billing/invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/billing/payment-methods"] });
+      
+      toast({
+        title: "Subscription Data Reset",
+        description: "Your subscription data has been reset. You can now resubscribe.",
+      });
+      
+      // Redirect to subscribe page after reset
+      setLocation("/subscribe");
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to reset subscription data",
         variant: "destructive",
       });
     },
@@ -170,6 +200,41 @@ export default function BillingPage() {
           </div>
         </div>
 
+        {/* Alert for "No such subscription" error */}
+        {subscriptionError && 
+          (subscriptionError as any)?.message?.includes('No such subscription') && (
+          <Alert className="mb-4" variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Subscription Error</AlertTitle>
+            <AlertDescription className="flex flex-col space-y-2">
+              <p>
+                Your subscription data references a Stripe subscription that no longer exists.
+                This can happen if you're using a different Stripe account or if the subscription was deleted.
+              </p>
+              <div className="flex pt-2">
+                <Button 
+                  variant="outline" 
+                  onClick={() => resetSubscriptionMutation.mutate(false)} 
+                  disabled={resetSubscriptionMutation.isPending}
+                  className="mr-2"
+                >
+                  {resetSubscriptionMutation.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : null}
+                  Reset Subscription Data
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={() => resetSubscriptionMutation.mutate(true)}
+                  disabled={resetSubscriptionMutation.isPending}
+                >
+                  Reset All Stripe Data
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        )}
+        
         <Tabs defaultValue="overview" value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="grid w-full grid-cols-3 mb-8">
             <TabsTrigger value="overview">Overview</TabsTrigger>
