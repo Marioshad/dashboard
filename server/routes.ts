@@ -22,6 +22,7 @@ import { Socket } from 'net';
 import { parse } from 'cookie';
 import cookieSignature from 'cookie-signature';
 import { log } from './vite';
+import { registerBillingRoutes } from './services/stripe/billing-routes';
 
 const SESSION_SECRET = process.env.SESSION_SECRET || 'keyboard cat';
 
@@ -2497,6 +2498,9 @@ const updateReceiptScanUsage = async (userId: number, scansUsed: number, scansLi
       res.status(400).json({ message: error.message });
     }
   });
+
+  // Register billing routes
+  registerBillingRoutes(app, sendNotification);
 
   // Create HTTP server for the express app
   const httpServer = createServer(app);

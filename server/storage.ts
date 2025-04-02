@@ -18,8 +18,22 @@ export interface IStorage {
   // User methods
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  getUserByStripeCustomerId(stripeCustomerId: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateProfile(userId: number, profile: UpdateProfile): Promise<User>;
+  updateUserSubscription(userId: number, subscription: {
+    stripeSubscriptionId?: string;
+    subscriptionStatus?: string;
+    subscriptionTier?: string;
+    currentBillingPeriodStart?: Date | null;
+    currentBillingPeriodEnd?: Date | null;
+  }): Promise<User>;
+  updateUserLimits(userId: number, limits: {
+    receiptScansLimit?: number;
+    maxItems?: number;
+    maxSharedUsers?: number;
+  }): Promise<User>;
+  updateStripeCustomerId(userId: number, stripeCustomerId: string): Promise<User>;
   
   // Location methods
   createLocation(location: InsertLocation & { userId: number }): Promise<Location>;
@@ -154,6 +168,81 @@ export class DatabaseStorage implements IStorage {
         console.error('STORAGE: Error message:', error.message);
         console.error('STORAGE: Error stack:', error.stack);
       }
+      throw error;
+    }
+  }
+  
+  async getUserByStripeCustomerId(stripeCustomerId: string): Promise<User | undefined> {
+    try {
+      const result = await db
+        .select()
+        .from(users)
+        .where(eq(users.stripeCustomerId, stripeCustomerId))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error('Error getting user by Stripe customer ID:', error);
+      throw error;
+    }
+  }
+  
+  async updateUserSubscription(userId: number, subscription: {
+    stripeSubscriptionId?: string;
+    subscriptionStatus?: string;
+    subscriptionTier?: string;
+    currentBillingPeriodStart?: Date | null;
+    currentBillingPeriodEnd?: Date | null;
+  }): Promise<User> {
+    try {
+      const [user] = await db
+        .update(users)
+        .set({
+          ...subscription,
+          updatedAt: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(users.id, userId))
+        .returning();
+      return user;
+    } catch (error) {
+      console.error('Error updating user subscription:', error);
+      throw error;
+    }
+  }
+  
+  async updateUserLimits(userId: number, limits: {
+    receiptScansLimit?: number;
+    maxItems?: number;
+    maxSharedUsers?: number;
+  }): Promise<User> {
+    try {
+      const [user] = await db
+        .update(users)
+        .set({
+          ...limits,
+          updatedAt: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(users.id, userId))
+        .returning();
+      return user;
+    } catch (error) {
+      console.error('Error updating user limits:', error);
+      throw error;
+    }
+  }
+  
+  async updateStripeCustomerId(userId: number, stripeCustomerId: string): Promise<User> {
+    try {
+      const [user] = await db
+        .update(users)
+        .set({
+          stripeCustomerId,
+          updatedAt: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(users.id, userId))
+        .returning();
+      return user;
+    } catch (error) {
+      console.error('Error updating Stripe customer ID:', error);
       throw error;
     }
   }
