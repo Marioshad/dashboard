@@ -99,7 +99,9 @@ export default function StripeSettingsPage() {
     setTestResult(null);
     
     try {
-      const response = await apiRequest('POST', '/api/admin/stripe-test-connection', {});
+      const response = await apiRequest('POST', '/api/admin/stripe-test-connection', {
+        headers: { 'Content-Type': 'application/json' }
+      });
       const data = await response.json();
       
       if (data.success) {
@@ -153,7 +155,9 @@ export default function StripeSettingsPage() {
     setResetLoading(true);
     
     try {
-      const response = await apiRequest('POST', '/api/admin/reset-all-subscriptions', {});
+      const response = await apiRequest('POST', '/api/admin/reset-all-subscriptions', {
+        headers: { 'Content-Type': 'application/json' }
+      });
       const data = await response.json();
       
       if (data.success) {
