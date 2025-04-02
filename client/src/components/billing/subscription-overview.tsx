@@ -53,7 +53,7 @@ export function SubscriptionOverview({
               <CardTitle>Current Plan</CardTitle>
               <CardDescription>Your current subscription plan and status</CardDescription>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 bg-primary/10 py-2 px-3 rounded-md">
               {tierIcon}
               <span className="font-semibold text-lg">{currentTier.name}</span>
             </div>
@@ -71,7 +71,7 @@ export function SubscriptionOverview({
                 </p>
               </div>
               
-              {subscription && (
+              {subscription && currentTier.id !== 'free' && (
                 <div>
                   <h3 className="text-sm font-medium text-muted-foreground">Billing Period</h3>
                   <p className="text-lg font-semibold mt-1">
