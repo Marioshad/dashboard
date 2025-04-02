@@ -45,6 +45,7 @@ function Router() {
       <ProtectedRoute path="/users" component={UsersPage} />
       <ProtectedRoute path="/subscribe" component={SubscribePage} />
       <ProtectedRoute path="/checkout" component={CheckoutPage} />
+      <ProtectedRoute path="/checkout/:tierId" component={CheckoutPage} />
       <ProtectedRoute path="/billing" component={BillingPage} />
       {/* Food inventory routes */}
       <ProtectedRoute path="/inventory" component={InventoryPage} />

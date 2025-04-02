@@ -21,63 +21,46 @@ if (!import.meta.env.VITE_STRIPE_PUBLIC_KEY) {
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY || '');
 
 export default function CheckoutPage() {
-  const [match, params] = useRoute('/checkout/:tierId');
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [clientSecret, setClientSecret] = useState<string>('');
+  const [tierId, setTierId] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  const tierId = params?.tierId;
-  const tier = tierId ? getSubscriptionTier(tierId) : null;
-
+  // Match /:tierId route pattern if available
+  const [match, params] = useRoute('/checkout/:tierId');
+  
   useEffect(() => {
-    // If no tier ID in URL or tier doesn't exist, redirect to subscribe page
-    if (!tierId || !tier || tierId === 'free') {
-      setLocation('/subscribe');
-      return;
-    }
-
-    async function createPaymentIntent() {
-      setLoading(true);
-      setError(null);
-      
-      try {
-        // Create the subscription to get the client secret
-        const response = await apiRequest('/api/billing/create-subscription', { 
-          method: 'POST',
-          body: JSON.stringify({ 
-            tierId,
-            interval: 'monthly' // We could make this configurable later
-          })
-        });
-        
-        const data = await response.json();
-        
-        if (!response.ok) {
-          throw new Error(data.message || 'Failed to create subscription');
-        }
-        
-        if (data.clientSecret) {
-          setClientSecret(data.clientSecret);
-        } else {
-          throw new Error('No client secret returned');
-        }
-      } catch (err: any) {
-        console.error('Error creating payment intent:', err);
-        setError(err.message || 'Failed to initialize checkout. Please try again.');
-        toast({
-          title: 'Checkout Error',
-          description: err.message || 'Failed to initialize checkout. Please try again.',
-          variant: 'destructive',
-        });
-      } finally {
-        setLoading(false);
-      }
+    // Get the client secret from the URL query parameters
+    const queryParams = new URLSearchParams(window.location.search);
+    const secretFromUrl = queryParams.get('secret');
+    
+    // If we have a URL pattern match, use that tier ID
+    if (match && params && params.tierId) {
+      setTierId(params.tierId);
     }
     
-    createPaymentIntent();
-  }, [tierId, toast, setLocation]);
+    // Otherwise check if tierId is in the query string
+    const tierIdFromQuery = queryParams.get('tierId');
+    if (!tierId && tierIdFromQuery) {
+      setTierId(tierIdFromQuery);
+    }
+    
+    if (secretFromUrl) {
+      // If we have a client secret in the URL, use it
+      setClientSecret(secretFromUrl);
+      setLoading(false);
+    } else {
+      // If no client secret, redirect to subscribe page
+      toast({
+        title: 'Checkout Error',
+        description: 'No payment information found. Please select a plan first.',
+        variant: 'destructive',
+      });
+      setLocation('/subscribe');
+    }
+  }, [toast, setLocation, match, params, tierId]);
   
   // Stripe Elements options
   const options = clientSecret ? {
@@ -118,11 +101,11 @@ export default function CheckoutPage() {
               </Button>
             </div>
           </div>
-        ) : clientSecret && tier ? (
+        ) : clientSecret ? (
           <Elements stripe={stripePromise} options={options}>
             <CheckoutForm 
-              clientSecret={clientSecret} 
-              tierId={tierId || ""} 
+              clientSecret={clientSecret}
+              tierId={tierId}
               returnUrl="/billing"
             />
           </Elements>

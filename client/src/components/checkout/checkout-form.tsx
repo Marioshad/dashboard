@@ -10,7 +10,7 @@ import { formatCurrency } from '@/lib/utils';
 
 interface CheckoutFormProps {
   clientSecret: string;
-  tierId: string;
+  tierId?: string;
   returnUrl?: string;
 }
 
@@ -22,8 +22,8 @@ export function CheckoutForm({ clientSecret, tierId, returnUrl = '/billing' }: C
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   
-  // Get tier information for display
-  const tier = getSubscriptionTier(tierId);
+  // Get tier information for display if available
+  const tier = tierId ? getSubscriptionTier(tierId) : null;
 
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -43,7 +43,7 @@ export function CheckoutForm({ clientSecret, tierId, returnUrl = '/billing' }: C
       const { error } = await stripe.confirmPayment({
         elements,
         confirmParams: {
-          return_url: `${window.location.origin}${returnUrl}?success=true&tier=${tierId}`,
+          return_url: `${window.location.origin}${returnUrl}?success=true`,
         },
         redirect: 'if_required',
       });
@@ -60,7 +60,7 @@ export function CheckoutForm({ clientSecret, tierId, returnUrl = '/billing' }: C
         // Redirect to billing page with success message
         toast({
           title: 'Payment Successful',
-          description: `Your subscription to ${tier.name} has been activated!`,
+          description: tier ? `Your subscription to ${tier.name} has been activated!` : 'Your subscription has been activated!',
         });
         setLocation(returnUrl);
       }
@@ -82,30 +82,44 @@ export function CheckoutForm({ clientSecret, tierId, returnUrl = '/billing' }: C
       <CardHeader>
         <CardTitle>Complete Your Subscription</CardTitle>
         <CardDescription>
-          Subscribe to the {tier.name} plan for {formatCurrency(tier.price.monthly)} per month
+          {tier ? 
+            `Subscribe to the ${tier.name} plan for ${formatCurrency(tier.price.monthly)} per month` :
+            'Complete payment to activate your subscription'
+          }
         </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit}>
         <CardContent className="space-y-6">
-          <div className="rounded-md border p-4">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="font-semibold text-lg">{tier.name}</h3>
-                <p className="text-sm text-muted-foreground">{tier.description}</p>
+          {tier ? (
+            <div className="rounded-md border p-4">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="font-semibold text-lg">{tier.name}</h3>
+                  <p className="text-sm text-muted-foreground">{tier.description}</p>
+                </div>
+                <div className="text-lg font-bold">
+                  {formatCurrency(tier.price.monthly)}<span className="text-sm font-normal text-muted-foreground">/month</span>
+                </div>
               </div>
-              <div className="text-lg font-bold">
-                {formatCurrency(tier.price.monthly)}<span className="text-sm font-normal text-muted-foreground">/month</span>
+              <ul className="space-y-2">
+                {tier.features.map((feature, i) => (
+                  <li key={i} className="flex items-start gap-2 text-sm">
+                    <Icons.check className="h-4 w-4 mt-1 text-green-500" />
+                    <span>{feature}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <div className="rounded-md border p-4">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="font-semibold text-lg">Premium Subscription</h3>
+                  <p className="text-sm text-muted-foreground">Access all premium features</p>
+                </div>
               </div>
             </div>
-            <ul className="space-y-2">
-              {tier.features.map((feature, i) => (
-                <li key={i} className="flex items-start gap-2 text-sm">
-                  <Icons.check className="h-4 w-4 mt-1 text-green-500" />
-                  <span>{feature}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
+          )}
           
           <div className="space-y-3">
             <h3 className="font-medium text-md">Payment Information</h3>
