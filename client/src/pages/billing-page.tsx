@@ -116,7 +116,10 @@ export default function BillingPage() {
 
   // Determine subscription status for UI
   const getStatusBadge = () => {
-    if (!subscription) return <Badge variant="outline">Free Plan</Badge>;
+    // For free tier
+    if (!subscription || currentTier.id === 'free') {
+      return <Badge variant="outline">Free Plan</Badge>;
+    }
     
     if (subscription.status === 'active') {
       if (subscription.cancelAtPeriodEnd) {
