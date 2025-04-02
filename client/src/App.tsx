@@ -27,6 +27,10 @@ import ReceiptsPage from "@/pages/receipts";
 import TagsPage from "@/pages/tags";
 // Import receipt detail page component directly 
 import { ReceiptDetailPage } from "./pages/receipts/receipt-detail";
+// Import admin pages
+import AdminDashboardPage from "@/pages/admin";
+import StripeSettingsPage from "@/pages/admin/stripe-settings";
+import SystemPage from "@/pages/admin/system";
 
 function Router() {
   return (
@@ -51,6 +55,10 @@ function Router() {
       <ProtectedRoute path="/stores" component={StoresPage} />
       <ProtectedRoute path="/stores/:storeId" component={StoreDetailsPage} />
       <ProtectedRoute path="/tags" component={TagsPage} />
+      {/* Admin routes */}
+      <ProtectedRoute path="/admin" component={AdminDashboardPage} />
+      <ProtectedRoute path="/admin/stripe-settings" component={StripeSettingsPage} />
+      <ProtectedRoute path="/admin/system" component={SystemPage} />
       <Route path="/auth" component={AuthPage} />
       <Route component={NotFound} />
     </Switch>
