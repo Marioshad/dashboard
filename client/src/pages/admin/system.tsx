@@ -65,7 +65,19 @@ export default function SystemPage() {
     const fetchStatus = async () => {
       setIsLoading(true);
       try {
-        const response = await apiRequest('GET', '/api/admin/system/status', {});
+        // Use fetch directly for more control
+        const response = await fetch('/api/admin/system/status', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          credentials: 'include'
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+        }
+        
         const data = await response.json();
         setSystemStatus(data);
       } catch (error) {
@@ -87,7 +99,19 @@ export default function SystemPage() {
   const refreshDbConnection = async () => {
     setRefreshingDb(true);
     try {
-      const response = await apiRequest('POST', '/api/admin/system/refresh-db', {});
+      // Use fetch directly for more control
+      const response = await fetch('/api/admin/system/refresh-db', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include'
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+      }
+      
       const data = await response.json();
       
       if (data.success) {
@@ -137,7 +161,19 @@ export default function SystemPage() {
   const checkServices = async () => {
     setCheckingServices(true);
     try {
-      const response = await apiRequest('POST', '/api/admin/system/check-services', {});
+      // Use fetch directly for more control
+      const response = await fetch('/api/admin/system/check-services', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include'
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+      }
+      
       const data = await response.json();
       
       if (data.success) {
