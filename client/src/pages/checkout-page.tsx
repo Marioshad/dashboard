@@ -1,175 +1,137 @@
-import { useEffect, useState } from "react";
-import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
-import { loadStripe } from "@stripe/stripe-js";
-import { useLocation, useSearch } from "wouter";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { useToast } from "@/hooks/use-toast";
+import React, { useState, useEffect } from 'react';
+import { useLocation, useRoute } from 'wouter';
+import { Elements } from '@stripe/react-stripe-js';
+import { loadStripe } from '@stripe/stripe-js';
+import { CheckoutForm } from '@/components/checkout/checkout-form';
+import DashboardLayout from '@/components/dashboard-layout';
+import { apiRequest } from '@/lib/queryClient';
+import { useToast } from '@/hooks/use-toast';
+import { Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { AlertCircle } from 'lucide-react';
+import { getSubscriptionTier } from '@/lib/subscription';
 
-// Make Stripe payment optional
-const stripePublicKey = import.meta.env.VITE_STRIPE_PUBLIC_KEY;
-const stripePromise = stripePublicKey ? loadStripe(stripePublicKey) : null;
-
-function CheckoutForm() {
-  const stripe = useStripe();
-  const elements = useElements();
-  const [loading, setLoading] = useState(false);
-  const { toast } = useToast();
-  const [, setLocation] = useLocation();
-  const [error, setError] = useState<string>();
-  const [isReady, setIsReady] = useState(false);
-
-  // Check if elements are ready
-  useEffect(() => {
-    if (!stripe || !elements) {
-      return;
-    }
-
-    const checkElement = async () => {
-      const element = elements.getElement(PaymentElement);
-      setIsReady(!!element);
-    };
-
-    checkElement();
-  }, [stripe, elements]);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!stripe || !elements || !isReady) {
-      setError('Payment system not ready. Please try again.');
-      return;
-    }
-
-    setLoading(true);
-    setError(undefined);
-
-    try {
-      const result = await stripe.confirmPayment({
-        elements,
-        confirmParams: {
-          return_url: `${window.location.origin}/settings`,
-        },
-        redirect: 'if_required'
-      });
-
-      if (result.error) {
-        if (result.error.type === 'card_error' || result.error.type === 'validation_error') {
-          setError(result.error.message);
-        } else {
-          setError('An unexpected error occurred.');
-        }
-        setLoading(false);
-      } else if (result.paymentIntent?.status === 'succeeded') {
-        toast({
-          title: "Payment successful",
-          description: "Your subscription has been activated",
-        });
-        setLocation("/settings");
-      }
-    } catch (error: any) {
-      console.error('Payment error:', error);
-      setError('Failed to process payment. Please try again.');
-      setLoading(false);
-    }
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      <PaymentElement />
-      {error && (
-        <div className="text-sm text-destructive font-medium">
-          {error}
-        </div>
-      )}
-      <div className="flex justify-between">
-        <Button 
-          variant="outline" 
-          type="button" 
-          onClick={() => setLocation('/subscribe')}
-        >
-          Back to Plans
-        </Button>
-        <Button 
-          type="submit" 
-          disabled={!stripe || !elements || !isReady || loading}
-        >
-          {loading ? "Processing..." : "Complete Payment"}
-        </Button>
-      </div>
-    </form>
-  );
+// Load Stripe outside of component render to avoid recreating the Stripe object on every render
+// Make sure the key exists
+if (!import.meta.env.VITE_STRIPE_PUBLIC_KEY) {
+  console.error('Missing required environment variable: VITE_STRIPE_PUBLIC_KEY');
 }
 
+const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY || '');
+
 export default function CheckoutPage() {
-  const search = useSearch();
-  const params = new URLSearchParams(search);
-  const clientSecret = params.get('secret');
+  const [match, params] = useRoute('/checkout/:tierId');
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const [clientSecret, setClientSecret] = useState<string>('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
+  const tierId = params?.tierId;
+  const tier = tierId ? getSubscriptionTier(tierId) : null;
 
   useEffect(() => {
-    console.log('CheckoutPage mounted', { clientSecret });
-    if (!clientSecret || clientSecret === 'undefined') {
-      console.error('No valid client secret found in URL');
+    // If no tier ID in URL or tier doesn't exist, redirect to subscribe page
+    if (!tierId || !tier || tierId === 'free') {
       setLocation('/subscribe');
+      return;
     }
-  }, [clientSecret, setLocation]);
 
-  // If Stripe is not configured, show error
-  if (!stripePromise) {
-    useEffect(() => {
-      toast({
-        title: "Payment Service Unavailable",
-        description: "The payment service is currently unavailable. Please contact support.",
-        variant: "destructive",
-      });
-      setLocation('/subscribe');
-    }, []);
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <Card className="w-full max-w-lg">
-          <CardHeader>
-            <CardTitle>Payment Service Unavailable</CardTitle>
-            <CardDescription>
-              The payment service is currently unavailable. Redirecting...
-            </CardDescription>
-          </CardHeader>
-        </Card>
-      </div>
-    );
-  }
-
-  if (!clientSecret || clientSecret === 'undefined') {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <Card className="w-full max-w-lg">
-          <CardHeader>
-            <CardTitle>Missing Payment Information</CardTitle>
-            <CardDescription>
-              Missing payment information. Redirecting to plans page...
-            </CardDescription>
-          </CardHeader>
-        </Card>
-      </div>
-    );
-  }
-
+    async function createPaymentIntent() {
+      setLoading(true);
+      setError(null);
+      
+      try {
+        // Create the subscription to get the client secret
+        const response = await apiRequest('POST', '/api/billing/create-subscription', { 
+          tierId,
+          interval: 'monthly' // We could make this configurable later
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+          throw new Error(data.message || 'Failed to create subscription');
+        }
+        
+        if (data.clientSecret) {
+          setClientSecret(data.clientSecret);
+        } else {
+          throw new Error('No client secret returned');
+        }
+      } catch (err: any) {
+        console.error('Error creating payment intent:', err);
+        setError(err.message || 'Failed to initialize checkout. Please try again.');
+        toast({
+          title: 'Checkout Error',
+          description: err.message || 'Failed to initialize checkout. Please try again.',
+          variant: 'destructive',
+        });
+      } finally {
+        setLoading(false);
+      }
+    }
+    
+    createPaymentIntent();
+  }, [tierId, toast, setLocation]);
+  
+  // Stripe Elements options
+  const options = {
+    clientSecret,
+    appearance: {
+      theme: 'stripe',
+      variables: {
+        colorPrimary: '#4f46e5',
+        colorBackground: '#ffffff',
+        colorText: '#1f2937',
+        colorDanger: '#ef4444',
+        fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif',
+        borderRadius: '8px',
+      },
+    },
+  };
+  
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <Card className="w-full max-w-lg">
-        <CardHeader>
-          <CardTitle>Complete Your Subscription</CardTitle>
-          <CardDescription>
-            Enter your payment details to start your premium subscription
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Elements stripe={stripePromise} options={{ clientSecret }}>
-            <CheckoutForm />
+    <DashboardLayout>
+      <div className="space-y-6">
+        <h1 className="text-3xl font-bold">Upgrade Your Plan</h1>
+        
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
+            <p className="text-muted-foreground">Preparing your checkout...</p>
+          </div>
+        ) : error ? (
+          <div className="space-y-4">
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Checkout Error</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+            <div className="flex justify-center">
+              <Button onClick={() => setLocation('/subscribe')}>
+                Return to Plans
+              </Button>
+            </div>
+          </div>
+        ) : clientSecret && tier ? (
+          <Elements stripe={stripePromise} options={options}>
+            <CheckoutForm 
+              clientSecret={clientSecret} 
+              tierId={tierId} 
+              returnUrl="/billing"
+            />
           </Elements>
-        </CardContent>
-      </Card>
-    </div>
+        ) : (
+          <div className="text-center py-12">
+            <p className="text-muted-foreground mb-4">No payment information available.</p>
+            <Button onClick={() => setLocation('/subscribe')}>
+              Return to Plans
+            </Button>
+          </div>
+        )}
+      </div>
+    </DashboardLayout>
   );
 }
