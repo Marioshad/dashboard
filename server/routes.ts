@@ -1164,7 +1164,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+    console.log('=== STRIPE WEBHOOK RECEIVED ===');
+    console.log('Headers:', JSON.stringify(req.headers));
+    
     if (!stripe) {
+      console.error('Webhook error: Stripe not initialized');
       return res.status(503).json({ 
         message: 'Payment service unavailable. Please contact administrator.',
         stripeDisabled: true
@@ -1187,6 +1191,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const dbSettings = result.rows[0] || {};
         if (dbSettings.stripe_webhook_secret) {
           webhookSecret = dbSettings.stripe_webhook_secret;
+          console.log('Using webhook secret from database settings');
+        } else {
+          console.log('Using webhook secret from environment variables');
         }
       } finally {
         client.release();
@@ -1201,30 +1208,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
 
     const sig = req.headers['stripe-signature'];
+    
+    if (!sig) {
+      console.error('Missing Stripe signature header');
+      return res.status(400).json({ error: 'Missing stripe-signature header' });
+    }
+    
     let event;
 
     try {
+      console.log('Constructing Stripe event from webhook payload');
       event = stripe!.webhooks.constructEvent(
         req.body,
         sig as string,
         webhookSecret
       );
+      console.log('Webhook event constructed successfully:', event.type);
+      console.log('Event ID:', event.id);
+      console.log('Event data object:', JSON.stringify(event.data.object, null, 2));
     } catch (err: any) {
-      console.error('Webhook error:', err.message);
+      console.error('Webhook signature verification failed:', err.message);
       return res.status(400).send(`Webhook Error: ${err.message}`);
     }
 
     // Import the webhook handler dynamically
+    console.log('Importing webhook handler...');
     const { handleStripeWebhookEvent } = await import('./services/stripe/webhook-handler');
     
     try {
       // Call the webhook handler
+      console.log(`Processing webhook event: ${event.type}`);
       await handleStripeWebhookEvent(event, sendNotification);
       console.log(`Successfully processed webhook event: ${event.type}`);
     } catch (error) {
       console.error(`Error handling webhook event ${event.type}:`, error);
+      // Still return 200 to Stripe - we don't want them to retry since we've received the event
+      // Even though we had an error processing it, we'll handle it in our logs
     }
 
+    console.log('Webhook processing complete, returning success response');
     res.json({ received: true });
   });
 
