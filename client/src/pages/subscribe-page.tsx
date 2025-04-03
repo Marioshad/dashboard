@@ -68,30 +68,49 @@ export default function SubscribePage() {
       }
 
       // Redirect to checkout page with subscription data
-      // Extract the tier from the product metadata
-      // First find the tier by matching the price ID with our subscription pricing data
-      let tierValue = '';
-      
-      if (priceId.includes('smart')) {
-        tierValue = 'smart';
-      } else if (priceId.includes('family') || priceId.includes('pro')) {
-        tierValue = 'pro';
-      } else {
-        // Try to extract from price ID format
-        const parts = priceId.split('_');
-        if (parts.length >= 3) {
-          // Check if any part contains a tier keyword
-          for (const part of parts) {
-            if (part === 'smart' || part === 'pro' || part === 'family') {
-              tierValue = part === 'family' ? 'pro' : part;
-              break;
-            }
+      // We need to get the product metadata to get the tier ID
+      // Make a direct call to get pricing data to extract tier information
+      try {
+        // Find the price in our pricing data by ID
+        const pricingResponse = await fetch('/api/subscription/prices');
+        const prices = await pricingResponse.json();
+        
+        // Find the corresponding price object
+        const selectedPrice = prices.find((p: any) => p.id === priceId);
+        
+        // Extract tier ID from product metadata if available
+        let tierValue = '';
+        if (selectedPrice?.product?.metadata?.tier) {
+          tierValue = selectedPrice.product.metadata.tier;
+          console.log('Found tier ID from product metadata:', tierValue);
+        } else if (selectedPrice?.product?.name) {
+          // Try to extract from product name as fallback
+          const productName = selectedPrice.product.name.toLowerCase();
+          if (productName.includes('smart')) {
+            tierValue = 'smart';
+          } else if (productName.includes('family') || productName.includes('pro')) {
+            tierValue = 'pro';
           }
+          console.log('Extracted tier ID from product name:', tierValue);
         }
+        
+        // If we still don't have a tier, try to extract from price ID
+        if (!tierValue) {
+          if (priceId.includes('smart')) {
+            tierValue = 'smart';
+          } else if (priceId.includes('family') || priceId.includes('pro')) {
+            tierValue = 'pro';
+          }
+          console.log('Extracted tier ID from price ID:', tierValue);
+        }
+        
+        // Use both path param and query param for maximum compatibility
+        setLocation(`/checkout/${tierValue}?secret=${data.clientSecret}&tierId=${tierValue}`);
+      } catch (err) {
+        console.error('Error extracting tier information:', err);
+        // Fallback to no tier ID if there's an error
+        setLocation(`/checkout?secret=${data.clientSecret}`);
       }
-      
-      // Use both path param and query param for maximum compatibility
-      setLocation(`/checkout/${tierValue}?secret=${data.clientSecret}&tierId=${tierValue}`);
     } catch (error: any) {
       toast({
         title: "Error",

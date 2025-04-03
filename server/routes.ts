@@ -31,7 +31,7 @@ const SESSION_SECRET = process.env.SESSION_SECRET || 'keyboard cat';
 let stripe: Stripe | null = null;
 if (process.env.STRIPE_SECRET_KEY) {
   stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-    apiVersion: "2025-02-24.acacia",
+    apiVersion: "2025-03-31.basil",
     typescript: true,
   });
   console.log("Stripe payment processing initialized successfully");
@@ -761,6 +761,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get subscription info from payment intent client secret
+  app.get('/api/subscription/info', async (req, res) => {
+    try {
+      if (!stripe) {
+        return res.status(503).json({ 
+          message: 'Payment service unavailable. Please contact administrator.',
+          stripeDisabled: true
+        });
+      }
+      
+      const { secret } = req.query;
+      
+      if (!secret || typeof secret !== 'string') {
+        return res.status(400).json({ error: 'Client secret is required' });
+      }
+      
+      // Extract the payment intent ID from the client secret
+      // Client secrets are in the format pi_XXX_secret_YYY
+      const parts = secret.split('_secret_');
+      if (parts.length !== 2) {
+        return res.status(400).json({ error: 'Invalid client secret format' });
+      }
+      
+      const paymentIntentId = parts[0];
+      
+      try {
+        // Retrieve the payment intent to get metadata including tier
+        const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+        
+        // Get the tier information from the metadata or from the description
+        let tierId = '';
+        
+        // Check if there's metadata with tier information
+        if (paymentIntent.metadata && paymentIntent.metadata.tier) {
+          tierId = paymentIntent.metadata.tier;
+          console.log('Found tier ID from payment intent metadata:', tierId);
+        } else if (paymentIntent.description) {
+          // Try to extract from description
+          const description = paymentIntent.description.toLowerCase();
+          if (description.includes('smart')) {
+            tierId = 'smart';
+          } else if (description.includes('family') || description.includes('pro')) {
+            tierId = 'pro';
+          }
+          console.log('Extracted tier ID from payment intent description:', tierId);
+        }
+        
+        res.json({ tierId });
+      } catch (error: any) {
+        console.error('Error retrieving payment intent:', error);
+        res.status(500).json({ error: error.message });
+      }
+    } catch (error: any) {
+      console.error('Unexpected error in subscription info endpoint:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.post('/api/get-or-create-subscription', async (req, res) => {
     try {
       if (!req.isAuthenticated()) {
@@ -809,17 +867,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
         name: user.username,
       });
 
+      // Try to determine the tier from the price ID
+      let tierId = '';
+      try {
+        // Get price information to extract tier data
+        const price = await stripe!.prices.retrieve(priceId, {
+          expand: ['product']
+        });
+        
+        // Extract tier from product metadata if it exists
+        if (price.product && typeof price.product !== 'string') {
+          if (price.product.metadata && price.product.metadata.tier) {
+            tierId = price.product.metadata.tier;
+            console.log(`Found tier ID ${tierId} from product metadata`);
+          } else if (price.product.name) {
+            // Try to extract tier from product name
+            const productName = price.product.name.toLowerCase();
+            if (productName.includes('smart')) {
+              tierId = 'smart';
+            } else if (productName.includes('family') || productName.includes('pro')) {
+              tierId = 'pro';
+            }
+            console.log(`Extracted tier ID ${tierId} from product name`);
+          }
+        }
+      } catch (priceError) {
+        console.error('Error getting price details:', priceError);
+      }
+
+      // Create the subscription
       const subscription = await stripe!.subscriptions.create({
         customer: customer.id,
         items: [{
           price: priceId,
         }],
         payment_behavior: 'default_incomplete',
-        expand: ['latest_invoice.payment_intent']
+        expand: ['latest_invoice.payment_intent'],
+        metadata: {
+          tier: tierId // Add the tier to the subscription metadata
+        }
       });
-
+      
+      // Get the payment intent from the subscription
       const invoice = subscription.latest_invoice as Stripe.Invoice;
       const paymentIntent = invoice.payment_intent as Stripe.PaymentIntent;
+      
+      // Also add tier info to the payment intent if we have it
+      if (paymentIntent && tierId) {
+        await stripe!.paymentIntents.update(paymentIntent.id, {
+          metadata: { tier: tierId },
+          description: `Subscription to ${tierId === 'smart' ? 'Smart Pantry' : tierId === 'pro' ? 'Family Pantry Pro' : 'Premium tier'}`
+        });
+      }
 
       if (!paymentIntent?.client_secret) {
         throw new Error('Unable to create payment intent');

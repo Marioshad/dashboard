@@ -125,11 +125,49 @@ export function CheckoutForm({ clientSecret, tierId, returnUrl = '/billing' }: C
               </ul>
             </div>
           ) : (
-            <div className="rounded-md border p-4">
+            <div className="rounded-md border p-4 space-y-4">
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <h3 className="font-semibold text-lg">Premium Subscription</h3>
-                  <p className="text-sm text-muted-foreground">Access all premium features</p>
+                  <h3 className="font-semibold text-lg">Subscription Plan</h3>
+                  <p className="text-sm text-muted-foreground">Upgrade to get premium features</p>
+                </div>
+              </div>
+              
+              {/* If we don't have the tier ID, show features from both premium tiers */}
+              <div className="space-y-4">
+                <div>
+                  <h4 className="text-sm font-medium mb-2">Smart Pantry Features:</h4>
+                  <ul className="space-y-1">
+                    <li className="flex items-start text-sm gap-2">
+                      <Icons.check className="h-4 w-4 mt-1 text-green-500" />
+                      <span>Up to 20 receipts per month</span>
+                    </li>
+                    <li className="flex items-start text-sm gap-2">
+                      <Icons.check className="h-4 w-4 mt-1 text-green-500" />
+                      <span>Unlimited items per receipt</span>
+                    </li>
+                    <li className="flex items-start text-sm gap-2">
+                      <Icons.check className="h-4 w-4 mt-1 text-green-500" />
+                      <span>AI-powered receipt scanning</span>
+                    </li>
+                  </ul>
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium mb-2">Family Pantry Pro Features:</h4>
+                  <ul className="space-y-1">
+                    <li className="flex items-start text-sm gap-2">
+                      <Icons.check className="h-4 w-4 mt-1 text-green-500" />
+                      <span>Unlimited receipts</span>
+                    </li>
+                    <li className="flex items-start text-sm gap-2">
+                      <Icons.check className="h-4 w-4 mt-1 text-green-500" />
+                      <span>Up to 5 shared users</span>
+                    </li>
+                    <li className="flex items-start text-sm gap-2">
+                      <Icons.check className="h-4 w-4 mt-1 text-green-500" />
+                      <span>Early access to new features</span>
+                    </li>
+                  </ul>
                 </div>
               </div>
             </div>
