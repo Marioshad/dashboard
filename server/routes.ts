@@ -840,22 +840,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let user = req.user;
 
       if (user.stripeSubscriptionId) {
-        const subscription = await stripe!.subscriptions.retrieve(user.stripeSubscriptionId, {
-          expand: ['latest_invoice.payment_intent']
-        });
+        try {
+          // First, retrieve the subscription to get the latest invoice ID
+          const subscription = await stripe!.subscriptions.retrieve(user.stripeSubscriptionId);
 
-        const invoice = subscription.latest_invoice as Stripe.Invoice;
-        const paymentIntent = invoice.payment_intent as Stripe.PaymentIntent;
-
-        if (!paymentIntent?.client_secret) {
-          throw new Error('Unable to retrieve payment information');
+          // Get the latest invoice ID
+          if (!subscription.latest_invoice || typeof subscription.latest_invoice === 'string') {
+            return res.status(400).json({ message: 'No invoice found for this subscription' });
+          }
+          
+          const invoiceId = typeof subscription.latest_invoice === 'string' 
+            ? subscription.latest_invoice 
+            : subscription.latest_invoice.id;
+            
+          // Now fetch the invoice to get the payment intent
+          const invoice = await stripe!.invoices.retrieve(invoiceId, {
+            expand: ['payment_intent']
+          });
+          
+          // Get the payment intent from the invoice
+          if (!invoice.payment_intent || typeof invoice.payment_intent === 'string') {
+            return res.status(400).json({ message: 'No payment intent found for this invoice' });
+          }
+          
+          const paymentIntent = invoice.payment_intent;
+          
+          if (!paymentIntent?.client_secret) {
+            throw new Error('Unable to retrieve payment information');
+          }
+          
+          res.send({
+            subscriptionId: subscription.id,
+            clientSecret: paymentIntent.client_secret
+          });
+          return;
+        } catch (error) {
+          console.error('Error retrieving existing subscription:', error);
+          return res.status(400).json({ message: 'Error retrieving subscription: ' + (error as Error).message });
         }
-
-        res.send({
-          subscriptionId: subscription.id,
-          clientSecret: paymentIntent.client_secret
-        });
-        return;
       }
 
       if (!user.email) {
@@ -895,22 +917,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error('Error getting price details:', priceError);
       }
 
-      // Create the subscription
+      // Create the subscription without trying to expand payment_intent
       const subscription = await stripe!.subscriptions.create({
         customer: customer.id,
         items: [{
           price: priceId,
         }],
         payment_behavior: 'default_incomplete',
-        expand: ['latest_invoice.payment_intent'],
         metadata: {
           tier: tierId // Add the tier to the subscription metadata
         }
       });
       
-      // Get the payment intent from the subscription
-      const invoice = subscription.latest_invoice as Stripe.Invoice;
-      const paymentIntent = invoice.payment_intent as Stripe.PaymentIntent;
+      // Get the latest invoice ID
+      if (!subscription.latest_invoice || typeof subscription.latest_invoice !== 'string') {
+        throw new Error('No invoice found for this subscription');
+      }
+      
+      // Now fetch the invoice to get the payment intent
+      const invoice = await stripe!.invoices.retrieve(subscription.latest_invoice, {
+        expand: ['payment_intent']
+      });
+            
+      // Get the payment intent from the invoice
+      if (!invoice.payment_intent || typeof invoice.payment_intent === 'string') {
+        throw new Error('No payment intent found for this invoice');
+      }
+      
+      const paymentIntent = invoice.payment_intent;
       
       // Also add tier info to the payment intent if we have it
       if (paymentIntent && tierId) {
