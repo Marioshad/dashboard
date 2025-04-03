@@ -32,44 +32,71 @@ export default function CheckoutPage() {
   const [match, params] = useRoute('/checkout/:tierId');
   
   useEffect(() => {
-    // Get the client secret from the URL query parameters
-    const queryParams = new URLSearchParams(window.location.search);
-    const secretFromUrl = queryParams.get('secret');
-    
-    // Determine the tier ID using both route params and query params
-    let foundTierId: string | undefined = undefined;
-    
-    // First check route params (highest priority)
-    if (match && params && params.tierId) {
-      foundTierId = params.tierId;
-      console.log('Found tier ID from route params:', foundTierId);
+    async function initializeCheckout() {
+      try {
+        // Get the client secret from the URL query parameters
+        const queryParams = new URLSearchParams(window.location.search);
+        const secretFromUrl = queryParams.get('secret');
+        
+        // Determine the tier ID using both route params and query params
+        let foundTierId: string | undefined = undefined;
+        
+        // First check route params (highest priority)
+        if (match && params && params.tierId) {
+          foundTierId = params.tierId;
+          console.log('Found tier ID from route params:', foundTierId);
+        }
+        
+        // Then check query params
+        const tierIdFromQuery = queryParams.get('tierId');
+        if (!foundTierId && tierIdFromQuery) {
+          foundTierId = tierIdFromQuery;
+          console.log('Found tier ID from query params:', foundTierId);
+        }
+        
+        // If we still don't have a tier ID but have a client secret, try to get tier from subscription API
+        if (!foundTierId && secretFromUrl) {
+          try {
+            // This endpoint would need to be implemented on the server
+            const response = await fetch(`/api/subscription/info?secret=${secretFromUrl}`);
+            if (response.ok) {
+              const data = await response.json();
+              if (data.tierId) {
+                foundTierId = data.tierId;
+                console.log('Found tier ID from subscription info API:', foundTierId);
+              }
+            }
+          } catch (err) {
+            console.error('Error fetching subscription info:', err);
+          }
+        }
+        
+        // Set the tier ID if we found one
+        if (foundTierId) {
+          setTierId(foundTierId);
+        }
+        
+        if (secretFromUrl) {
+          // If we have a client secret in the URL, use it
+          setClientSecret(secretFromUrl);
+          setLoading(false);
+        } else {
+          // If no client secret, redirect to subscribe page
+          toast({
+            title: 'Checkout Error',
+            description: 'No payment information found. Please select a plan first.',
+            variant: 'destructive',
+          });
+          setLocation('/subscribe');
+        }
+      } catch (err) {
+        console.error('Error initializing checkout:', err);
+        setError('Failed to initialize checkout. Please try again.');
+        setLoading(false);
+      }
     }
     
-    // Then check query params
-    const tierIdFromQuery = queryParams.get('tierId');
-    if (!foundTierId && tierIdFromQuery) {
-      foundTierId = tierIdFromQuery;
-      console.log('Found tier ID from query params:', foundTierId);
-    }
-    
-    // Set the tier ID if we found one
-    if (foundTierId) {
-      setTierId(foundTierId);
-    }
-    
-    if (secretFromUrl) {
-      // If we have a client secret in the URL, use it
-      setClientSecret(secretFromUrl);
-      setLoading(false);
-    } else {
-      // If no client secret, redirect to subscribe page
-      toast({
-        title: 'Checkout Error',
-        description: 'No payment information found. Please select a plan first.',
-        variant: 'destructive',
-      });
-      setLocation('/subscribe');
-    }
+    initializeCheckout();
   }, [toast, setLocation, match, params]);
   
   // Stripe Elements options
