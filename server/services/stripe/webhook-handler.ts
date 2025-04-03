@@ -75,10 +75,17 @@ async function handleSubscriptionCreatedOrUpdated(
     
     const product = await stripe.products.retrieve(productId);
     
-    // Determine tier from product metadata or name
+    // First check subscription metadata (this is our new preferred method)
     let tier = 'unknown';
-    if (product.metadata?.tier) {
-      // Get tier from metadata and standardize
+    
+    if (subscription.metadata?.tierId) {
+      // Get tier directly from subscription metadata (best option)
+      tier = subscription.metadata.tierId;
+      log(`Found tier in subscription metadata: ${tier}`, 'stripe-webhook');
+    } 
+    // Then check product metadata (fallback option 1)
+    else if (product.metadata?.tier) {
+      // Get tier from product metadata and standardize
       tier = product.metadata.tier;
       log(`Found tier in product metadata: ${tier}`, 'stripe-webhook');
       
@@ -90,12 +97,15 @@ async function handleSubscriptionCreatedOrUpdated(
         tier = 'family_pantry_pro';
         log('Converted "pro" tier to "family_pantry_pro"', 'stripe-webhook');
       }
-    } else if (product.name) {
+    } 
+    // Then check product name (fallback option 2)
+    else if (product.name) {
       log(`No tier in metadata, checking product name: ${product.name}`, 'stripe-webhook');
-      if (product.name.toLowerCase().includes('smart pantry')) {
+      const productNameLower = product.name.toLowerCase();
+      if (productNameLower.includes('smart') || productNameLower.includes('smart pantry')) {
         tier = 'smart_pantry';
         log('Determined tier from product name: smart_pantry', 'stripe-webhook');
-      } else if (product.name.toLowerCase().includes('family pantry pro')) {
+      } else if (productNameLower.includes('family') || productNameLower.includes('pro') || productNameLower.includes('family pantry pro')) {
         tier = 'family_pantry_pro';
         log('Determined tier from product name: family_pantry_pro', 'stripe-webhook');
       }
@@ -631,11 +641,21 @@ async function handleInvoicePaid(
           // Extract product details
           const product = item.price.product as Stripe.Product;
           
-          // Determine tier from product name or metadata
+          // Determine tier from various sources, with priority order
           let tier = 'free'; // Default to free
           
-          // First check metadata for tier information
-          if (product.metadata && product.metadata.tier) {
+          // First check subscription metadata (this is our new preferred method)
+          if (subscription.metadata?.tierId) {
+            tier = subscription.metadata.tierId;
+            log(`Found tier in subscription metadata: ${tier}`, 'stripe-webhook');
+          }
+          // Then check invoice metadata
+          else if (invoice.metadata?.tierId) {
+            tier = invoice.metadata.tierId;
+            log(`Found tier in invoice metadata: ${tier}`, 'stripe-webhook');
+          }
+          // Then check product metadata
+          else if (product.metadata?.tier) {
             tier = product.metadata.tier;
             log(`Found tier in product metadata: ${tier}`, 'stripe-webhook');
             

@@ -154,6 +154,10 @@ export async function createSubscription(
         save_default_payment_method: 'on_subscription',
       },
       expand: ['latest_invoice.payment_intent'],
+      metadata: {
+        tierId: tierId, // Store the full tierId like "smart_pantry" directly
+        tierKey: tierKey // Also store simplified key ("smart" or "pro")
+      },
     });
 
     // Type assertion to get the client secret
