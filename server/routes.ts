@@ -841,29 +841,104 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (user.stripeSubscriptionId) {
         try {
-          // First, retrieve the subscription to get the latest invoice ID
-          const subscription = await stripe!.subscriptions.retrieve(user.stripeSubscriptionId);
+          // First, try to retrieve the subscription with expanded invoice data
+          const subscription = await stripe!.subscriptions.retrieve(user.stripeSubscriptionId, {
+            expand: ['latest_invoice']
+          });
 
-          // Get the latest invoice ID
-          if (!subscription.latest_invoice || typeof subscription.latest_invoice === 'string') {
-            return res.status(400).json({ message: 'No invoice found for this subscription' });
+          console.log('Retrieved existing subscription:', subscription.id);
+          console.log('Latest invoice type:', typeof subscription.latest_invoice);
+          
+          // Check if we have a latest invoice reference
+          const latestInvoice = subscription.latest_invoice;
+          if (!latestInvoice) {
+            // Create a new invoice for the subscription if none exists
+            const newInvoice = await stripe!.invoices.create({
+              customer: user.stripeCustomerId,
+              subscription: subscription.id,
+              collection_method: 'charge_automatically',
+            });
+            
+            console.log('Created new invoice:', newInvoice.id);
+            
+            // Now finalize it to generate a payment intent
+            const finalizedInvoice = await stripe!.invoices.finalizeInvoice(newInvoice.id);
+            
+            // Now retrieve it with the payment intent expanded
+            const invoice = await stripe!.invoices.retrieve(finalizedInvoice.id, {
+              expand: ['payment_intent']
+            });
+            
+            // Check if we got a payment intent
+            if (!invoice.payment_intent) {
+              return res.status(400).json({ message: 'Unable to generate payment intent for this subscription' });
+            }
+            
+            // Get the payment intent
+            const paymentIntent = typeof invoice.payment_intent === 'string'
+              ? await stripe!.paymentIntents.retrieve(invoice.payment_intent)
+              : invoice.payment_intent;
+              
+            if (!paymentIntent?.client_secret) {
+              throw new Error('Unable to retrieve payment information');
+            }
+            
+            res.send({
+              subscriptionId: subscription.id,
+              clientSecret: paymentIntent.client_secret
+            });
+            return;
           }
           
-          const invoiceId = typeof subscription.latest_invoice === 'string' 
-            ? subscription.latest_invoice 
-            : subscription.latest_invoice.id;
-            
-          // Now fetch the invoice to get the payment intent
+          // Get the invoice ID from the latest invoice
+          const invoiceId = typeof latestInvoice === 'string' ? latestInvoice : latestInvoice.id;
+          console.log('Latest invoice ID:', invoiceId);
+          
+          // Retrieve the invoice with payment intent expanded
           const invoice = await stripe!.invoices.retrieve(invoiceId, {
             expand: ['payment_intent']
           });
           
+          console.log('Invoice payment intent type:', typeof invoice.payment_intent);
+          
           // Get the payment intent from the invoice
-          if (!invoice.payment_intent || typeof invoice.payment_intent === 'string') {
-            return res.status(400).json({ message: 'No payment intent found for this invoice' });
+          if (!invoice.payment_intent) {
+            // If no payment intent exists, create a new one
+            const updatedInvoice = await stripe!.invoices.pay(invoiceId, {
+              paid_out_of_band: false
+            });
+            
+            // Retrieve again with payment intent
+            const refreshedInvoice = await stripe!.invoices.retrieve(updatedInvoice.id, {
+              expand: ['payment_intent']
+            });
+            
+            if (!refreshedInvoice.payment_intent) {
+              return res.status(400).json({ 
+                message: 'Unable to generate payment intent for this invoice',
+                details: 'Please try again or contact support'
+              });
+            }
+            
+            const paymentIntent = typeof refreshedInvoice.payment_intent === 'string'
+              ? await stripe!.paymentIntents.retrieve(refreshedInvoice.payment_intent)
+              : refreshedInvoice.payment_intent;
+            
+            if (!paymentIntent?.client_secret) {
+              throw new Error('Unable to retrieve payment information');
+            }
+            
+            res.send({
+              subscriptionId: subscription.id,
+              clientSecret: paymentIntent.client_secret
+            });
+            return;
           }
           
-          const paymentIntent = invoice.payment_intent;
+          // Use the payment intent from the invoice
+          const paymentIntent = typeof invoice.payment_intent === 'string'
+            ? await stripe!.paymentIntents.retrieve(invoice.payment_intent)
+            : invoice.payment_intent;
           
           if (!paymentIntent?.client_secret) {
             throw new Error('Unable to retrieve payment information');
@@ -876,7 +951,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return;
         } catch (error) {
           console.error('Error retrieving existing subscription:', error);
-          return res.status(400).json({ message: 'Error retrieving subscription: ' + (error as Error).message });
+          return res.status(400).json({ 
+            message: 'Error retrieving subscription: ' + (error as Error).message,
+            details: 'Please try again or contact support'
+          });
         }
       }
 
@@ -917,34 +995,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error('Error getting price details:', priceError);
       }
 
-      // Create the subscription without trying to expand payment_intent
+      // Create the subscription 
       const subscription = await stripe!.subscriptions.create({
         customer: customer.id,
         items: [{
           price: priceId,
         }],
         payment_behavior: 'default_incomplete',
+        expand: ['latest_invoice'],
         metadata: {
           tier: tierId // Add the tier to the subscription metadata
         }
       });
       
-      // Get the latest invoice ID
-      if (!subscription.latest_invoice || typeof subscription.latest_invoice !== 'string') {
-        throw new Error('No invoice found for this subscription');
+      // Log details to understand the subscription object
+      console.log('Created subscription with ID:', subscription.id);
+      console.log('Latest invoice type:', typeof subscription.latest_invoice);
+      
+      // Check if the invoice is available
+      const latestInvoice = subscription.latest_invoice;
+      if (!latestInvoice) {
+        throw new Error('No invoice created with this subscription');
       }
       
+      // Get the invoice details
+      const invoiceId = typeof latestInvoice === 'string' ? latestInvoice : latestInvoice.id;
+      console.log('Invoice ID:', invoiceId);
+      
       // Now fetch the invoice to get the payment intent
-      const invoice = await stripe!.invoices.retrieve(subscription.latest_invoice, {
+      const invoice = await stripe!.invoices.retrieve(invoiceId, {
         expand: ['payment_intent']
       });
-            
+      
+      console.log('Invoice payment intent type:', typeof invoice.payment_intent);
+      
       // Get the payment intent from the invoice
-      if (!invoice.payment_intent || typeof invoice.payment_intent === 'string') {
+      if (!invoice.payment_intent) {
         throw new Error('No payment intent found for this invoice');
       }
       
-      const paymentIntent = invoice.payment_intent;
+      const paymentIntent = typeof invoice.payment_intent === 'string' 
+        ? await stripe!.paymentIntents.retrieve(invoice.payment_intent)
+        : invoice.payment_intent;
       
       // Also add tier info to the payment intent if we have it
       if (paymentIntent && tierId) {
