@@ -785,6 +785,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const paymentIntentId = parts[0];
+      console.log('Fetching payment intent for ID:', paymentIntentId);
       
       try {
         // Retrieve the payment intent to get metadata including tier
@@ -808,7 +809,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.log('Extracted tier ID from payment intent description:', tierId);
         }
         
-        res.json({ tierId });
+        // Log the payment details for debugging
+        console.log('Payment details:', {
+          id: paymentIntent.id,
+          amount: paymentIntent.amount,
+          currency: paymentIntent.currency,
+          metadata: paymentIntent.metadata,
+          description: paymentIntent.description
+        });
+        
+        // Return expanded information about the payment
+        res.json({
+          tierId,
+          amount: paymentIntent.amount,
+          currency: paymentIntent.currency,
+          description: paymentIntent.description || '',
+          status: paymentIntent.status
+        });
       } catch (error: any) {
         console.error('Error retrieving payment intent:', error);
         res.status(500).json({ error: error.message });
