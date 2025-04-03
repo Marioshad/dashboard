@@ -27,6 +27,7 @@ import { toast } from '@/hooks/use-toast';
 import { ReceiptUpload } from '@/components/receipt-upload';
 import { Receipt } from '@/types/receipt';
 import { useAuth } from '@/hooks/use-auth';
+import { useWebSocket } from '@/hooks/use-websocket-provider';
 import { Badge } from '@/components/ui/badge';
 import { 
   Tooltip,
@@ -43,28 +44,17 @@ export function ReceiptsPage() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [receiptToDelete, setReceiptToDelete] = useState<number | null>(null);
   const { user, setUser } = useAuth();
-  const [socket, setSocket] = useState<WebSocket | null>(null);
+  const { socket, isConnected } = useWebSocket();
   
-  // Setup WebSocket connection
+  // Setup WebSocket message handler for receipt scan updates
   useEffect(() => {
-    // Only create WebSocket if user is logged in
-    if (!user || !user.id) return;
+    if (!user || !socket) return;
     
-    // Create WebSocket connection
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
-    
-    console.log('Connecting to WebSocket:', wsUrl);
-    const newSocket = new WebSocket(wsUrl);
-    
-    newSocket.onopen = () => {
-      console.log('WebSocket connection established');
-    };
-    
-    newSocket.onmessage = (event) => {
+    // Create a message handler function to process WebSocket messages
+    const handleMessage = (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data);
-        console.log('WebSocket message received:', data);
+        console.log('WebSocket message received in ReceiptsPage:', data);
         
         // Handle receipt scan count updates
         if (data.type === 'receipt_scan_count_update' && data.userId === user.id) {
@@ -75,28 +65,22 @@ export function ReceiptsPage() {
           });
         }
       } catch (error) {
-        console.error('Error processing WebSocket message:', error);
+        console.error('Error processing WebSocket message in ReceiptsPage:', error);
       }
     };
     
-    newSocket.onerror = (error) => {
-      console.error('WebSocket error:', error);
-    };
+    // Add the message handler if socket is connected
+    if (socket.readyState === WebSocket.OPEN) {
+      socket.addEventListener('message', handleMessage);
+    }
     
-    newSocket.onclose = (event) => {
-      console.log('WebSocket connection closed:', event);
-    };
-    
-    setSocket(newSocket);
-    
-    // Cleanup on unmount
+    // Cleanup function to remove the message handler
     return () => {
-      if (newSocket.readyState === WebSocket.OPEN) {
-        console.log('Closing WebSocket connection');
-        newSocket.close();
+      if (socket) {
+        socket.removeEventListener('message', handleMessage);
       }
     };
-  }, [user?.id, setUser]);
+  }, [user, socket, setUser]);
   
   const { data: receipts = [], isLoading, error } = useQuery<Receipt[]>({
     queryKey: ['/api/receipts'],
