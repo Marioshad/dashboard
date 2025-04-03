@@ -211,6 +211,13 @@ async function handlePaymentSucceeded(
       return;
     }
     
+    // Check if we have tier info in the payment intent metadata
+    let tierId = paymentIntent.metadata?.tier as string;
+    let subscriptionId = paymentIntent.metadata?.subscriptionId as string;
+    
+    // Log payment intent metadata for debugging
+    log(`Payment intent metadata: ${JSON.stringify(paymentIntent.metadata || {})}`, 'stripe-webhook');
+    
     // Find the invoice associated with this payment
     // @ts-ignore - payment_intent is not in the TypeScript definitions but is supported by the API
     const { data: invoices } = await stripe.invoices.list({
@@ -219,6 +226,25 @@ async function handlePaymentSucceeded(
     
     if (invoices.length === 0) {
       log(`No invoice found for payment intent: ${paymentIntent.id}`, 'stripe-webhook');
+      
+      // Even without an invoice, we might have customer info in the payment intent
+      if (paymentIntent.customer) {
+        const customerId = typeof paymentIntent.customer === 'string' 
+          ? paymentIntent.customer
+          : paymentIntent.customer.id;
+          
+        const user = await storage.getUserByStripeCustomerId(customerId);
+        if (user) {
+          // Send generic payment notification
+          await sendNotification(
+            user.id,
+            'payment_succeeded',
+            `Your payment of ${(paymentIntent.amount / 100).toFixed(2)} ${paymentIntent.currency.toUpperCase()} has been processed successfully.`,
+            undefined,
+            { amount: paymentIntent.amount / 100, currency: paymentIntent.currency }
+          );
+        }
+      }
       return;
     }
     
@@ -241,50 +267,79 @@ async function handlePaymentSucceeded(
       { amount: paymentIntent.amount / 100, currency: paymentIntent.currency }
     );
     
+    // First check if we already have tier information from payment intent metadata
+    let effectiveTierId = tierId;
+    let effectiveSubscriptionId = subscriptionId;
+    
     // If this is for subscription, make sure user has correct status
     const subscription = invoice.subscription ? 
       await stripe.subscriptions.retrieve(invoice.subscription as string) : null;
     
     if (subscription) {
+      // Use subscription ID from actual subscription
+      effectiveSubscriptionId = subscription.id;
+      
       // Get subscription item and price details
       const item = subscription.items.data[0];
       const price = item?.price;
       const productId = price?.product as string;
       
-      if (!productId) {
-        return;
-      }
-      
-      // Get product details from Stripe
-      const product = await stripe.products.retrieve(productId);
-      
-      // Determine tier from product metadata or name
-      let tier = 'unknown';
-      if (product.metadata?.tier) {
-        tier = product.metadata.tier;
-      } else if (product.name) {
-        if (product.name.toLowerCase().includes('smart pantry')) {
-          tier = 'smart_pantry';
-        } else if (product.name.toLowerCase().includes('family pantry pro')) {
-          tier = 'family_pantry_pro';
+      if (productId) {
+        // Get product details from Stripe
+        const product = await stripe.products.retrieve(productId);
+        
+        // Determine tier from product metadata or name
+        if (product.metadata?.tier) {
+          effectiveTierId = product.metadata.tier;
+        } else if (product.name) {
+          if (product.name.toLowerCase().includes('smart pantry')) {
+            effectiveTierId = 'smart_pantry';
+          } else if (product.name.toLowerCase().includes('family pantry pro')) {
+            effectiveTierId = 'family_pantry_pro';
+          }
         }
       }
+    }
+    
+    // We might have tier info from payment intent metadata but no subscription yet
+    if (!subscription && tierId) {
+      // Check if this is one of our known tiers and convert to system tier name if needed
+      if (tierId === 'smart') effectiveTierId = 'smart_pantry';
+      else if (tierId === 'pro') effectiveTierId = 'family_pantry_pro';
+    }
+    
+    if (effectiveTierId) {
+      log(`Updating user ${user.id} subscription to tier ${effectiveTierId}`, 'stripe-webhook');
       
-      // Update user's subscription details if needed
-      if (user.subscriptionStatus !== 'active' || user.subscriptionTier !== tier) {
-        await storage.updateUserSubscription(user.id, {
-          subscriptionStatus: 'active',
-          subscriptionTier: tier,
-        });
-        
-        // Update user's limits based on tier
-        const limits = TIER_LIMITS[tier] || TIER_LIMITS.free;
-        await storage.updateUserLimits(user.id, {
-          receiptScansLimit: limits.scans,
-          maxItems: limits.items,
-          maxSharedUsers: limits.sharedUsers,
-        });
-      }
+      // Update user's subscription details
+      await storage.updateUserSubscription(user.id, {
+        stripeSubscriptionId: effectiveSubscriptionId || user.stripeSubscriptionId,
+        subscriptionStatus: 'active',
+        subscriptionTier: effectiveTierId,
+      });
+      
+      // Convert simple tier IDs to system tier names if needed
+      const systemTierId = effectiveTierId === 'smart' ? 'smart_pantry' 
+        : effectiveTierId === 'pro' ? 'family_pantry_pro' 
+        : effectiveTierId;
+      
+      // Update user's limits based on tier
+      const limits = TIER_LIMITS[systemTierId] || TIER_LIMITS.free;
+      await storage.updateUserLimits(user.id, {
+        receiptScansLimit: limits.scans,
+        maxItems: limits.items,
+        maxSharedUsers: limits.sharedUsers,
+      });
+      
+      // Send tier upgrade notification
+      const tierName = TIER_NAMES[systemTierId] || systemTierId;
+      await sendNotification(
+        user.id,
+        'subscription_activated',
+        `Your ${tierName} subscription has been activated! You now have access to all features.`,
+        undefined,
+        { tier: systemTierId, status: 'active' }
+      );
     }
     
     log(`Payment succeeded for user ${user.id}`, 'stripe-webhook');
@@ -308,14 +363,37 @@ async function handlePaymentFailed(
       return;
     }
     
+    // Log payment intent metadata for debugging
+    log(`Payment intent metadata for failed payment: ${JSON.stringify(paymentIntent.metadata || {})}`, 'stripe-webhook');
+    
     // Find the invoice associated with this payment
     // @ts-ignore - payment_intent is not in the TypeScript definitions but is supported by the API
     const { data: invoices } = await stripe.invoices.list({
       payment_intent: paymentIntent.id,
     });
     
+    // Handle direct customer info from payment intent if no invoice
     if (invoices.length === 0) {
       log(`No invoice found for payment intent: ${paymentIntent.id}`, 'stripe-webhook');
+      
+      // Even without an invoice, we might have customer info in the payment intent
+      if (paymentIntent.customer) {
+        const customerId = typeof paymentIntent.customer === 'string' 
+          ? paymentIntent.customer
+          : paymentIntent.customer.id;
+          
+        const user = await storage.getUserByStripeCustomerId(customerId);
+        if (user) {
+          // Send generic payment failure notification
+          await sendNotification(
+            user.id,
+            'payment_failed',
+            `Your payment of ${(paymentIntent.amount / 100).toFixed(2)} ${paymentIntent.currency.toUpperCase()} has failed. Please update your payment method.`,
+            undefined,
+            { amount: paymentIntent.amount / 100, currency: paymentIntent.currency }
+          );
+        }
+      }
       return;
     }
     

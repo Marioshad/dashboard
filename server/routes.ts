@@ -1081,11 +1081,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Retrieve the payment intent to get the client secret
       const paymentIntent = await stripe!.paymentIntents.retrieve(paymentIntentId);
       
-      // Also add tier info to the payment intent if we have it
-      if (paymentIntent && tierId) {
+      // Always add tier info to the payment intent, using any available source
+      if (paymentIntent) {
+        // Get the tier ID from various potential sources
+        const effectiveTierId = tierId || 
+          (subscription?.metadata?.tier as string) || 
+          (priceId.includes('smart') ? 'smart' : priceId.includes('pro') ? 'pro' : '');
+          
+        console.log('Setting payment intent metadata with tier ID:', effectiveTierId);
+        
         await stripe!.paymentIntents.update(paymentIntent.id, {
-          metadata: { tier: tierId },
-          description: `Subscription to ${tierId === 'smart' ? 'Smart Pantry' : tierId === 'pro' ? 'Family Pantry Pro' : 'Premium tier'}`
+          metadata: { 
+            tier: effectiveTierId,
+            subscriptionId: subscription.id,
+            invoiceId: typeof latestInvoiceId === 'string' ? latestInvoiceId : latestInvoiceId.id
+          },
+          description: `Subscription to ${effectiveTierId === 'smart' ? 'Smart Pantry' : effectiveTierId === 'pro' ? 'Family Pantry Pro' : 'Premium tier'}`
         });
       }
 
