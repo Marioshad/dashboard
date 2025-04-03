@@ -292,17 +292,33 @@ export function formatSubscriptionData(subscription: Stripe.Subscription): any {
   const price = item?.price;
   const product = price?.product as string;
   
-  // Determine subscription tier from product ID
+  // More robust tier determination from product ID
   let tier = 'unknown';
-  if (product) {
-    // Map product ID to tier
-    // This is a simplified example, you might need a more complex mapping
-    if (product.includes('smart_pantry')) {
+  
+  // First check subscription metadata (preferred method)
+  if (subscription.metadata?.tierId) {
+    tier = subscription.metadata.tierId;
+  } 
+  // Then check product string
+  else if (product) {
+    // Improved product ID mapping logic
+    if (product.includes('smart') || product.includes('smart_pantry')) {
       tier = 'smart_pantry';
-    } else if (product.includes('family_pantry_pro')) {
+    } else if (product.includes('family') || product.includes('pro') || product.includes('family_pantry_pro')) {
       tier = 'family_pantry_pro';
     }
   }
+  
+  // Convert simple tier IDs to system tier names
+  if (tier === 'smart') {
+    tier = 'smart_pantry';
+  } else if (tier === 'pro') {
+    tier = 'family_pantry_pro';
+  }
+  
+  // Make sure we're returning a client-friendly tier ID
+  const clientTier = tier === 'smart_pantry' ? 'smart' : 
+                    tier === 'family_pantry_pro' ? 'pro' : 'free';
   
   return {
     id: subscription.id,
@@ -311,7 +327,8 @@ export function formatSubscriptionData(subscription: Stripe.Subscription): any {
     currentPeriodEnd: new Date(subscription.current_period_end * 1000),
     cancelAtPeriodEnd: subscription.cancel_at_period_end,
     interval: price?.recurring?.interval || 'month',
-    tier,
+    tier: clientTier, // Use client-friendly tier ID
+    serverTier: tier, // Include the server's tier ID for debugging
     amount: price?.unit_amount ? price.unit_amount / 100 : 0,
     currency: price?.currency || 'usd',
   };

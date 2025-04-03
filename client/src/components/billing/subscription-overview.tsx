@@ -5,6 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
 import { Loader2, AlertCircle, CheckCircle2, Clock } from "lucide-react";
 import { format } from "date-fns";
+import { formatCurrency } from "@/lib/subscription";
 
 interface SubscriptionOverviewProps {
   subscription: any;
@@ -66,7 +67,7 @@ export function SubscriptionOverview({
                 <h3 className="text-sm font-medium text-muted-foreground">Plan Price</h3>
                 <p className="text-lg font-semibold mt-1">
                   {currentTier.price > 0 
-                    ? `$${currentTier.price.toFixed(2)}/month` 
+                    ? `${formatCurrency(currentTier.price)}/month` 
                     : "Free"}
                 </p>
               </div>
@@ -74,8 +75,11 @@ export function SubscriptionOverview({
               {subscription && currentTier.id !== 'free' && (
                 <div>
                   <h3 className="text-sm font-medium text-muted-foreground">Billing Period</h3>
-                  <p className="text-lg font-semibold mt-1">
+                  <p className="text-base font-medium mt-1">
                     {formatDate(subscription.currentPeriodStart)} - {formatDate(subscription.currentPeriodEnd)}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Next billing date: {formatDate(subscription.currentPeriodEnd)}
                   </p>
                 </div>
               )}
@@ -114,6 +118,9 @@ export function SubscriptionOverview({
                       <h3 className="text-sm font-medium text-muted-foreground">Next Billing</h3>
                       <p className="text-sm mt-1">
                         {daysRemaining} days until next payment
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        <span className="font-medium">Amount:</span> {formatCurrency(subscription.amount, subscription.currency)} on {formatDate(subscription.currentPeriodEnd)}
                       </p>
                     </div>
                   )}
