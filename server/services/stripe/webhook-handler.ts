@@ -92,8 +92,8 @@ async function handleSubscriptionCreatedOrUpdated(
       stripeSubscriptionId: subscription.id,
       subscriptionStatus: subscription.status,
       subscriptionTier: tier,
-      currentBillingPeriodStart: new Date(subscription.current_period_start * 1000),
-      currentBillingPeriodEnd: new Date(subscription.current_period_end * 1000),
+      currentBillingPeriodStart: new Date((subscription as any).current_period_start * 1000),
+      currentBillingPeriodEnd: new Date((subscription as any).current_period_end * 1000),
     });
     
     // Update user's limits based on tier
@@ -122,7 +122,7 @@ async function handleSubscriptionCreatedOrUpdated(
         tierName,
         price?.unit_amount ? price.unit_amount / 100 : 0,
         price?.currency || 'usd',
-        new Date(subscription.current_period_end * 1000)
+        new Date((subscription as any).current_period_end * 1000)
       );
     }
     
@@ -272,8 +272,8 @@ async function handlePaymentSucceeded(
     let effectiveSubscriptionId = subscriptionId;
     
     // If this is for subscription, make sure user has correct status
-    const subscription = invoice.subscription ? 
-      await stripe.subscriptions.retrieve(invoice.subscription as string) : null;
+    const subscription = (invoice as any).subscription ? 
+      await stripe.subscriptions.retrieve((invoice as any).subscription as string) : null;
     
     if (subscription) {
       // Use subscription ID from actual subscription
@@ -313,7 +313,7 @@ async function handlePaymentSucceeded(
       
       // Update user's subscription details
       await storage.updateUserSubscription(user.id, {
-        stripeSubscriptionId: effectiveSubscriptionId || user.stripeSubscriptionId,
+        stripeSubscriptionId: effectiveSubscriptionId || user.stripeSubscriptionId || '',
         subscriptionStatus: 'active',
         subscriptionTier: effectiveTierId,
       });
@@ -417,8 +417,8 @@ async function handlePaymentFailed(
     );
     
     // If this is for subscription, check if we need to update status
-    if (invoice.subscription) {
-      const subscription = await stripe.subscriptions.retrieve(invoice.subscription as string);
+    if ((invoice as any).subscription) {
+      const subscription = await stripe.subscriptions.retrieve((invoice as any).subscription as string);
       
       if (subscription.status === 'past_due' || subscription.status === 'unpaid') {
         // Update user's subscription status
