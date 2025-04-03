@@ -78,12 +78,26 @@ async function handleSubscriptionCreatedOrUpdated(
     // Determine tier from product metadata or name
     let tier = 'unknown';
     if (product.metadata?.tier) {
+      // Get tier from metadata and standardize
       tier = product.metadata.tier;
+      log(`Found tier in product metadata: ${tier}`, 'stripe-webhook');
+      
+      // Convert simple tier IDs to system tier names if needed
+      if (tier === 'smart') {
+        tier = 'smart_pantry';
+        log('Converted "smart" tier to "smart_pantry"', 'stripe-webhook');
+      } else if (tier === 'pro') {
+        tier = 'family_pantry_pro';
+        log('Converted "pro" tier to "family_pantry_pro"', 'stripe-webhook');
+      }
     } else if (product.name) {
+      log(`No tier in metadata, checking product name: ${product.name}`, 'stripe-webhook');
       if (product.name.toLowerCase().includes('smart pantry')) {
         tier = 'smart_pantry';
+        log('Determined tier from product name: smart_pantry', 'stripe-webhook');
       } else if (product.name.toLowerCase().includes('family pantry pro')) {
         tier = 'family_pantry_pro';
+        log('Determined tier from product name: family_pantry_pro', 'stripe-webhook');
       }
     }
     
@@ -290,12 +304,26 @@ async function handlePaymentSucceeded(
         
         // Determine tier from product metadata or name
         if (product.metadata?.tier) {
+          // Get tier from metadata and standardize
           effectiveTierId = product.metadata.tier;
+          log(`Found tier in product metadata: ${effectiveTierId}`, 'stripe-webhook');
+          
+          // Convert simple tier IDs to system tier names if needed
+          if (effectiveTierId === 'smart') {
+            effectiveTierId = 'smart_pantry';
+            log('Converted "smart" tier to "smart_pantry"', 'stripe-webhook');
+          } else if (effectiveTierId === 'pro') {
+            effectiveTierId = 'family_pantry_pro';
+            log('Converted "pro" tier to "family_pantry_pro"', 'stripe-webhook');
+          }
         } else if (product.name) {
+          log(`No tier in metadata, checking product name: ${product.name}`, 'stripe-webhook');
           if (product.name.toLowerCase().includes('smart pantry')) {
             effectiveTierId = 'smart_pantry';
+            log('Determined tier from product name: smart_pantry', 'stripe-webhook');
           } else if (product.name.toLowerCase().includes('family pantry pro')) {
             effectiveTierId = 'family_pantry_pro';
+            log('Determined tier from product name: family_pantry_pro', 'stripe-webhook');
           }
         }
       }
@@ -567,6 +595,7 @@ async function handleInvoicePaid(
     }
     
     const customerId = invoice.customer as string;
+    log(`Processing paid invoice for customer: ${customerId}`, 'stripe-webhook');
     
     // Get user from database by Stripe customer ID
     const user = await storage.getUserByStripeCustomerId(customerId);
@@ -582,7 +611,105 @@ async function handleInvoicePaid(
     const invoiceUrl = invoice.hosted_invoice_url;
     const pdfUrl = invoice.invoice_pdf;
     
-    // Send notification to user
+    // Get the subscription ID from the invoice
+    const subscriptionId = invoice.subscription as string;
+    log(`Found subscription ID in invoice: ${subscriptionId}`, 'stripe-webhook');
+    
+    if (subscriptionId) {
+      try {
+        // Fetch the subscription details to get the product info
+        const subscription = await stripe.subscriptions.retrieve(subscriptionId, {
+          expand: ['items.data.price.product']
+        });
+        log(`Retrieved subscription ${subscriptionId} for invoice ${invoice.id}`, 'stripe-webhook');
+        
+        // Get first item in the subscription
+        const item = subscription.items.data[0];
+        if (item && item.price && item.price.product) {
+          log(`Processing subscription item for product`, 'stripe-webhook');
+          
+          // Extract product details
+          const product = item.price.product as Stripe.Product;
+          
+          // Determine tier from product name or metadata
+          let tier = 'free'; // Default to free
+          
+          // First check metadata for tier information
+          if (product.metadata && product.metadata.tier) {
+            tier = product.metadata.tier;
+            log(`Found tier in product metadata: ${tier}`, 'stripe-webhook');
+            
+            // Convert simple tier IDs to system tier names if needed
+            if (tier === 'smart') {
+              tier = 'smart_pantry';
+              log('Converted "smart" tier to "smart_pantry"', 'stripe-webhook');
+            } else if (tier === 'pro') {
+              tier = 'family_pantry_pro';
+              log('Converted "pro" tier to "family_pantry_pro"', 'stripe-webhook');
+            }
+          } 
+          // If no tier in metadata, try to determine from product name
+          else if (product.name) {
+            log(`No tier in metadata, checking product name: ${product.name}`, 'stripe-webhook');
+            
+            const productNameLower = product.name.toLowerCase();
+            if (productNameLower.includes('smart')) {
+              tier = 'smart_pantry';
+              log('Determined tier from product name: smart_pantry', 'stripe-webhook');
+            } else if (productNameLower.includes('family') || productNameLower.includes('pro')) {
+              tier = 'family_pantry_pro';
+              log('Determined tier from product name: family_pantry_pro', 'stripe-webhook');
+            }
+          }
+          
+          // If we have a valid tier, update the user's subscription in our database
+          if (tier && tier !== 'free' && TIER_LIMITS[tier]) {
+            log(`Updating user ${user.id} subscription to tier: ${tier}`, 'stripe-webhook');
+            
+            // Update subscription data in our database
+            const updatedUser = await storage.updateUserSubscription(user.id, {
+              stripeSubscriptionId: subscriptionId,
+              subscriptionStatus: subscription.status,
+              subscriptionTier: tier,
+              currentBillingPeriodStart: new Date(subscription.current_period_start * 1000),
+              currentBillingPeriodEnd: new Date(subscription.current_period_end * 1000)
+            });
+            
+            // Update user limits based on the new tier
+            await storage.updateUserLimits(user.id, {
+              receiptScansLimit: TIER_LIMITS[tier].scans,
+              maxItems: TIER_LIMITS[tier].items,
+              maxSharedUsers: TIER_LIMITS[tier].sharedUsers
+            });
+            
+            log(`Updated subscription tier for user ${user.id} to ${tier}`, 'stripe-webhook');
+            
+            // Send notification about the subscription upgrade
+            await sendNotification(
+              user.id,
+              'subscription_upgraded',
+              `Your subscription has been upgraded to ${TIER_NAMES[tier]}. Enjoy your new benefits!`,
+              undefined,
+              {
+                tier,
+                tierName: TIER_NAMES[tier],
+                receiptScansLimit: TIER_LIMITS[tier].scans,
+                maxItems: TIER_LIMITS[tier].items,
+                maxSharedUsers: TIER_LIMITS[tier].sharedUsers
+              }
+            );
+          } else {
+            log(`Could not determine valid tier from product (${product.id}), using default`, 'stripe-webhook');
+          }
+        } else {
+          log(`No subscription item or price found for subscription ${subscriptionId}`, 'stripe-webhook');
+        }
+      } catch (subError) {
+        log(`Error processing subscription for invoice: ${subError}`, 'stripe-webhook');
+      }
+    }
+    
+    // Send notification to user about invoice payment
     await sendNotification(
       user.id,
       'invoice_paid',
@@ -601,9 +728,11 @@ async function handleInvoicePaid(
     
     // Send receipt email if user has an email
     if (user.email) {
-      const tierName = user.subscriptionTier === 'smart_pantry' 
+      // Get the current tier name after possible update
+      const updatedUser = await storage.getUser(user.id);
+      const tierName = updatedUser && updatedUser.subscriptionTier === 'smart_pantry'
         ? 'Smart Pantry' 
-        : user.subscriptionTier === 'family_pantry_pro' 
+        : updatedUser && updatedUser.subscriptionTier === 'family_pantry_pro' 
           ? 'Family Pantry Pro' 
           : 'Free';
       
@@ -622,7 +751,7 @@ async function handleInvoicePaid(
       );
     }
     
-    log(`Invoice paid for user ${user.id}`, 'stripe-webhook');
+    log(`Invoice paid and processed for user ${user.id}`, 'stripe-webhook');
   } catch (error) {
     log(`Error handling invoice paid: ${error}`, 'stripe-webhook');
   }
