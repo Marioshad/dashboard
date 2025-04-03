@@ -36,15 +36,25 @@ export default function CheckoutPage() {
     const queryParams = new URLSearchParams(window.location.search);
     const secretFromUrl = queryParams.get('secret');
     
-    // If we have a URL pattern match, use that tier ID
+    // Determine the tier ID using both route params and query params
+    let foundTierId: string | undefined = undefined;
+    
+    // First check route params (highest priority)
     if (match && params && params.tierId) {
-      setTierId(params.tierId);
+      foundTierId = params.tierId;
+      console.log('Found tier ID from route params:', foundTierId);
     }
     
-    // Otherwise check if tierId is in the query string
+    // Then check query params
     const tierIdFromQuery = queryParams.get('tierId');
-    if (!tierId && tierIdFromQuery) {
-      setTierId(tierIdFromQuery);
+    if (!foundTierId && tierIdFromQuery) {
+      foundTierId = tierIdFromQuery;
+      console.log('Found tier ID from query params:', foundTierId);
+    }
+    
+    // Set the tier ID if we found one
+    if (foundTierId) {
+      setTierId(foundTierId);
     }
     
     if (secretFromUrl) {
@@ -60,7 +70,7 @@ export default function CheckoutPage() {
       });
       setLocation('/subscribe');
     }
-  }, [toast, setLocation, match, params, tierId]);
+  }, [toast, setLocation, match, params]);
   
   // Stripe Elements options
   const options = clientSecret ? {

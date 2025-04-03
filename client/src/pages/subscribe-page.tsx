@@ -68,17 +68,30 @@ export default function SubscribePage() {
       }
 
       // Redirect to checkout page with subscription data
-      // Extract the tier ID from the price ID (e.g., price_1234_smart_monthly -> smart)
-      const parts = priceId.split('_');
-      const tierId = parts.length >= 3 ? parts[2] : undefined;
+      // Extract the tier from the product metadata
+      // First find the tier by matching the price ID with our subscription pricing data
+      let tierValue = '';
       
-      if (tierId) {
-        // If we have a tier ID, include it in the URL path
-        setLocation(`/checkout/${tierId}?secret=${data.clientSecret}`);
+      if (priceId.includes('smart')) {
+        tierValue = 'smart';
+      } else if (priceId.includes('family') || priceId.includes('pro')) {
+        tierValue = 'pro';
       } else {
-        // Otherwise use the query parameter approach
-        setLocation(`/checkout?secret=${data.clientSecret}`);
+        // Try to extract from price ID format
+        const parts = priceId.split('_');
+        if (parts.length >= 3) {
+          // Check if any part contains a tier keyword
+          for (const part of parts) {
+            if (part === 'smart' || part === 'pro' || part === 'family') {
+              tierValue = part === 'family' ? 'pro' : part;
+              break;
+            }
+          }
+        }
       }
+      
+      // Use both path param and query param for maximum compatibility
+      setLocation(`/checkout/${tierValue}?secret=${data.clientSecret}&tierId=${tierValue}`);
     } catch (error: any) {
       toast({
         title: "Error",

@@ -25,12 +25,26 @@ export function CheckoutForm({ clientSecret, tierId, returnUrl = '/billing' }: C
   // Get tier information for display if available
   const tier = tierId ? getSubscriptionTier(tierId) : null;
 
+  // State to track when elements are ready
+  const [elementsReady, setElementsReady] = useState(false);
+  
+  // Listen for element ready event
+  useEffect(() => {
+    if (elements) {
+      setElementsReady(true);
+    }
+  }, [elements]);
+  
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
-    if (!stripe || !elements) {
-      // Stripe.js has not loaded yet. Make sure to disable form submission until Stripe.js has loaded.
+    if (!stripe || !elements || !elementsReady) {
+      // Stripe.js or Elements have not loaded yet
+      toast({
+        title: "Payment System Loading",
+        description: "Please wait while the payment system initializes...",
+      });
       return;
     }
 
