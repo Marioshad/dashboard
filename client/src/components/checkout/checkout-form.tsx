@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { useLocation } from 'wouter';
 import { getSubscriptionTier } from '@/lib/subscription';
 import { formatCurrency } from '@/lib/utils';
+import { useQuery } from '@tanstack/react-query';
 
 interface CheckoutFormProps {
   clientSecret: string;
@@ -22,8 +23,25 @@ export function CheckoutForm({ clientSecret, tierId, returnUrl = '/billing' }: C
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   
+  // Get payment information directly from Stripe
+  const { data: paymentInfo, isLoading: isPaymentInfoLoading } = useQuery({
+    queryKey: ['/api/subscription/info', clientSecret],
+    queryFn: async () => {
+      if (!clientSecret) return null;
+      const response = await fetch(`/api/subscription/info?secret=${encodeURIComponent(clientSecret)}`);
+      if (!response.ok) {
+        throw new Error('Failed to load payment information');
+      }
+      return response.json();
+    },
+    enabled: !!clientSecret,
+  });
+  
+  // Use tier ID from payment intent metadata if available
+  const effectiveTierId = paymentInfo?.tierId || tierId;
+  
   // Get tier information for display if available
-  const tier = tierId ? getSubscriptionTier(tierId) : null;
+  const tier = effectiveTierId ? getSubscriptionTier(effectiveTierId) : null;
 
   // State to track when elements are ready
   const [elementsReady, setElementsReady] = useState(false);
@@ -91,15 +109,27 @@ export function CheckoutForm({ clientSecret, tierId, returnUrl = '/billing' }: C
     }
   };
 
+  // Format amount from Stripe (in cents) to display currency
+  const formatStripeAmount = (amount?: number, currency = 'eur') => {
+    if (!amount) return '';
+    // Divide by 100 to convert from cents to whole currency unit
+    return formatCurrency(amount / 100, currency);
+  };
+
   return (
     <Card className="max-w-2xl mx-auto">
       <CardHeader>
         <CardTitle>Complete Your Subscription</CardTitle>
         <CardDescription>
-          {tier ? 
-            `Subscribe to the ${tier.name} plan for ${formatCurrency(tier.price.monthly)} per month` :
+          {isPaymentInfoLoading ? (
+            'Loading payment details...'
+          ) : paymentInfo ? (
+            `Subscribe to the ${tier?.name || 'Premium'} plan for ${formatStripeAmount(paymentInfo.amount, paymentInfo.currency)} per month`
+          ) : tier ? (
+            `Subscribe to the ${tier.name} plan for ${formatCurrency(tier.price.monthly)} per month`
+          ) : (
             'Complete payment to activate your subscription'
-          }
+          )}
         </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit}>
@@ -112,7 +142,11 @@ export function CheckoutForm({ clientSecret, tierId, returnUrl = '/billing' }: C
                   <p className="text-sm text-muted-foreground">{tier.description}</p>
                 </div>
                 <div className="text-lg font-bold">
-                  {formatCurrency(tier.price.monthly)}<span className="text-sm font-normal text-muted-foreground">/month</span>
+                  {paymentInfo?.amount ? (
+                    <>{formatStripeAmount(paymentInfo.amount, paymentInfo.currency)}<span className="text-sm font-normal text-muted-foreground">/month</span></>
+                  ) : (
+                    <>{formatCurrency(tier.price.monthly)}<span className="text-sm font-normal text-muted-foreground">/month</span></>
+                  )}
                 </div>
               </div>
               <ul className="space-y-2">
@@ -131,6 +165,11 @@ export function CheckoutForm({ clientSecret, tierId, returnUrl = '/billing' }: C
                   <h3 className="font-semibold text-lg">Subscription Plan</h3>
                   <p className="text-sm text-muted-foreground">Upgrade to get premium features</p>
                 </div>
+                {paymentInfo?.amount && (
+                  <div className="text-lg font-bold">
+                    {formatStripeAmount(paymentInfo.amount, paymentInfo.currency)}<span className="text-sm font-normal text-muted-foreground">/month</span>
+                  </div>
+                )}
               </div>
               
               {/* If we don't have the tier ID, show features from both premium tiers */}
