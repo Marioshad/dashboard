@@ -167,8 +167,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('Validation successful, parsed data:', result.data);
       console.log('Calling storage.updateProfile with data:', JSON.stringify(result.data));
 
+      const currentUser = req.user;
       const updatedUser = await storage.updateProfile(req.user.id, result.data);
       console.log('Profile updated successfully, returning user:', JSON.stringify(updatedUser));
+      
+      // Update Stripe customer email if email changed and user has Stripe customer ID
+      if (stripe && 
+          result.data.email && 
+          currentUser.email !== result.data.email && 
+          currentUser.stripeCustomerId) {
+        try {
+          console.log(`Updating Stripe customer email from ${currentUser.email} to ${result.data.email}`);
+          await stripe.customers.update(currentUser.stripeCustomerId, {
+            email: result.data.email
+          });
+          console.log('Stripe customer email updated successfully');
+        } catch (stripeError) {
+          console.error('Error updating Stripe customer email:', stripeError);
+          // We don't want to fail the profile update if Stripe update fails
+          // Just log the error and continue
+        }
+      }
       
       res.json(updatedUser);
     } catch (error) {
@@ -952,6 +971,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
               console.error('Error paying invoice:', payError);
               
               // If paying fails, create a new payment intent manually
+              // Get product details to extract tier information
+              let tierId = '';
+              try {
+                // Get the subscription items to find the product
+                const subItems = await stripe!.subscriptionItems.list({
+                  subscription: subscription.id
+                });
+                
+                if (subItems.data.length > 0) {
+                  const price = await stripe!.prices.retrieve(subItems.data[0].price.id);
+                  if (price.product) {
+                    const product = await stripe!.products.retrieve(price.product as string);
+                    tierId = product.metadata?.tier || '';
+                    console.log(`Found tier ID from product metadata: ${tierId}`);
+                  }
+                }
+              } catch (err) {
+                console.error('Error extracting tier ID:', err);
+              }
+              
               const paymentIntent = await stripe!.paymentIntents.create({
                 amount: invoice.amount_due,
                 currency: invoice.currency || 'eur',
@@ -959,7 +998,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 description: `Payment for invoice ${invoice.id}`,
                 metadata: {
                   invoiceId: invoice.id,
-                  subscriptionId: subscription.id
+                  subscriptionId: subscription.id,
+                  tierId: tierId
                 }
               });
               
@@ -2542,31 +2582,125 @@ const updateReceiptScanUsage = async (userId: number, scansUsed: number, scansLi
       }
 
       try {
-        const subscription = await stripe.subscriptions.retrieve(user.stripeSubscriptionId, {
-          expand: ['default_payment_method', 'items.data.price.product']
-        });
+        // Retrieve basic subscription info to avoid expansion errors
+        const subscription = await stripe.subscriptions.retrieve(user.stripeSubscriptionId);
+        
+        // Get the payment method separately if it exists
+        let paymentMethod = null;
+        if (subscription.default_payment_method) {
+          try {
+            const pmId = typeof subscription.default_payment_method === 'string' 
+              ? subscription.default_payment_method 
+              : subscription.default_payment_method.id;
+              
+            paymentMethod = await stripe.paymentMethods.retrieve(pmId);
+          } catch (pmError) {
+            console.error('Error retrieving payment method:', pmError);
+          }
+        }
+        
+        // Extract tier info from subscription metadata, product metadata, or user record
+        let tierId = user.subscriptionTier;
+        
+        // Check subscription metadata
+        if (subscription.metadata && subscription.metadata.tier) {
+          tierId = subscription.metadata.tier;
+        }
+        
+        // If no tier found yet, try to extract from product info
+        if (!tierId || tierId === 'free') {
+          try {
+            // Get first subscription item
+            const subItems = await stripe.subscriptionItems.list({
+              subscription: subscription.id
+            });
+            
+            if (subItems.data.length > 0) {
+              // Get the price
+              const price = await stripe.prices.retrieve(subItems.data[0].price.id);
+              
+              // Get the product
+              if (price.product && typeof price.product === 'string') {
+                const product = await stripe.products.retrieve(price.product);
+                
+                if (product.metadata && product.metadata.tier) {
+                  tierId = product.metadata.tier;
+                  console.log(`Found tier ID ${tierId} from product metadata`);
+                  
+                  // Also update user record if tier info found in product metadata
+                  if (tierId !== user.subscriptionTier) {
+                    console.log(`Updating user ${user.id} with newly detected tier ${tierId}`);
+                    await storage.updateUserSubscription(user.id, {
+                      subscriptionTier: tierId
+                    });
+                  }
+                }
+              }
+            }
+          } catch (productError) {
+            console.error('Error extracting product tier info:', productError);
+          }
+        }
 
+        // Get prices and product details separately to avoid type errors
+        const subItems = await stripe.subscriptionItems.list({
+          subscription: subscription.id
+        });
+        
+        // Build items array with product details
+        const itemsWithProductDetails = await Promise.all(
+          subItems.data.map(async (item) => {
+            try {
+              const price = await stripe.prices.retrieve(item.price.id);
+              let productDetails = { name: "Unknown product", description: null };
+              
+              if (price.product && typeof price.product === 'string') {
+                try {
+                  const product = await stripe.products.retrieve(price.product);
+                  productDetails = {
+                    name: product.name || "Unknown product",
+                    description: product.description || null
+                  };
+                } catch (productError) {
+                  console.error('Error retrieving product details:', productError);
+                }
+              }
+              
+              return {
+                id: item.id,
+                price: {
+                  id: price.id,
+                  unitAmount: price.unit_amount,
+                  currency: price.currency,
+                  interval: price.recurring?.interval,
+                  product: productDetails
+                }
+              };
+            } catch (priceError) {
+              console.error('Error retrieving price details:', priceError);
+              return {
+                id: item.id,
+                price: {
+                  id: item.price.id,
+                  unitAmount: item.price.unit_amount,
+                  currency: item.price.currency,
+                  interval: item.price.recurring?.interval,
+                  product: { name: "Unknown product", description: null }
+                }
+              };
+            }
+          })
+        );
+        
         const subscriptionData = {
           id: subscription.id,
           status: subscription.status,
-          currentPeriodStart: new Date(subscription.current_period_start * 1000),
-          currentPeriodEnd: new Date(subscription.current_period_end * 1000),
+          currentPeriodStart: new Date((subscription as any).current_period_start * 1000),
+          currentPeriodEnd: new Date((subscription as any).current_period_end * 1000),
           cancelAtPeriodEnd: subscription.cancel_at_period_end,
-          tier: user.subscriptionTier,
-          paymentMethod: subscription.default_payment_method,
-          items: subscription.items.data.map(item => ({
-            id: item.id,
-            price: {
-              id: item.price.id,
-              unitAmount: item.price.unit_amount,
-              currency: item.price.currency,
-              interval: item.price.recurring?.interval,
-              product: {
-                name: (item.price.product as any).name,
-                description: (item.price.product as any).description
-              }
-            }
-          }))
+          tier: tierId || user.subscriptionTier,
+          paymentMethod: paymentMethod,
+          items: itemsWithProductDetails
         };
 
         res.json({ subscription: subscriptionData });
@@ -2603,10 +2737,10 @@ const updateReceiptScanUsage = async (userId: number, scansUsed: number, scansLi
         return res.json({ invoices: [] });
       }
 
+      // Get invoices without expanding subscription to avoid API errors
       const invoices = await stripe.invoices.list({
         customer: user.stripeCustomerId,
-        limit: 10,
-        expand: ['data.subscription']
+        limit: 10
       });
 
       const formattedInvoices = invoices.data.map(invoice => ({
@@ -2620,7 +2754,7 @@ const updateReceiptScanUsage = async (userId: number, scansUsed: number, scansLi
         periodEnd: invoice.period_end ? new Date(invoice.period_end * 1000) : null,
         pdfUrl: invoice.invoice_pdf,
         hostedUrl: invoice.hosted_invoice_url,
-        subscriptionId: invoice.subscription
+        subscriptionId: (invoice as any).subscription
       }));
 
       res.json({ invoices: formattedInvoices });
@@ -2705,14 +2839,14 @@ const updateReceiptScanUsage = async (userId: number, scansUsed: number, scansLi
         undefined,
         { 
           action: 'cancel_scheduled',
-          periodEnd: new Date(subscription.current_period_end * 1000)
+          periodEnd: new Date((subscription as any).current_period_end * 1000)
         }
       );
 
       res.json({ 
         success: true, 
         cancelAtPeriodEnd: subscription.cancel_at_period_end,
-        currentPeriodEnd: new Date(subscription.current_period_end * 1000)
+        currentPeriodEnd: new Date((subscription as any).current_period_end * 1000)
       });
     } catch (error: any) {
       console.error('Subscription cancellation error:', error);
