@@ -74,6 +74,7 @@ async function handleSubscriptionCreatedOrUpdated(
     }
     
     const product = await stripe.products.retrieve(productId);
+    log(`Product details: ${JSON.stringify(product)}`, 'stripe-webhook');
     
     // First check subscription metadata (this is our new preferred method)
     let tier = 'unknown';
@@ -88,15 +89,6 @@ async function handleSubscriptionCreatedOrUpdated(
       // Get tier from product metadata and standardize
       tier = product.metadata.tier;
       log(`Found tier in product metadata: ${tier}`, 'stripe-webhook');
-      
-      // Convert simple tier IDs to system tier names if needed
-      if (tier === 'smart') {
-        tier = 'smart_pantry';
-        log('Converted "smart" tier to "smart_pantry"', 'stripe-webhook');
-      } else if (tier === 'pro') {
-        tier = 'family_pantry_pro';
-        log('Converted "pro" tier to "family_pantry_pro"', 'stripe-webhook');
-      }
     } 
     // Then check product name (fallback option 2)
     else if (product.name) {
@@ -110,6 +102,43 @@ async function handleSubscriptionCreatedOrUpdated(
         log('Determined tier from product name: family_pantry_pro', 'stripe-webhook');
       }
     }
+    
+    // Convert simple tier IDs to system tier names if needed
+    if (tier === 'smart') {
+      tier = 'smart_pantry';
+      log('Converted "smart" tier to "smart_pantry"', 'stripe-webhook');
+    } else if (tier === 'pro') {
+      tier = 'family_pantry_pro';
+      log('Converted "pro" tier to "family_pantry_pro"', 'stripe-webhook');
+    }
+    
+    // CRITICAL FIX: If tier is still unknown, force determination from product name or price
+    if (tier === 'unknown' || tier === 'free') {
+      // One last attempt using fuzzy product name matching
+      if (product.name) {
+        const productNameLower = product.name.toLowerCase();
+        if (productNameLower.includes('smart') || productNameLower.includes('pantry')) {
+          tier = 'smart_pantry';
+          log('FORCED tier from product name fuzzy match: smart_pantry', 'stripe-webhook');
+        } else if (productNameLower.includes('family') || productNameLower.includes('pro')) {
+          tier = 'family_pantry_pro';
+          log('FORCED tier from product name fuzzy match: family_pantry_pro', 'stripe-webhook');
+        }
+      }
+      
+      // Last resort - use price to determine tier (smart is 4.99, pro is 9.99 typically)
+      if (tier === 'unknown' && price && price.unit_amount) {
+        if (price.unit_amount < 800) {
+          tier = 'smart_pantry';
+          log(`FORCED tier based on price amount ${price.unit_amount}: smart_pantry`, 'stripe-webhook');
+        } else {
+          tier = 'family_pantry_pro';
+          log(`FORCED tier based on price amount ${price.unit_amount}: family_pantry_pro`, 'stripe-webhook');
+        }
+      }
+    }
+    
+    log(`Final determined tier: ${tier}`, 'stripe-webhook');
     
     // Update user's subscription details
     await storage.updateUserSubscription(user.id, {
@@ -640,6 +669,7 @@ async function handleInvoicePaid(
           
           // Extract product details
           const product = item.price.product as Stripe.Product;
+          log(`Product details: ${JSON.stringify(product)}`, 'stripe-webhook');
           
           // Determine tier from various sources, with priority order
           let tier = 'free'; // Default to free
@@ -658,16 +688,7 @@ async function handleInvoicePaid(
           else if (product.metadata?.tier) {
             tier = product.metadata.tier;
             log(`Found tier in product metadata: ${tier}`, 'stripe-webhook');
-            
-            // Convert simple tier IDs to system tier names if needed
-            if (tier === 'smart') {
-              tier = 'smart_pantry';
-              log('Converted "smart" tier to "smart_pantry"', 'stripe-webhook');
-            } else if (tier === 'pro') {
-              tier = 'family_pantry_pro';
-              log('Converted "pro" tier to "family_pantry_pro"', 'stripe-webhook');
-            }
-          } 
+          }
           // If no tier in metadata, try to determine from product name
           else if (product.name) {
             log(`No tier in metadata, checking product name: ${product.name}`, 'stripe-webhook');
@@ -682,8 +703,47 @@ async function handleInvoicePaid(
             }
           }
           
+          // Convert simple tier IDs to system tier names if needed
+          if (tier === 'smart') {
+            tier = 'smart_pantry';
+            log('Converted "smart" tier to "smart_pantry"', 'stripe-webhook');
+          } else if (tier === 'pro') {
+            tier = 'family_pantry_pro';
+            log('Converted "pro" tier to "family_pantry_pro"', 'stripe-webhook');
+          }
+          
+          // CRITICAL FIX: If tier is still not one of our known system tiers, try to determine
+          // from product name - this is to handle cases where product doesn't have metadata
+          if (tier === 'free' && product.name) {
+            const productNameLower = product.name.toLowerCase();
+            if (productNameLower.includes('smart')) {
+              tier = 'smart_pantry';
+              log('Determined tier from product name as fallback: smart_pantry', 'stripe-webhook');
+            } else if (productNameLower.includes('family') || productNameLower.includes('pro')) {
+              tier = 'family_pantry_pro';
+              log('Determined tier from product name as fallback: family_pantry_pro', 'stripe-webhook');
+            }
+          }
+          
+          // Force tier to a valid option based on the product name when all else fails
+          if (tier === 'free' || tier === 'unknown') {
+            // One last attempt with fuzzy matching
+            if (product.name) {
+              const productNameLower = product.name.toLowerCase();
+              if (productNameLower.includes('smart') || productNameLower.includes('pantry')) {
+                tier = 'smart_pantry';
+                log('FORCED tier from product name fuzzy match: smart_pantry', 'stripe-webhook');
+              } else if (productNameLower.includes('family') || productNameLower.includes('pro')) {
+                tier = 'family_pantry_pro';
+                log('FORCED tier from product name fuzzy match: family_pantry_pro', 'stripe-webhook');
+              }
+            }
+          }
+          
+          log(`Final determined tier: ${tier}`, 'stripe-webhook');
+          
           // If we have a valid tier, update the user's subscription in our database
-          if (tier && tier !== 'free' && TIER_LIMITS[tier]) {
+          if (tier && TIER_LIMITS[tier]) {
             log(`Updating user ${user.id} subscription to tier: ${tier}`, 'stripe-webhook');
             
             // Update subscription data in our database
