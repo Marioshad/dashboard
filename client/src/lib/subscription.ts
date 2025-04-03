@@ -2,6 +2,7 @@
 
 export interface SubscriptionTier {
   id: string;
+  serverTierId?: string; // Optional server-side tier ID that may be different from client ID
   name: string;
   description: string;
   features: string[];
@@ -42,7 +43,8 @@ export const SUBSCRIPTION_TIERS: SubscriptionTier[] = [
     }
   },
   {
-    id: 'smart',
+    id: 'smart', // Client uses 'smart' but server uses 'smart_pantry'
+    serverTierId: 'smart_pantry', // Add explicit server tier ID
     name: 'Smart Pantry',
     description: 'Advanced inventory tracking',
     features: [
@@ -67,7 +69,8 @@ export const SUBSCRIPTION_TIERS: SubscriptionTier[] = [
     }
   },
   {
-    id: 'pro',
+    id: 'pro', // Client uses 'pro' but server uses 'family_pantry_pro'
+    serverTierId: 'family_pantry_pro', // Add explicit server tier ID
     name: 'Family Pantry Pro',
     description: 'Complete solution for families',
     features: [
@@ -99,7 +102,16 @@ export const SUBSCRIPTION_TIERS: SubscriptionTier[] = [
  * @returns Subscription tier or the free tier if not found
  */
 export function getSubscriptionTier(id: string): SubscriptionTier {
-  return SUBSCRIPTION_TIERS.find(tier => tier.id === id) || SUBSCRIPTION_TIERS[0];
+  // First try to find by client ID
+  const tierByClientId = SUBSCRIPTION_TIERS.find(tier => tier.id === id);
+  if (tierByClientId) return tierByClientId;
+  
+  // Then try to find by server ID
+  const tierByServerId = SUBSCRIPTION_TIERS.find(tier => tier.serverTierId === id);
+  if (tierByServerId) return tierByServerId;
+  
+  // If still not found, return free tier
+  return SUBSCRIPTION_TIERS[0];
 }
 
 /**
