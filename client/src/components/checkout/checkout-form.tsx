@@ -53,6 +53,15 @@ export function CheckoutForm({ clientSecret, tierId, returnUrl = '/billing' }: C
     }
   }, [elements]);
   
+  // Reset loading state when elements are reset or changed
+  // This helps when a user fixes validation errors and tries again
+  useEffect(() => {
+    // If elements exist and loading state is stuck, reset it
+    if (elements && isLoading) {
+      setIsLoading(false);
+    }
+  }, [elements, isLoading]);
+  
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -88,6 +97,8 @@ export function CheckoutForm({ clientSecret, tierId, returnUrl = '/billing' }: C
           description: error.message || 'An unexpected error occurred. Please try again.',
           variant: 'destructive',
         });
+        // Make sure to reset loading state on error
+        setIsLoading(false);
       } else {
         // Redirect to billing page with success message
         toast({
@@ -104,9 +115,11 @@ export function CheckoutForm({ clientSecret, tierId, returnUrl = '/billing' }: C
         description: err.message || 'An unexpected error occurred. Please try again.',
         variant: 'destructive',
       });
-    } finally {
+      // Make sure to reset loading state on any error
       setIsLoading(false);
     }
+    // Only use finally for cleanup that must happen in ALL cases
+    // Since we're conditionally redirecting on success, we need explicit setIsLoading(false) in error cases
   };
 
   // Format amount from Stripe (in cents) to display currency
@@ -214,7 +227,18 @@ export function CheckoutForm({ clientSecret, tierId, returnUrl = '/billing' }: C
           
           <div className="space-y-3">
             <h3 className="font-medium text-md">Payment Information</h3>
-            <PaymentElement />
+            <PaymentElement 
+              onChange={(e) => {
+                // Reset any error state when the user changes payment information
+                if (errorMessage) {
+                  setErrorMessage(null);
+                }
+                // Ensure loading state is reset when user makes changes
+                if (isLoading) {
+                  setIsLoading(false);
+                }
+              }}
+            />
           </div>
           
           {errorMessage && (
