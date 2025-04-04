@@ -96,30 +96,24 @@ emailRouter.post('/test', async (req, res) => {
  */
 emailRouter.get('/verify', async (req, res) => {
   try {
-    const { token, userId } = req.query;
+    const { token } = req.query;
     
-    if (!token || !userId) {
+    if (!token) {
       return res.status(400).json({
         success: false,
-        message: 'Missing token or user ID'
+        message: 'Missing verification token'
       });
     }
     
-    const userIdNum = parseInt(userId as string, 10);
-    if (isNaN(userIdNum)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid user ID format'
-      });
-    }
+    log(`Processing verification request with token: ${token}`, 'email');
     
-    const verified = await verifyEmail(userIdNum, token as string);
+    const result = await verifyEmail(token as string);
     
-    if (verified) {
+    if (result.success) {
       // If the current user is the one being verified, update their session
-      if (req.isAuthenticated() && req.user?.id === userIdNum) {
+      if (req.isAuthenticated()) {
         // Force refresh of user data
-        const user = await storage.getUser(userIdNum);
+        const user = await storage.getUser(req.user.id);
         if (user) {
           // Update the session
           Object.assign(req.user, user);
@@ -128,12 +122,12 @@ emailRouter.get('/verify', async (req, res) => {
       
       return res.status(200).json({
         success: true,
-        message: 'Email verified successfully'
+        message: result.message || 'Email verified successfully'
       });
     } else {
       return res.status(400).json({
         success: false,
-        message: 'Invalid or expired verification token'
+        message: result.message || 'Invalid or expired verification token'
       });
     }
   } catch (error: any) {
@@ -176,25 +170,20 @@ emailRouter.post('/resend-verification', async (req, res) => {
       });
     }
     
-    // Get the base URL from the request
-    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
-    const host = req.headers['x-forwarded-host'] || req.get('host');
-    const baseUrl = `${protocol}://${host}`;
-    
     log(`Attempting to resend verification email to ${user.email}`, 'email');
     
     // Resend verification email
-    const emailSent = await resendVerificationEmail(user.id, baseUrl);
+    const result = await resendVerificationEmail(user.id);
     
-    if (emailSent) {
+    if (result && result.success) {
       return res.status(200).json({
         success: true,
-        message: 'Verification email sent successfully'
+        message: result.message || 'Verification email sent successfully'
       });
     } else {
       return res.status(500).json({
         success: false,
-        message: 'Failed to send verification email'
+        message: (result && result.message) ? result.message : 'Failed to send verification email'
       });
     }
   } catch (error: any) {
