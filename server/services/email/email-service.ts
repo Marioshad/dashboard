@@ -7,7 +7,8 @@ let mailService: MailService | null = null;
 let sendgridAvailable = false;
 
 // Default sender email - should be a verified sender in SendGrid
-const DEFAULT_FROM_EMAIL = 'noreply@foodvault.app';
+// IMPORTANT: This email must be verified in your SendGrid account or the emails will fail
+const DEFAULT_FROM_EMAIL = 'noreply@foodvault.app'; // You need to change this to a verified sender in SendGrid
 
 try {
   if (process.env.SENDGRID_API_KEY) {
