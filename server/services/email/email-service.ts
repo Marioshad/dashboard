@@ -329,3 +329,142 @@ export async function sendReceiptScanEmail(
     html,
   });
 }
+
+/**
+ * Send a test email to users and administrators
+ * @param userEmail User's email address 
+ * @param adminEmail Admin's email address (optional)
+ * @param userName User's name or username
+ * @returns True if at least one email was sent successfully, false otherwise
+ */
+export async function sendTestEmail(
+  userEmail: string,
+  adminEmail: string | null = null,
+  userName: string = 'User'
+): Promise<boolean> {
+  if (!sendgridAvailable) {
+    log('SendGrid is not available, skipping test email', 'email');
+    return false;
+  }
+
+  const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'noreply@foodvault.com';
+  const currentDate = new Date();
+  const dateStr = currentDate.toLocaleDateString('en-US', { 
+    year: 'numeric', 
+    month: 'long', 
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+
+  // Create a beautiful HTML email template
+  const userHtml = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 0;">
+      <!-- Header with logo and gradient background -->
+      <div style="background: linear-gradient(to right, #4361ee, #3f37c9); color: white; padding: 30px 20px; text-align: center; border-radius: 8px 8px 0 0;">
+        <h1 style="margin: 0; font-size: 24px;">FoodVault</h1>
+        <p style="margin: 10px 0 0; opacity: 0.9;">Your Smart Food Inventory Manager</p>
+      </div>
+      
+      <!-- Main content -->
+      <div style="background-color: #ffffff; padding: 30px 20px; border-left: 1px solid #e0e0e0; border-right: 1px solid #e0e0e0;">
+        <h2 style="color: #333; margin-top: 0;">Hello, ${userName}!</h2>
+        <p>This is a test email to confirm that your email notifications are working correctly with FoodVault.</p>
+        
+        <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #4361ee;">
+          <h3 style="margin-top: 0; color: #333; font-size: 18px;">Email Test Details</h3>
+          <p><strong>Status:</strong> <span style="color: #4CAF50;">Successful ✓</span></p>
+          <p><strong>Sent:</strong> ${dateStr}</p>
+          <p><strong>Email:</strong> ${userEmail}</p>
+        </div>
+        
+        <p>With FoodVault email notifications, you'll receive:</p>
+        <ul style="padding-left: 20px; line-height: 1.6;">
+          <li>Receipt processing confirmations</li>
+          <li>Expiry date alerts for your food items</li>
+          <li>Subscription updates and invoices</li>
+          <li>Important account notifications</li>
+        </ul>
+        
+        <div style="margin: 30px 0; text-align: center;">
+          <a href="${process.env.PUBLIC_URL || 'https://foodvault.app'}/settings" 
+             style="background-color: #4361ee; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+            Manage Email Preferences
+          </a>
+        </div>
+      </div>
+      
+      <!-- Footer -->
+      <div style="background-color: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #666; border-radius: 0 0 8px 8px; border: 1px solid #e0e0e0; border-top: none;">
+        <p>This is an automated message from FoodVault. Please do not reply to this email.</p>
+        <p style="margin-bottom: 0;">© ${currentDate.getFullYear()} FoodVault. All rights reserved.</p>
+      </div>
+    </div>
+  `;
+
+  // Create a different template for admin
+  const adminHtml = adminEmail ? `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 0;">
+      <!-- Header with logo and gradient background -->
+      <div style="background: linear-gradient(to right, #3a0ca3, #4361ee); color: white; padding: 30px 20px; text-align: center; border-radius: 8px 8px 0 0;">
+        <h1 style="margin: 0; font-size: 24px;">FoodVault Admin</h1>
+        <p style="margin: 10px 0 0; opacity: 0.9;">Email System Test Notification</p>
+      </div>
+      
+      <!-- Main content -->
+      <div style="background-color: #ffffff; padding: 30px 20px; border-left: 1px solid #e0e0e0; border-right: 1px solid #e0e0e0;">
+        <h2 style="color: #333; margin-top: 0;">Email Test Triggered</h2>
+        <p>A user has triggered an email test from the FoodVault application.</p>
+        
+        <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #3a0ca3;">
+          <h3 style="margin-top: 0; color: #333; font-size: 18px;">Test Details</h3>
+          <p><strong>Timestamp:</strong> ${dateStr}</p>
+          <p><strong>User Email:</strong> ${userEmail}</p>
+          <p><strong>User Name:</strong> ${userName}</p>
+          <p><strong>Status:</strong> <span style="color: #4CAF50;">Email Sent ✓</span></p>
+        </div>
+        
+        <p>This is a system test to verify that the email functionality is working correctly.</p>
+        
+        <div style="margin: 30px 0; text-align: center;">
+          <a href="${process.env.PUBLIC_URL || 'https://foodvault.app'}/admin/emails" 
+             style="background-color: #3a0ca3; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+            Email System Dashboard
+          </a>
+        </div>
+      </div>
+      
+      <!-- Footer -->
+      <div style="background-color: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #666; border-radius: 0 0 8px 8px; border: 1px solid #e0e0e0; border-top: none;">
+        <p>This is an automated admin notification from FoodVault.</p>
+        <p style="margin-bottom: 0;">© ${currentDate.getFullYear()} FoodVault. All rights reserved.</p>
+      </div>
+    </div>
+  ` : '';
+
+  // Send email to user
+  const userEmailSuccess = await sendEmail({
+    to: userEmail,
+    from: fromEmail,
+    subject: 'FoodVault Email Test',
+    html: userHtml,
+  });
+  
+  log(`Test email to user (${userEmail}) ${userEmailSuccess ? 'sent successfully' : 'failed'}`, 'email');
+
+  // If admin email is provided, send an email to admin as well
+  let adminEmailSuccess = false;
+  if (adminEmail) {
+    adminEmailSuccess = await sendEmail({
+      to: adminEmail,
+      from: fromEmail,
+      subject: 'FoodVault Admin: Email Test Notification',
+      html: adminHtml,
+    });
+    
+    log(`Test email to admin (${adminEmail}) ${adminEmailSuccess ? 'sent successfully' : 'failed'}`, 'email');
+  }
+
+  // Return true if at least one email was sent successfully
+  return userEmailSuccess || adminEmailSuccess;
+}
