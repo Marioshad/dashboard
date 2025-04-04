@@ -628,13 +628,8 @@ export type InsertFoodItem = z.infer<typeof insertFoodItemSchema>;
 export type UpdateFoodItem = z.infer<typeof updateFoodItemSchema>;
 export type InsertReceipt = z.infer<typeof insertReceiptSchema>;
 export type UpdateReceipt = z.infer<typeof updateReceiptSchema>;
-// Base User type from database schema
-export type UserBase = typeof users.$inferSelect;
-
-// Extended User type with the emailVerified field for TypeScript compatibility
-export interface User extends UserBase {
-  emailVerified?: boolean;
-}
+// Get the full User type directly from the database schema
+export type User = typeof users.$inferSelect;
 export type Role = typeof roles.$inferSelect;
 export type Permission = typeof permissions.$inferSelect;
 export type AppSettings = typeof appSettings.$inferSelect;
