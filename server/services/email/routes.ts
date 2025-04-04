@@ -93,10 +93,12 @@ emailRouter.post('/test', async (req, res) => {
 
 /**
  * Verify a user's email address using a token
+ * Supports both GET and POST methods for flexibility
  */
-emailRouter.get('/verify', async (req, res) => {
+const handleVerifyEmail = async (req: any, res: any) => {
   try {
-    const { token } = req.query;
+    // Token can come from query params (GET) or request body (POST)
+    const token = req.method === 'GET' ? req.query.token : req.body.token;
     
     if (!token) {
       return res.status(400).json({
@@ -105,7 +107,7 @@ emailRouter.get('/verify', async (req, res) => {
       });
     }
     
-    log(`Processing verification request with token: ${token}`, 'email');
+    log(`Processing verification request with token: ${token} (${req.method} request)`, 'email');
     
     const result = await verifyEmail(token as string);
     
@@ -138,7 +140,11 @@ emailRouter.get('/verify', async (req, res) => {
       error: error.message
     });
   }
-});
+};
+
+// Set up both GET and POST routes for verification
+emailRouter.get('/verify', handleVerifyEmail);
+emailRouter.post('/verify', handleVerifyEmail);
 
 /**
  * Resend verification email to user
