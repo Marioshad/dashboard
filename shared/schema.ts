@@ -126,6 +126,13 @@ export const users = pgTable("users", {
   webNotifications: boolean("web_notifications").default(true),
   mentionNotifications: boolean("mention_notifications").default(true),
   followNotifications: boolean("follow_notifications").default(true),
+  
+  // Email verification fields
+  emailVerified: boolean("email_verified").default(false),
+  verificationToken: text("verification_token"),
+  verificationTokenExpiry: timestamp("verification_token_expiry"),
+  verificationTokenExpiresAt: timestamp("verification_token_expires_at"),
+  
   stripeCustomerId: text("stripe_customer_id"),
   stripeSubscriptionId: text("stripe_subscription_id"),
   subscriptionStatus: text("subscription_status").default("inactive"),
@@ -621,7 +628,13 @@ export type InsertFoodItem = z.infer<typeof insertFoodItemSchema>;
 export type UpdateFoodItem = z.infer<typeof updateFoodItemSchema>;
 export type InsertReceipt = z.infer<typeof insertReceiptSchema>;
 export type UpdateReceipt = z.infer<typeof updateReceiptSchema>;
-export type User = typeof users.$inferSelect;
+// Base User type from database schema
+export type UserBase = typeof users.$inferSelect;
+
+// Extended User type with the emailVerified field for TypeScript compatibility
+export interface User extends UserBase {
+  emailVerified?: boolean;
+}
 export type Role = typeof roles.$inferSelect;
 export type Permission = typeof permissions.$inferSelect;
 export type AppSettings = typeof appSettings.$inferSelect;
