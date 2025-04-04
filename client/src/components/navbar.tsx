@@ -18,7 +18,7 @@ import { Notification } from "@shared/schema";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrency } from "@/hooks/use-currency";
-import { useWebSocket } from "@/hooks/use-websocket";
+import { useWebSocket } from "@/hooks/use-websocket-provider";
 import { apiRequest } from "@/lib/queryClient";
 
 export function Navbar() {

@@ -498,16 +498,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.sendStatus(401);
       }
 
+      // Ensure we only get notifications for the currently logged-in user
+      const userId = req.user.id;
+      console.log(`Fetching notifications for user ID: ${userId}`);
+      
       const userNotifications = await db.query.notifications.findMany({
-        where: eq(notifications.userId, req.user.id),
+        where: eq(notifications.userId, userId),
         orderBy: desc(notifications.createdAt),
         with: {
           actor: true
         }
       });
 
+      console.log(`Found ${userNotifications.length} notifications for user ${userId}`);
       res.json(userNotifications);
     } catch (error) {
+      console.error('Error fetching notifications:', error);
       next(error);
     }
   });
