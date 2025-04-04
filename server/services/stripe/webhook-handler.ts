@@ -3,6 +3,7 @@ import { storage } from '../../storage';
 import { SendNotificationFn } from '../../routes';
 import { log } from '../../vite';
 import { sendSubscriptionEmail, sendInvoiceEmail } from '../email/email-service';
+import { stripeLogger } from '../logger';
 
 // Initialize Stripe client
 let stripe: Stripe | null = null;
@@ -12,8 +13,12 @@ try {
     stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
       apiVersion: '2025-03-31.basil',
     });
+    stripeLogger.info('Stripe webhook handler initialized successfully');
+  } else {
+    stripeLogger.warn('STRIPE_SECRET_KEY not set, webhook handler will not process payments');
   }
 } catch (error) {
+  stripeLogger.error(`Error initializing Stripe in webhook handler: ${error}`);
   log(`Error initializing Stripe in webhook handler: ${error}`, 'stripe-webhook');
 }
 
