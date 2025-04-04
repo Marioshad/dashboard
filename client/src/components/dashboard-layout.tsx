@@ -19,6 +19,10 @@ import {
   Menu,
   X,
   Tag,
+  CreditCard,
+  Database,
+  ServerCog,
+  CreditCard as PaymentCard,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import {
@@ -58,6 +62,13 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         : [...prev, menu]
     );
   };
+  
+  // Initialize admin menu if admin
+  useEffect(() => {
+    if (isAdmin && !openMenus.includes('admin')) {
+      setOpenMenus(prev => [...prev, 'admin']);
+    }
+  }, [isAdmin]);
 
   const toggleSidebar = () => {
     setSidebarOpen(prev => !prev);
@@ -159,6 +170,17 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               )}>
                 <Shield className="nav-link-icon" />
                 Subscription
+              </div>
+            </Link>
+            
+            {/* Billing Section */}
+            <Link href="/billing">
+              <div className={cn(
+                "nav-link",
+                location === "/billing" && "active"
+              )}>
+                <CreditCard className="nav-link-icon" />
+                Billing
               </div>
             </Link>
 
@@ -319,6 +341,59 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                 </CollapsibleContent>
               </Collapsible>
             )}
+            
+            {/* Admin Section - Only visible to admins */}
+            {isAdmin && (
+              <Collapsible
+                open={isMenuOpen('admin')}
+                onOpenChange={() => toggleMenu('admin')}
+              >
+                <CollapsibleTrigger asChild>
+                  <div className={cn(
+                    "nav-link cursor-pointer",
+                    ["/admin", "/admin/stripe-settings", "/admin/system"].includes(location) && "active"
+                  )}>
+                    <span className="flex items-center">
+                      <ServerCog className="nav-link-icon" />
+                      Administration
+                    </span>
+                    <span className={cn(
+                      "transition-transform ml-auto",
+                      isMenuOpen('admin') && "rotate-90"
+                    )}>›</span>
+                  </div>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="pl-6 mt-1 space-y-1">
+                  <Link href="/admin">
+                    <div className={cn(
+                      "nav-link",
+                      location === "/admin" && "active"
+                    )}>
+                      <ServerCog className="nav-link-icon" />
+                      Dashboard
+                    </div>
+                  </Link>
+                  <Link href="/admin/stripe-settings">
+                    <div className={cn(
+                      "nav-link",
+                      location === "/admin/stripe-settings" && "active"
+                    )}>
+                      <PaymentCard className="nav-link-icon" />
+                      Stripe Settings
+                    </div>
+                  </Link>
+                  <Link href="/admin/system">
+                    <div className={cn(
+                      "nav-link",
+                      location === "/admin/system" && "active"
+                    )}>
+                      <Database className="nav-link-icon" />
+                      System
+                    </div>
+                  </Link>
+                </CollapsibleContent>
+              </Collapsible>
+            )}
           </div>
 
           <div className="mt-auto space-y-4 px-3">
@@ -373,3 +448,5 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
+
+export default DashboardLayout;

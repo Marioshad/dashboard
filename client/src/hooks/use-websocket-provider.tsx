@@ -1,8 +1,4 @@
-// !!!DEPRECATED!!! - Use use-websocket-provider.tsx instead
-// This file is kept for reference only and should not be imported anywhere.
-// It has been replaced by the WebSocketProvider implementation.
-
-import { useState, useEffect, useCallback } from 'react';
+import { createContext, ReactNode, useContext, useState, useEffect, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { queryClient } from '@/lib/queryClient';
 
@@ -11,16 +7,33 @@ interface WebSocketMessage {
   data: any;
 }
 
-// This function is deprecated and should not be used anymore
-// Use the useWebSocket hook from use-websocket-provider.tsx instead
-export function useWebSocketLegacy() {
+interface WebSocketContextType {
+  socket: WebSocket | null;
+  isConnecting: boolean;
+  isConnected: boolean;
+  sendMessage: (message: WebSocketMessage) => boolean;
+}
+
+const WebSocketContext = createContext<WebSocketContextType | null>(null);
+
+export function WebSocketProvider({ children }: { children: ReactNode }) {
   const [socket, setSocket] = useState<WebSocket | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const { toast } = useToast();
-
+  
+  // Create a single websocket connection
   const connect = useCallback(() => {
-    if (isConnecting || socket?.readyState === WebSocket.OPEN) return;
+    if (isConnecting || (socket && socket.readyState === WebSocket.OPEN)) return;
+    
+    // Close any existing socket before creating a new one
+    if (socket) {
+      try {
+        socket.close();
+      } catch (err) {
+        console.error('Error closing existing socket:', err);
+      }
+    }
     
     setIsConnecting(true);
     
@@ -91,34 +104,47 @@ export function useWebSocketLegacy() {
         }
       };
 
-      ws.onclose = () => {
-        console.log('WebSocket connection closed');
+      ws.onclose = (event) => {
+        console.log('WebSocket connection closed', event);
         setIsConnecting(false);
         setIsConnected(false);
         setSocket(null);
         
-        // Auto-reconnect after a delay
-        setTimeout(() => {
-          if (document.visibilityState === 'visible') {
-            connect();
-          }
-        }, 3000);
+        // Auto-reconnect after a delay, but only if this wasn't a clean close
+        if (!event.wasClean) {
+          setTimeout(() => {
+            if (document.visibilityState === 'visible') {
+              connect();
+            }
+          }, 3000);
+        }
       };
 
       ws.onerror = (error) => {
         console.error('WebSocket error:', error);
         setIsConnecting(false);
         setIsConnected(false);
-        ws.close();
+        
+        // Don't call ws.close() here as it will be called automatically when connection fails
+        // and would result in "WebSocket is already in CLOSING or CLOSED state" errors
       };
     } catch (error) {
       setIsConnecting(false);
       setIsConnected(false);
       console.error('Failed to create WebSocket connection:', error);
     }
-  }, [isConnecting, socket]);
+  }, [isConnecting, socket, toast]);
 
-  // Connect on component mount
+  // Function to send a message through the websocket
+  const sendMessage = useCallback((message: WebSocketMessage): boolean => {
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify(message));
+      return true;
+    }
+    return false;
+  }, [socket]);
+
+  // Connect on component mount and handle reconnection
   useEffect(() => {
     connect();
     
@@ -131,18 +157,39 @@ export function useWebSocketLegacy() {
     
     document.addEventListener('visibilitychange', handleVisibilityChange);
     
+    // Clean up on unmount
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       
       if (socket) {
-        socket.close();
+        // Attempt a clean close
+        try {
+          socket.close(1000, "Application closing");
+        } catch (err) {
+          console.error('Error closing socket during cleanup:', err);
+        }
       }
     };
   }, [connect, isConnected]);
 
-  return {
-    socket,
-    isConnecting,
-    isConnected
-  };
+  return (
+    <WebSocketContext.Provider
+      value={{
+        socket,
+        isConnecting,
+        isConnected,
+        sendMessage
+      }}
+    >
+      {children}
+    </WebSocketContext.Provider>
+  );
+}
+
+export function useWebSocket() {
+  const context = useContext(WebSocketContext);
+  if (!context) {
+    throw new Error('useWebSocket must be used within a WebSocketProvider');
+  }
+  return context;
 }

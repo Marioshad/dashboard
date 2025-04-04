@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
-import { DashboardLayout } from '@/components/dashboard-layout';
+import DashboardLayout from '@/components/dashboard-layout';
 import { Button } from '@/components/ui/button';
 import { 
   Card, 

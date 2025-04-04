@@ -1,4 +1,4 @@
-import { DashboardLayout } from "@/components/dashboard-layout";
+import DashboardLayout from "@/components/dashboard-layout";
 import {
   Card,
   CardContent,
@@ -96,7 +96,7 @@ export default function RolesMap() {
                   <Treemap
                     data={treeMapData}
                     dataKey="size"
-                    ratio={4/3}
+                    aspectRatio={4/3}
                     stroke="#fff"
                     fill="#8884d8"
                   >
