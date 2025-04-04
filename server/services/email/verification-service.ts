@@ -4,6 +4,7 @@ import { storage } from '../../storage';
 import { generateVerificationToken, calculateTokenExpiration, isTokenExpired } from '../../services/auth/token-generator';
 import { sendEmail } from './email-service';
 import { eq } from 'drizzle-orm';
+import { emailLogger } from '../logger';
 
 /**
  * Send verification email to user
@@ -12,49 +13,49 @@ import { eq } from 'drizzle-orm';
  * @returns Boolean indicating if email was sent successfully
  */
 export async function sendVerificationEmail(userId: number, email: string | null): Promise<boolean> {
-  console.log(`[VERIFICATION] Starting sendVerificationEmail for userId: ${userId}, email: ${email}`);
+  emailLogger.info(`Starting sendVerificationEmail for userId: ${userId}, email: ${email}`);
   
   if (!email) {
-    console.error('[VERIFICATION] Cannot send verification email: no email address');
+    emailLogger.error('Cannot send verification email: no email address');
     return false;
   }
 
   try {
     // Check if SendGrid is available
     if (!process.env.SENDGRID_API_KEY || !process.env.SENDGRID_FROM_EMAIL) {
-      console.error('[VERIFICATION] SendGrid is not properly configured. Missing API key or from email.');
-      console.log('[VERIFICATION] SENDGRID_API_KEY present:', !!process.env.SENDGRID_API_KEY);
-      console.log('[VERIFICATION] SENDGRID_FROM_EMAIL present:', !!process.env.SENDGRID_FROM_EMAIL);
+      emailLogger.error('SendGrid is not properly configured. Missing API key or from email.');
+      emailLogger.info('SENDGRID_API_KEY present: ' + !!process.env.SENDGRID_API_KEY);
+      emailLogger.info('SENDGRID_FROM_EMAIL present: ' + !!process.env.SENDGRID_FROM_EMAIL);
       return false;
     }
     
     // Generate verification token and set expiration
     const token = generateVerificationToken();
-    console.log(`[VERIFICATION] Generated token for user ${userId}: ${token}`);
+    emailLogger.debug(`Generated token for user ${userId}: ${token}`);
     const expiresAt = calculateTokenExpiration(24); // 24 hours expiration
-    console.log(`[VERIFICATION] Token expires at: ${expiresAt}`);
+    emailLogger.debug(`Token expires at: ${expiresAt}`);
     
     // Update user with verification token
     try {
-      console.log(`[VERIFICATION] Updating user ${userId} with verification token`);
+      emailLogger.debug(`Updating user ${userId} with verification token`);
       await storage.updateUserVerification(userId, {
         verificationToken: token,
         verificationTokenExpiresAt: expiresAt,
       });
-      console.log(`[VERIFICATION] Updated user ${userId} with verification token successfully`);
+      emailLogger.debug(`Updated user ${userId} with verification token successfully`);
     } catch (dbError) {
-      console.error(`[VERIFICATION] Failed to update user with verification token:`, dbError);
+      emailLogger.error(`Failed to update user with verification token:`, dbError);
       throw dbError;
     }
 
     // Create verification URL
     const appUrl = process.env.APP_URL || '';
-    console.log(`[VERIFICATION] Using APP_URL: ${appUrl}`);
+    emailLogger.debug(`Using APP_URL: ${appUrl}`);
     const verifyUrl = `${appUrl}/verify-email?token=${token}`;
-    console.log(`[VERIFICATION] Verification URL: ${verifyUrl}`);
+    emailLogger.debug(`Verification URL: ${verifyUrl}`);
     
     // Send email
-    console.log(`[VERIFICATION] Sending verification email to ${email}`);
+    emailLogger.info(`Sending verification email to ${email}`);
     try {
       const emailSent = await sendEmail({
         to: email,
@@ -76,14 +77,14 @@ export async function sendVerificationEmail(userId: number, email: string | null
         `,
       });
       
-      console.log(`[VERIFICATION] Email sent result: ${emailSent}`);
+      emailLogger.info(`Email sent result: ${emailSent}`);
       return emailSent;
     } catch (emailError) {
-      console.error(`[VERIFICATION] Error sending email via SendGrid:`, emailError);
+      emailLogger.error(`Error sending email via SendGrid:`, emailError);
       throw emailError;
     }
   } catch (error) {
-    console.error('[VERIFICATION] Error in sendVerificationEmail:', error);
+    emailLogger.error('Error in sendVerificationEmail:', error);
     return false;
   }
 }
@@ -94,7 +95,7 @@ export async function sendVerificationEmail(userId: number, email: string | null
  * @returns Object with success status and message
  */
 export async function verifyEmail(token: string): Promise<{ success: boolean; message: string }> {
-  console.log(`[VERIFICATION] Attempting to verify email with token: ${token}`);
+  emailLogger.info(`Attempting to verify email with token: ${token}`);
   try {
     // Find user with this token
     const [user] = await db
@@ -103,35 +104,35 @@ export async function verifyEmail(token: string): Promise<{ success: boolean; me
       .where(eq(users.verificationToken, token));
 
     if (!user) {
-      console.error(`[VERIFICATION] Invalid token: ${token} - no matching user found`);
+      emailLogger.error(`Invalid token: ${token} - no matching user found`);
       return { success: false, message: 'Invalid verification token' };
     }
     
-    console.log(`[VERIFICATION] User found with ID: ${user.id}, email: ${user.email}`);
+    emailLogger.info(`User found with ID: ${user.id}, email: ${user.email}`);
 
     // Check if token is expired
     if (user.verificationTokenExpiresAt && new Date() > user.verificationTokenExpiresAt) {
-      console.error(`[VERIFICATION] Token expired at: ${user.verificationTokenExpiresAt}`);
+      emailLogger.error(`Token expired at: ${user.verificationTokenExpiresAt}`);
       return { success: false, message: 'Verification token has expired. Please request a new one.' };
     }
 
     // Update user verification status
-    console.log(`[VERIFICATION] Updating user verification status for user ID: ${user.id}`);
+    emailLogger.info(`Updating user verification status for user ID: ${user.id}`);
     try {
       await storage.updateUserVerification(user.id, {
         emailVerified: true,
         verificationToken: null,
         verificationTokenExpiresAt: null,
       });
-      console.log(`[VERIFICATION] User ${user.id} verification status updated successfully`);
+      emailLogger.info(`User ${user.id} verification status updated successfully`);
     } catch (updateError) {
-      console.error(`[VERIFICATION] Error updating user verification status:`, updateError);
+      emailLogger.error(`Error updating user verification status:`, updateError);
       throw updateError;
     }
 
     return { success: true, message: 'Email verified successfully' };
   } catch (error) {
-    console.error('[VERIFICATION] Error verifying email:', error);
+    emailLogger.error('Error verifying email:', error);
     return { success: false, message: 'Error verifying email. Please try again.' };
   }
 }
@@ -142,46 +143,46 @@ export async function verifyEmail(token: string): Promise<{ success: boolean; me
  * @returns Object with success status and message
  */
 export async function resendVerificationEmail(userId: number): Promise<{ success: boolean; message: string }> {
-  console.log(`[VERIFICATION] Attempting to resend verification email to user ID: ${userId}`);
+  emailLogger.info(`Attempting to resend verification email to user ID: ${userId}`);
   try {
     // Get user
     const user = await storage.getUser(userId);
     
     if (!user) {
-      console.error(`[VERIFICATION] User not found with ID: ${userId}`);
+      emailLogger.error(`User not found with ID: ${userId}`);
       return { success: false, message: 'User not found' };
     }
     
-    console.log(`[VERIFICATION] User found: ${user.id}, email: ${user.email}, verified: ${user.emailVerified}`);
+    emailLogger.info(`User found: ${user.id}, email: ${user.email}, verified: ${user.emailVerified}`);
     
     if (user.emailVerified) {
-      console.log(`[VERIFICATION] Email already verified for user: ${user.id}`);
+      emailLogger.info(`Email already verified for user: ${user.id}`);
       return { success: false, message: 'Email already verified' };
     }
     
     if (!user.email) {
-      console.error(`[VERIFICATION] User ${user.id} has no email address`);
+      emailLogger.error(`User ${user.id} has no email address`);
       return { success: false, message: 'User has no email address to verify' };
     }
     
     // Send verification email
-    console.log(`[VERIFICATION] Sending verification email to ${user.email}`);
+    emailLogger.info(`Sending verification email to ${user.email}`);
     try {
       const emailSent = await sendVerificationEmail(userId, user.email);
       
       if (!emailSent) {
-        console.error(`[VERIFICATION] Failed to send verification email to ${user.email}`);
+        emailLogger.error(`Failed to send verification email to ${user.email}`);
         return { success: false, message: 'Failed to send verification email' };
       }
       
-      console.log(`[VERIFICATION] Verification email sent successfully to ${user.email}`);
+      emailLogger.info(`Verification email sent successfully to ${user.email}`);
       return { success: true, message: 'Verification email sent successfully' };
     } catch (emailError) {
-      console.error(`[VERIFICATION] Error sending verification email:`, emailError);
+      emailLogger.error(`Error sending verification email:`, emailError);
       throw emailError;
     }
   } catch (error) {
-    console.error('[VERIFICATION] Error resending verification email:', error);
+    emailLogger.error('Error resending verification email:', error);
     return { success: false, message: 'Error sending verification email. Please try again.' };
   }
 }
