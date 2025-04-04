@@ -162,25 +162,58 @@ export async function sendInvoiceEmail(
 
 /**
  * Send a test email to verify configuration
- * @param email Email address to send test to
+ * @param userEmail Email address to send test to
+ * @param adminEmail Optional admin email to CC
+ * @param username Username for personalization
  * @returns Boolean indicating if test email was sent successfully
  */
-export async function sendTestEmail(email: string): Promise<boolean> {
-  return sendEmail({
-    to: email,
+export async function sendTestEmail(
+  userEmail: string, 
+  adminEmail: string | null = null, 
+  username: string = "User"
+): Promise<boolean> {
+  const emailOptions: EmailOptions = {
+    to: userEmail,
     subject: 'Test Email from Your Application',
-    text: 'This is a test email from your application. If you received this, email sending is working correctly!',
+    text: `Hello ${username}, this is a test email from your application. If you received this, email sending is working correctly!`,
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #333;">Email Test Successful</h2>
+        <p>Hello ${username},</p>
         <p>This is a test email from your application.</p>
         <p>If you received this, email sending is working correctly!</p>
         <div style="background-color: #f5f5f5; padding: 15px; border-radius: 4px; margin: 20px 0;">
           <p style="margin: 0;"><strong>Configuration:</strong></p>
           <p style="margin: 5px 0;">Service: SendGrid</p>
           <p style="margin: 5px 0;">From: ${process.env.SENDGRID_FROM_EMAIL || 'Default sender'}</p>
+          ${adminEmail ? `<p style="margin: 5px 0;">CC: Admin (${adminEmail})</p>` : ''}
         </div>
       </div>
     `,
-  });
+  };
+  
+  // If admin email is provided, send a copy to them as well
+  if (adminEmail) {
+    // Send to admin separately
+    await sendEmail({
+      to: adminEmail,
+      subject: `[ADMIN COPY] Test Email from Your Application (${userEmail})`,
+      text: `This is an admin copy of a test email sent to ${userEmail}. If you received this, email sending is working correctly!`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #333;">Email Test Successful (Admin Copy)</h2>
+          <p>This is an admin copy of a test email sent to ${userEmail}.</p>
+          <p>If you received this, email sending is working correctly!</p>
+          <div style="background-color: #f5f5f5; padding: 15px; border-radius: 4px; margin: 20px 0;">
+            <p style="margin: 0;"><strong>Configuration:</strong></p>
+            <p style="margin: 5px 0;">Service: SendGrid</p>
+            <p style="margin: 5px 0;">From: ${process.env.SENDGRID_FROM_EMAIL || 'Default sender'}</p>
+            <p style="margin: 5px 0;">User: ${userEmail}</p>
+          </div>
+        </div>
+      `,
+    });
+  }
+  
+  return sendEmail(emailOptions);
 }
