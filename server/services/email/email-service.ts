@@ -1,10 +1,12 @@
 import sgMail from '@sendgrid/mail';
+import { emailLogger } from '../logger';
 
 // Check if SendGrid API key is available and initialize if it is
 if (process.env.SENDGRID_API_KEY) {
   sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+  emailLogger.info('SendGrid API initialized successfully');
 } else {
-  console.warn('SENDGRID_API_KEY is not set. Email functionality will be unavailable.');
+  emailLogger.warn('SENDGRID_API_KEY is not set. Email functionality will be unavailable.');
 }
 
 /**
@@ -32,13 +34,13 @@ export interface EmailOptions {
 export async function sendEmail(options: EmailOptions): Promise<boolean> {
   // Early return if SendGrid is not configured
   if (!process.env.SENDGRID_API_KEY) {
-    console.error('Cannot send email: SENDGRID_API_KEY is not set');
+    emailLogger.error('Cannot send email: SENDGRID_API_KEY is not set');
     return false;
   }
 
   // Early return if from email is not configured
   if (!process.env.SENDGRID_FROM_EMAIL && !options.from) {
-    console.error('Cannot send email: SENDGRID_FROM_EMAIL is not set and no from address was provided');
+    emailLogger.error('Cannot send email: SENDGRID_FROM_EMAIL is not set and no from address was provided');
     return false;
   }
 
@@ -52,14 +54,16 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
       html: options.html || '',
     };
 
+    emailLogger.debug(`Attempting to send email to ${options.to} with subject: ${options.subject}`);
+    
     // Send email
     await sgMail.send(msg);
-    console.log(`Email sent successfully to ${options.to}`);
+    emailLogger.info(`Email sent successfully to ${options.to}`);
     return true;
   } catch (error: any) {
-    console.error('Error sending email:', error);
+    emailLogger.error('Error sending email:', error);
     if (error.response) {
-      console.error('SendGrid Error Details:', error.response.body);
+      emailLogger.error('SendGrid Error Details:', error.response.body);
     }
     return false;
   }
