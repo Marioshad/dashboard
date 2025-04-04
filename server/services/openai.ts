@@ -3,15 +3,16 @@ import fs from "fs";
 import path from "path";
 import { FoodItem, InsertFoodItem, InsertStore } from "@shared/schema";
 import { format, addDays } from "date-fns";
+import { openaiLogger } from "./logger";
 
 // Initialize OpenAI with API key
 if (!process.env.OPENAI_API_KEY) {
-  console.warn("OPENAI_API_KEY not provided. Receipt OCR features will be disabled.");
+  openaiLogger.warn("OPENAI_API_KEY not provided. Receipt OCR features will be disabled.");
 }
 
 // Get the OpenAI model from environment variables or use the default
 const openaiModel = process.env.OPENAI_MODEL || "gpt-4o";
-console.log(`Using OpenAI model: ${openaiModel}`);
+openaiLogger.info(`Using OpenAI model: ${openaiModel}`);
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -62,7 +63,7 @@ export async function processReceiptImage(filePath: string, subscriptionTier?: s
       throw new Error("OpenAI API key not configured");
     }
     
-    console.log(`Processing receipt image with OpenAI model: ${openaiModel} (subscription tier: ${subscriptionTier || 'unknown'})`);
+    openaiLogger.info(`Processing receipt image with OpenAI model: ${openaiModel} (subscription tier: ${subscriptionTier || 'unknown'})`);
 
     const absolutePath = path.resolve(filePath);
     const fileBuffer = fs.readFileSync(absolutePath);
@@ -137,7 +138,7 @@ export async function processReceiptImage(filePath: string, subscriptionTier?: s
       
       // If we have a free tier subscription, limit the number of items to 50
       if (subscriptionTier === 'free') {
-        console.log(`Free tier user - limiting items to 50 (found ${extractedItems.length})`);
+        openaiLogger.info(`Free tier user - limiting items to 50 (found ${extractedItems.length})`);
         if (extractedItems.length > 50) {
           extractedItems = extractedItems.slice(0, 50);
         }
@@ -207,7 +208,7 @@ export async function processReceiptImage(filePath: string, subscriptionTier?: s
     
     throw new Error("Could not parse valid JSON from OpenAI response");
   } catch (error: any) {
-    console.error("Error processing receipt with OpenAI:", error);
+    openaiLogger.error("Error processing receipt with OpenAI:", error);
     throw new Error(`Receipt processing failed: ${error.message}`);
   }
 }
@@ -264,7 +265,7 @@ export async function extractStoreFromReceipt(filePath: string): Promise<Extract
       throw new Error("OpenAI API key not configured");
     }
     
-    console.log(`Extracting store information with OpenAI model: ${openaiModel}`);
+    openaiLogger.info(`Extracting store information with OpenAI model: ${openaiModel}`);
 
     const absolutePath = path.resolve(filePath);
     const fileBuffer = fs.readFileSync(absolutePath);
@@ -346,7 +347,7 @@ export async function extractStoreFromReceipt(filePath: string): Promise<Extract
         taxId: extractedStore.taxId?.trim()
       };
     } catch (error) {
-      console.error("Failed to parse store information:", error);
+      openaiLogger.error("Failed to parse store information:", error);
       // Return default store info if parsing fails
       return {
         name: "Unknown Store",
@@ -354,7 +355,7 @@ export async function extractStoreFromReceipt(filePath: string): Promise<Extract
       };
     }
   } catch (error: any) {
-    console.error("Error extracting store information with OpenAI:", error);
+    openaiLogger.error("Error extracting store information with OpenAI:", error);
     // Return default store info if API call fails
     return {
       name: "Unknown Store",
@@ -374,7 +375,7 @@ export async function extractReceiptDetails(filePath: string): Promise<ReceiptDe
       throw new Error("OpenAI API key not configured");
     }
     
-    console.log(`Extracting receipt details with OpenAI model: ${openaiModel}`);
+    openaiLogger.info(`Extracting receipt details with OpenAI model: ${openaiModel}`);
 
     const absolutePath = path.resolve(filePath);
     const fileBuffer = fs.readFileSync(absolutePath);
@@ -469,7 +470,7 @@ export async function extractReceiptDetails(filePath: string): Promise<ReceiptDe
             }
           }
         } catch (error) {
-          console.error("Error formatting date:", error);
+          openaiLogger.error("Error formatting date:", error);
           // Keep the original date string if formatting fails
         }
       }
@@ -481,12 +482,12 @@ export async function extractReceiptDetails(filePath: string): Promise<ReceiptDe
       
       return receiptDetails;
     } catch (error) {
-      console.error("Failed to parse receipt details:", error);
+      openaiLogger.error("Failed to parse receipt details:", error);
       // Return empty details if parsing fails
       return {};
     }
   } catch (error: any) {
-    console.error("Error extracting receipt details with OpenAI:", error);
+    openaiLogger.error("Error extracting receipt details with OpenAI:", error);
     // Return empty details if API call fails
     return {};
   }

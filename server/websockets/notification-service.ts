@@ -1,5 +1,5 @@
 import { sendMessageToUser, isUserConnected } from './websocket-server';
-import { log } from '../vite';
+import { notificationLogger } from '../services/logger';
 import { Notification } from '@shared/schema';
 import { db } from '../db';
 import { notifications } from '@shared/schema';
@@ -39,18 +39,18 @@ export async function sendNotificationToUser(
       });
       
       if (sent) {
-        log(`Notification sent to user ${userId} via WebSocket: ${message}`, 'notification');
+        notificationLogger.info(`Notification sent to user ${userId} via WebSocket: ${message}`);
       } else {
-        log(`Failed to send notification to user ${userId} via WebSocket despite connection`, 'notification');
+        notificationLogger.warn(`Failed to send notification to user ${userId} via WebSocket despite connection`);
       }
       
       return sent;
     } else {
-      log(`User ${userId} not connected, notification saved to database only: ${message}`, 'notification');
+      notificationLogger.info(`User ${userId} not connected, notification saved to database only: ${message}`);
       return false;
     }
   } catch (error) {
-    log(`Error sending notification to user ${userId}: ${error}`, 'notification');
+    notificationLogger.error(`Error sending notification to user ${userId}: ${error}`);
     return false;
   }
 }
@@ -70,7 +70,7 @@ export async function markNotificationRead(notificationId: number): Promise<bool
     
     return true;
   } catch (error) {
-    log(`Error marking notification ${notificationId} as read: ${error}`, 'notification');
+    notificationLogger.error(`Error marking notification ${notificationId} as read: ${error}`);
     return false;
   }
 }
@@ -101,7 +101,7 @@ export async function markAllNotificationsRead(userId: number): Promise<boolean>
     
     return true;
   } catch (error) {
-    log(`Error marking all notifications as read for user ${userId}: ${error}`, 'notification');
+    notificationLogger.error(`Error marking all notifications as read for user ${userId}: ${error}`);
     return false;
   }
 }
@@ -123,7 +123,7 @@ export async function getUnreadNotificationsCount(userId: number): Promise<numbe
       
     return result.length;
   } catch (error) {
-    log(`Error getting unread notifications count for user ${userId}: ${error}`, 'notification');
+    notificationLogger.error(`Error getting unread notifications count for user ${userId}: ${error}`);
     return 0;
   }
 }

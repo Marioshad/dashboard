@@ -153,6 +153,25 @@ const openaiLogger = winston.createLogger({
   ],
 });
 
+// Creating a specialized logger for Notification operations
+const notificationLogger = winston.createLogger({
+  level: 'debug',
+  format: logFormat,
+  defaultMeta: { service: 'notification' },
+  transports: [
+    // Write all logs to console
+    new winston.transports.Console(),
+    // Write all logs to appropriate files
+    new winston.transports.File({ 
+      filename: path.join(LOG_DIR, 'error.log'), 
+      level: 'error' 
+    }),
+    new winston.transports.File({ 
+      filename: path.join(LOG_DIR, 'notification.log') 
+    }),
+  ],
+});
+
 // Export the loggers
 export {
   appLogger,
@@ -161,7 +180,8 @@ export {
   dbLogger,
   stripeLogger,
   wsLogger,
-  openaiLogger
+  openaiLogger,
+  notificationLogger
 };
 
 // Create a express middleware for logging http requests
