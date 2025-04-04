@@ -1,6 +1,6 @@
 import { Server as HttpServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
-import { log } from '../vite';
+import { wsLogger } from '../services/logger';
 import { User } from '@shared/schema';
 
 interface WebSocketWithUser extends WebSocket {
@@ -18,7 +18,7 @@ export function initializeWebSocketServer(httpServer: HttpServer): WebSocketServ
     path: '/api/ws',
   });
 
-  log(`WebSocket server initialized on path: /api/ws`, 'websocket');
+  wsLogger.info(`WebSocket server initialized on path: /api/ws`);
 
   // Connection handling
   wss.on('connection', (ws: WebSocketWithUser, req) => {
@@ -26,7 +26,7 @@ export function initializeWebSocketServer(httpServer: HttpServer): WebSocketServ
     const user = (req as any).user as User | undefined;
     
     if (!user) {
-      log(`WebSocket connection rejected - no user in session`, 'websocket');
+      wsLogger.warn(`WebSocket connection rejected - no user in session`);
       ws.close(1008, 'Authentication required');
       return;
     }
@@ -43,8 +43,8 @@ export function initializeWebSocketServer(httpServer: HttpServer): WebSocketServ
     activeConnections.get(userId)?.push(ws);
     
     const userConnections = activeConnections.get(userId) || [];
-    log(`WebSocket connected for user: ${userId}`, 'websocket');
-    log(`User ${userId} added to active WebSocket connections. Total connections for user: ${userConnections.length}`, 'websocket');
+    wsLogger.info(`WebSocket connected for user: ${userId}`);
+    wsLogger.info(`User ${userId} added to active WebSocket connections. Total connections for user: ${userConnections.length}`);
 
     // Send initial connection message
     ws.send(JSON.stringify({
@@ -60,7 +60,7 @@ export function initializeWebSocketServer(httpServer: HttpServer): WebSocketServ
     ws.on('message', (message) => {
       try {
         const data = JSON.parse(message.toString());
-        log(`Received message from user ${userId}: ${JSON.stringify(data)}`, 'websocket');
+        wsLogger.debug(`Received message from user ${userId}: ${JSON.stringify(data)}`);
         
         // Process different message types
         if (data.type === 'ping') {
@@ -73,14 +73,14 @@ export function initializeWebSocketServer(httpServer: HttpServer): WebSocketServ
           }));
         }
       } catch (error) {
-        log(`Error parsing WebSocket message: ${error}`, 'websocket');
+        wsLogger.error(`Error parsing WebSocket message: ${error}`);
       }
     });
 
     // Handle connection closing
     ws.on('close', () => {
       if (userId) {
-        log(`WebSocket closed for user: ${userId}`, 'websocket');
+        wsLogger.info(`WebSocket closed for user: ${userId}`);
         
         const connections = activeConnections.get(userId) || [];
         const index = connections.findIndex(conn => conn === ws);
@@ -90,10 +90,10 @@ export function initializeWebSocketServer(httpServer: HttpServer): WebSocketServ
           
           if (connections.length === 0) {
             activeConnections.delete(userId);
-            log(`User ${userId} removed from active WebSocket connections`, 'websocket');
+            wsLogger.info(`User ${userId} removed from active WebSocket connections`);
           } else {
             activeConnections.set(userId, connections);
-            log(`User ${userId} now has ${connections.length} active WebSocket connections`, 'websocket');
+            wsLogger.info(`User ${userId} now has ${connections.length} active WebSocket connections`);
           }
         }
       }
@@ -101,7 +101,7 @@ export function initializeWebSocketServer(httpServer: HttpServer): WebSocketServ
 
     // Handle errors
     ws.on('error', (error) => {
-      log(`WebSocket error for user ${userId}: ${error.message}`, 'websocket');
+      wsLogger.error(`WebSocket error for user ${userId}: ${error.message}`);
     });
   });
 
