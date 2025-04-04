@@ -19,6 +19,7 @@ import { SUBSCRIPTION_TIERS } from "@/lib/subscription";
 import { PaymentMethodSelector } from "../components/billing/payment-method-selector";
 import { SubscriptionOverview } from "../components/billing/subscription-overview";
 import { InvoiceList } from "../components/billing/invoice-list";
+import { EmailTestCard } from "../components/billing/email-test-card";
 import { useLocation } from "wouter";
 
 export default function BillingPage() {
@@ -236,10 +237,11 @@ export default function BillingPage() {
         )}
         
         <Tabs defaultValue="overview" value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-3 mb-8">
+          <TabsList className="grid w-full grid-cols-4 mb-8">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="invoices">Invoices & Receipts</TabsTrigger>
             <TabsTrigger value="payment">Payment Methods</TabsTrigger>
+            <TabsTrigger value="settings">Settings</TabsTrigger>
           </TabsList>
           
           {isLoading ? (
@@ -279,6 +281,12 @@ export default function BillingPage() {
                   paymentMethods={paymentMethods}
                   onAddPaymentMethod={() => setPaymentDialogOpen(true)}
                 />
+              </TabsContent>
+
+              <TabsContent value="settings" className="space-y-4">
+                <div className="grid grid-cols-1 gap-4">
+                  <EmailTestCard />
+                </div>
               </TabsContent>
             </>
           )}

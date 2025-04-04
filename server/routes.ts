@@ -24,6 +24,8 @@ import cookieSignature from 'cookie-signature';
 import { log } from './vite';
 import { registerBillingRoutes } from './services/stripe/billing-routes';
 import { registerAdminRoutes } from './services/admin/admin-routes';
+import { sendTestEmail, isSendGridAvailable } from './services/email/email-service';
+import emailRouter from './services/email/routes';
 
 const SESSION_SECRET = process.env.SESSION_SECRET || 'keyboard cat';
 
@@ -3019,9 +3021,71 @@ const updateReceiptScanUsage = async (userId: number, scansUsed: number, scansLi
     }
   });
 
-  // Register billing routes
+  // Email test endpoint
+  app.post('/api/email/test', async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      // Check if SendGrid is available
+      if (!isSendGridAvailable()) {
+        return res.status(503).json({ 
+          success: false, 
+          message: 'Email service is not available. Please check that SENDGRID_API_KEY is set.'
+        });
+      }
+
+      const { adminEmail } = req.body;
+      const user = req.user;
+      
+      if (!user.email) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Your profile email is not set. Please update your profile with a valid email.'
+        });
+      }
+
+      // Send test email
+      const success = await sendTestEmail(
+        user.email,
+        adminEmail || null,
+        user.fullName || user.username
+      );
+
+      if (success) {
+        await sendNotification(
+          user.id,
+          'email_test',
+          `Test email sent successfully to ${user.email}${adminEmail ? ' and admin' : ''}.`,
+          undefined,
+          { email: user.email }
+        );
+
+        return res.json({ 
+          success: true, 
+          message: `Test email sent to ${user.email}${adminEmail ? ' and admin' : ''}.`
+        });
+      } else {
+        return res.status(500).json({ 
+          success: false, 
+          message: 'Failed to send test email. Please check the logs for more details.'
+        });
+      }
+    } catch (error: any) {
+      console.error('Error sending test email:', error);
+      return res.status(500).json({ 
+        success: false, 
+        message: `Error sending test email: ${error.message}`
+      });
+    }
+  });
+
   registerBillingRoutes(app, sendNotification);
   registerAdminRoutes(app);
+  
+  // Register email routes
+  app.use('/api/email', emailRouter);
 
   // Create HTTP server for the express app
   const httpServer = createServer(app);
