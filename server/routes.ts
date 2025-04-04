@@ -16,7 +16,7 @@ import {
 } from "@shared/schema";
 import { eq, and, isNull, sql, desc } from "drizzle-orm";
 import Stripe from "stripe";
-import { initializeWebSocketServer, getConnectedClients } from './websockets';
+import { initializeWebSocketServer } from './websockets';
 import { WebSocketMessage } from './websockets/utils';
 import { Socket } from 'net';
 import { parse } from 'cookie';
@@ -28,6 +28,11 @@ import { sendTestEmail, isSendGridAvailable } from './services/email/email-servi
 import emailRouter from './services/email/routes';
 import { requireEmailVerification } from './services/auth/email-verification-middleware';
 import { sendNotificationToUser } from './websockets/notification-service';
+
+// Import the WebSocket handlers
+import { sendNotification as wsSendNotification } from './websockets/handlers/notificationHandler';
+import { updateReceiptScanUsage as wsUpdateReceiptScanUsage } from './websockets/handlers/usageUpdateHandler';
+import { getConnectedClients } from './websockets/index';
 
 const SESSION_SECRET = process.env.SESSION_SECRET || 'keyboard cat';
 
@@ -74,11 +79,6 @@ const upload = multer({
     cb(null, true);
   }
 });
-
-// Import the WebSocket handlers
-import { sendNotification as wsSendNotification } from './websockets/handlers/notificationHandler';
-import { updateReceiptScanUsage as wsUpdateReceiptScanUsage } from './websockets/handlers/usageUpdateHandler';
-import { getConnectedClients } from './websockets/index';
 
 async function sendNotification(userId: number, type: string, message: string, actorId?: number, metadata?: any) {
   try {
