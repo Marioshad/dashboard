@@ -29,7 +29,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useRef } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { EmailVerificationStatus, EmailVerifiedBadge } from "@/components/email-verification-status";
+import EmailVerificationStatus, { EmailVerifiedBadge } from "@/components/email-verification-status";
 
 export default function ProfilePage() {
   const { user } = useAuth();

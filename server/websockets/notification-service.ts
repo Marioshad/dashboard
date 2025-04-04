@@ -3,7 +3,7 @@ import { log } from '../vite';
 import { Notification } from '@shared/schema';
 import { db } from '../db';
 import { notifications } from '@shared/schema';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
 /**
  * Send a notification to a user through WebSocket
@@ -15,8 +15,7 @@ export async function sendNotificationToUser(
   userId: number, 
   type: string, 
   message: string, 
-  actorId?: number,
-  metadata?: any
+  actorId?: number
 ): Promise<boolean> {
   try {
     // Create the notification in the database first
@@ -26,7 +25,6 @@ export async function sendNotificationToUser(
         type,
         message,
         actorId,
-        metadata: metadata ? JSON.stringify(metadata) : null,
         read: false,
         createdAt: new Date()
       })
@@ -66,8 +64,7 @@ export async function markNotificationRead(notificationId: number): Promise<bool
   try {
     await db.update(notifications)
       .set({
-        read: true,
-        updatedAt: new Date()
+        read: true
       })
       .where(eq(notifications.id, notificationId));
     
@@ -87,8 +84,7 @@ export async function markAllNotificationsRead(userId: number): Promise<boolean>
   try {
     await db.update(notifications)
       .set({
-        read: true,
-        updatedAt: new Date()
+        read: true
       })
       .where(eq(notifications.userId, userId));
     
@@ -117,10 +113,13 @@ export async function markAllNotificationsRead(userId: number): Promise<boolean>
  */
 export async function getUnreadNotificationsCount(userId: number): Promise<number> {
   try {
-    const result = await db.select({ count: notifications.id })
+    // Use a simplified query to avoid the chained where clauses
+    const result = await db
+      .select()
       .from(notifications)
-      .where(eq(notifications.userId, userId))
-      .where(eq(notifications.read, false));
+      .where(
+        sql`${notifications.userId} = ${userId} AND ${notifications.read} = false`
+      );
       
     return result.length;
   } catch (error) {

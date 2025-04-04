@@ -4,6 +4,7 @@ import { queryClient } from "./lib/queryClient";
 import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from "./hooks/use-auth";
 import { WebSocketProvider } from "./hooks/use-websocket-provider";
+import { EmailVerificationProvider } from "./components/email-verification-provider";
 import { ProtectedRoute } from "./lib/protected-route";
 import NotFound from "@/pages/not-found";
 import HomePage from "@/pages/home-page";
@@ -74,8 +75,10 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <WebSocketProvider>
-          <Router />
-          <Toaster />
+          <EmailVerificationProvider>
+            <Router />
+            <Toaster />
+          </EmailVerificationProvider>
         </WebSocketProvider>
       </AuthProvider>
     </QueryClientProvider>
