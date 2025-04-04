@@ -5,10 +5,11 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, Mail, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Loader2, Mail, AlertTriangle, CheckCircle2, Info, ExternalLink } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 export function EmailTestCard() {
   const { toast } = useToast();
@@ -33,14 +34,37 @@ export function EmailTestCard() {
       setTimeout(() => setShowSuccess(false), 5000); // Hide success message after 5 seconds
       setError(null);
     },
-    onError: (error: any) => {
-      const errorMessage = error.message || "Failed to send test email";
+    onError: async (error: any) => {
+      let errorMessage = "Failed to send test email";
+      let detailedError = null;
+      
+      try {
+        // Try to get detailed error information from the response
+        const response = await error.response?.json();
+        
+        if (response) {
+          errorMessage = response.message || errorMessage;
+          
+          // Handle specific error codes
+          if (response.error === 'SENDGRID_NOT_CONFIGURED') {
+            detailedError = 'The email service (SendGrid) is not properly configured. Please ask the administrator to set up the SendGrid API key.';
+          } else if (response.error === 'SENDGRID_SENDER_VERIFICATION') {
+            detailedError = 'Email sending failed because the sender email address is not verified in SendGrid. The admin needs to verify the domain or sender email in the SendGrid dashboard.';
+          } else if (response.error === 'USER_EMAIL_MISSING') {
+            detailedError = 'You need to add an email address to your account before you can test email notifications.';
+          }
+        }
+      } catch (jsonError) {
+        console.error('Error parsing error response:', jsonError);
+      }
+      
       toast({
-        title: "Error",
+        title: "Email Test Failed",
         description: errorMessage,
         variant: "destructive",
       });
-      setError(errorMessage);
+      
+      setError(detailedError || errorMessage);
       setShowSuccess(false);
     },
   });
