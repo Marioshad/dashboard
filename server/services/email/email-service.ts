@@ -6,9 +6,16 @@ import { formatCurrency } from '../../../client/src/lib/utils';
 let mailService: MailService | null = null;
 let sendgridAvailable = false;
 
-// Default sender email - should be a verified sender in SendGrid
-// IMPORTANT: This email must be verified in your SendGrid account or the emails will fail
-const DEFAULT_FROM_EMAIL = 'noreply@foodvault.app'; // You need to change this to a verified sender in SendGrid
+// Constants and configuration
+// We use a function to get the verified sender email to ensure it's always from environment
+function getVerifiedSenderEmail(): string {
+  if (!process.env.SENDGRID_FROM_EMAIL) {
+    log('ERROR: SENDGRID_FROM_EMAIL environment variable is required for sending emails', 'email');
+    // Fall back to a default domain, but this won't work in production without verification
+    return 'no-reply@foodvault.app';
+  }
+  return process.env.SENDGRID_FROM_EMAIL;
+}
 
 try {
   if (process.env.SENDGRID_API_KEY) {
@@ -17,7 +24,7 @@ try {
     sendgridAvailable = true;
     
     // Log the from email that will be used
-    const fromEmail = process.env.SENDGRID_FROM_EMAIL || DEFAULT_FROM_EMAIL;
+    const fromEmail = getVerifiedSenderEmail();
     log(`SendGrid initialized successfully. Using sender: ${fromEmail}`, 'email');
   } else {
     log('SENDGRID_API_KEY is not set, email features will be disabled', 'email');
@@ -56,7 +63,7 @@ export async function sendEmail(params: EmailParams): Promise<boolean> {
 
   try {
     // The 'from' email should be a verified sender in your SendGrid account
-    const fromEmail = params.from || process.env.SENDGRID_FROM_EMAIL || DEFAULT_FROM_EMAIL;
+    const fromEmail = params.from || getVerifiedSenderEmail();
     
     log(`Sending email to ${params.to} with subject: ${params.subject} from: ${fromEmail}`, 'email');
     
@@ -109,7 +116,7 @@ export async function sendSubscriptionEmail(
     return false;
   }
 
-  const fromEmail = process.env.SENDGRID_FROM_EMAIL || DEFAULT_FROM_EMAIL;
+  const fromEmail = getVerifiedSenderEmail();
   const formattedAmount = formatCurrency(amount, currency);
   const dateStr = expiryDate 
     ? new Date(expiryDate).toLocaleDateString('en-US', { 
@@ -187,7 +194,7 @@ export async function sendInvoiceEmail(
     return false;
   }
 
-  const fromEmail = process.env.SENDGRID_FROM_EMAIL || DEFAULT_FROM_EMAIL;
+  const fromEmail = getVerifiedSenderEmail();
   const subject = invoiceDetails.status === 'paid' 
     ? 'Payment Receipt - FoodVault' 
     : 'Invoice from FoodVault';
@@ -300,7 +307,7 @@ export async function sendReceiptScanEmail(
     return false;
   }
 
-  const fromEmail = process.env.SENDGRID_FROM_EMAIL || DEFAULT_FROM_EMAIL;
+  const fromEmail = getVerifiedSenderEmail();
   const subject = 'Your Receipt Has Been Processed';
   const formattedAmount = formatCurrency(receiptDetails.amount, receiptDetails.currency);
   const dateStr = new Date(receiptDetails.date).toLocaleDateString('en-US', { 
@@ -363,7 +370,7 @@ export async function sendTestEmail(
     return false;
   }
 
-  const fromEmail = process.env.SENDGRID_FROM_EMAIL || DEFAULT_FROM_EMAIL;
+  const fromEmail = getVerifiedSenderEmail();
   const currentDate = new Date();
   const dateStr = currentDate.toLocaleDateString('en-US', { 
     year: 'numeric', 
