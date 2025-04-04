@@ -26,6 +26,8 @@ import { registerBillingRoutes } from './services/stripe/billing-routes';
 import { registerAdminRoutes } from './services/admin/admin-routes';
 import { sendTestEmail, isSendGridAvailable } from './services/email/email-service';
 import emailRouter from './services/email/routes';
+import { requireEmailVerification } from './services/auth/email-verification-middleware';
+import { sendNotificationToUser } from './websockets/notification-service';
 
 const SESSION_SECRET = process.env.SESSION_SECRET || 'keyboard cat';
 
@@ -1274,7 +1276,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/locations', async (req, res, next) => {
+  app.post('/api/locations', requireEmailVerification, async (req, res, next) => {
     try {
       if (!req.isAuthenticated()) {
         return res.sendStatus(401);
@@ -1323,7 +1325,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch('/api/locations/:id', async (req, res, next) => {
+  app.patch('/api/locations/:id', requireEmailVerification, async (req, res, next) => {
     try {
       if (!req.isAuthenticated()) {
         return res.sendStatus(401);
@@ -1471,7 +1473,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/food-items', async (req, res, next) => {
+  app.post('/api/food-items', requireEmailVerification, async (req, res, next) => {
     try {
       if (!req.isAuthenticated()) {
         return res.sendStatus(401);
@@ -1572,7 +1574,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch('/api/food-items/:id', async (req, res, next) => {
+  app.patch('/api/food-items/:id', requireEmailVerification, async (req, res, next) => {
     try {
       if (!req.isAuthenticated()) {
         return res.sendStatus(401);
@@ -1673,7 +1675,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/stores', async (req, res, next) => {
+  app.post('/api/stores', requireEmailVerification, async (req, res, next) => {
     try {
       if (!req.isAuthenticated()) {
         return res.sendStatus(401);
@@ -1706,7 +1708,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch('/api/stores/:id', async (req, res, next) => {
+  app.patch('/api/stores/:id', requireEmailVerification, async (req, res, next) => {
     try {
       if (!req.isAuthenticated()) {
         return res.sendStatus(401);
@@ -1775,7 +1777,7 @@ const updateReceiptScanUsage = async (userId: number, scansUsed: number, scansLi
   }
 };
 
-  app.post('/api/receipts/upload', upload.single('receipt'), async (req: MulterRequest, res, next) => {
+  app.post('/api/receipts/upload', requireEmailVerification, upload.single('receipt'), async (req: MulterRequest, res, next) => {
     try {
       if (!req.isAuthenticated()) {
         return res.sendStatus(401);
@@ -2503,7 +2505,7 @@ const updateReceiptScanUsage = async (userId: number, scansUsed: number, scansLi
     }
   });
 
-  app.post('/api/food-items/:itemId/tags', async (req, res, next) => {
+  app.post('/api/food-items/:itemId/tags', requireEmailVerification, async (req, res, next) => {
     try {
       if (!req.isAuthenticated()) {
         return res.sendStatus(401);
