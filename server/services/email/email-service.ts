@@ -8,7 +8,7 @@ let sendgridAvailable = false;
 
 // Constants and configuration
 // We use a function to get the verified sender email to ensure it's always from environment
-function getVerifiedSenderEmail(): string {
+export function getVerifiedSenderEmail(): string {
   if (!process.env.SENDGRID_FROM_EMAIL) {
     log('ERROR: SENDGRID_FROM_EMAIL environment variable is required for sending emails', 'email');
     // Fall back to a default domain, but this won't work in production without verification
