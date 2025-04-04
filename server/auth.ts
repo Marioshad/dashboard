@@ -1,11 +1,13 @@
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
-import { Express } from "express";
+import { Express, Request, Response } from "express";
 import session from "express-session";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import { storage } from "./storage";
 import { User as SelectUser } from "@shared/schema";
+import { sendVerificationEmail, verifyEmail, resendVerificationEmail } from "./services/email/verification-service";
+import { log } from "./vite";
 
 declare global {
   namespace Express {
@@ -88,12 +90,39 @@ export function setupAuth(app: Express) {
         return res.status(400).json({ message: "Username already exists" });
       }
 
+      // Create user with email_verified set to false by default
       const user = await storage.createUser({
         ...req.body,
         password: await hashPassword(req.body.password),
       });
 
       console.log(`User registered successfully: ${user.username}`);
+      
+      // Send verification email
+      try {
+        // Get the base URL from the request
+        const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+        const host = req.headers['x-forwarded-host'] || req.get('host');
+        const baseUrl = `${protocol}://${host}`;
+        
+        log(`Attempting to send verification email to ${user.email} from ${baseUrl}`, 'auth');
+        
+        if (process.env.SENDGRID_API_KEY && process.env.SENDGRID_FROM_EMAIL && user.email) {
+          const emailSent = await sendVerificationEmail(user, baseUrl);
+          if (emailSent) {
+            log(`Verification email sent successfully to ${user.email}`, 'auth');
+          } else {
+            log(`Failed to send verification email to ${user.email}`, 'auth');
+          }
+        } else {
+          log('Email verification skipped - missing SendGrid configuration or user email', 'auth');
+        }
+      } catch (emailError) {
+        // Don't fail registration if email sending fails
+        log(`Error sending verification email: ${emailError}`, 'auth');
+      }
+
+      // Login the user
       req.login(user, (err) => {
         if (err) {
           console.error('Login error after registration:', err);
