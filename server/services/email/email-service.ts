@@ -6,12 +6,18 @@ import { formatCurrency } from '../../../client/src/lib/utils';
 let mailService: MailService | null = null;
 let sendgridAvailable = false;
 
+// Default sender email - should be a verified sender in SendGrid
+const DEFAULT_FROM_EMAIL = 'noreply@foodvault.app';
+
 try {
   if (process.env.SENDGRID_API_KEY) {
     mailService = new MailService();
     mailService.setApiKey(process.env.SENDGRID_API_KEY);
     sendgridAvailable = true;
-    log('SendGrid initialized successfully', 'email');
+    
+    // Log the from email that will be used
+    const fromEmail = process.env.SENDGRID_FROM_EMAIL || DEFAULT_FROM_EMAIL;
+    log(`SendGrid initialized successfully. Using sender: ${fromEmail}`, 'email');
   } else {
     log('SENDGRID_API_KEY is not set, email features will be disabled', 'email');
   }
@@ -48,25 +54,34 @@ export async function sendEmail(params: EmailParams): Promise<boolean> {
   }
 
   try {
+    // The 'from' email should be a verified sender in your SendGrid account
+    const fromEmail = params.from || process.env.SENDGRID_FROM_EMAIL || DEFAULT_FROM_EMAIL;
+    
+    log(`Sending email to ${params.to} with subject: ${params.subject} from: ${fromEmail}`, 'email');
+    
+    // We need to structure the email data according to SendGrid's requirements
     const msg: MailDataRequired = {
       to: params.to,
-      from: params.from || process.env.SENDGRID_FROM_EMAIL || 'noreply@foodvault.com',
+      from: fromEmail,
       subject: params.subject,
-      text: params.text || '',
-      html: params.html || '',
       content: [
         {
-          type: 'text/html',
-          value: params.html || params.text || '',
+          type: params.html ? 'text/html' : 'text/plain',
+          value: params.html || params.text || 'No content provided',
         },
       ],
     };
     
+    // Send the email
     await mailService.send(msg);
     log(`Email sent successfully to ${params.to}`, 'email');
     return true;
   } catch (error: any) {
+    // Log detailed error information
     log(`Error sending email: ${error.message}`, 'email');
+    if (error.response) {
+      log(`SendGrid API response: ${JSON.stringify(error.response.body)}`, 'email');
+    }
     return false;
   }
 }
@@ -93,7 +108,7 @@ export async function sendSubscriptionEmail(
     return false;
   }
 
-  const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'noreply@foodvault.com';
+  const fromEmail = process.env.SENDGRID_FROM_EMAIL || DEFAULT_FROM_EMAIL;
   const formattedAmount = formatCurrency(amount, currency);
   const dateStr = expiryDate 
     ? new Date(expiryDate).toLocaleDateString('en-US', { 
@@ -171,7 +186,7 @@ export async function sendInvoiceEmail(
     return false;
   }
 
-  const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'noreply@foodvault.com';
+  const fromEmail = process.env.SENDGRID_FROM_EMAIL || DEFAULT_FROM_EMAIL;
   const subject = invoiceDetails.status === 'paid' 
     ? 'Payment Receipt - FoodVault' 
     : 'Invoice from FoodVault';
@@ -284,7 +299,7 @@ export async function sendReceiptScanEmail(
     return false;
   }
 
-  const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'noreply@foodvault.com';
+  const fromEmail = process.env.SENDGRID_FROM_EMAIL || DEFAULT_FROM_EMAIL;
   const subject = 'Your Receipt Has Been Processed';
   const formattedAmount = formatCurrency(receiptDetails.amount, receiptDetails.currency);
   const dateStr = new Date(receiptDetails.date).toLocaleDateString('en-US', { 
@@ -347,7 +362,7 @@ export async function sendTestEmail(
     return false;
   }
 
-  const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'noreply@foodvault.com';
+  const fromEmail = process.env.SENDGRID_FROM_EMAIL || DEFAULT_FROM_EMAIL;
   const currentDate = new Date();
   const dateStr = currentDate.toLocaleDateString('en-US', { 
     year: 'numeric', 
