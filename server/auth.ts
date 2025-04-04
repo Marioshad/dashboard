@@ -137,7 +137,8 @@ export function setupAuth(app: Express) {
         return next(err);
       }
       console.log(`User logged out successfully: ${username}`);
-      res.sendStatus(200);
+      // Return JSON response instead of plain text
+      res.status(200).json({ success: true, message: 'Logged out successfully' });
     });
   });
 
