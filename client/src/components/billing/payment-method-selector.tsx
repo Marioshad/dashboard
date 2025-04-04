@@ -33,17 +33,23 @@ export function PaymentMethodSelector({
   onAddPaymentMethod
 }: PaymentMethodSelectorProps) {
   // Format card expiry
-  const formatExpiry = (month: number, year: number): string => {
+  const formatExpiry = (month?: number, year?: number): string => {
+    if (month === undefined || year === undefined) {
+      return 'N/A';
+    }
     return `${month.toString().padStart(2, '0')}/${year.toString().slice(-2)}`;
   };
 
   // Format card brand
-  const formatCardBrand = (brand: string): string => {
+  const formatCardBrand = (brand?: string): string => {
+    if (!brand) return 'Card';
     return brand.charAt(0).toUpperCase() + brand.slice(1);
   };
 
   // Get appropriate icon or style for card brand
-  const getCardBrandClass = (brand: string): string => {
+  const getCardBrandClass = (brand?: string): string => {
+    if (!brand) return 'text-gray-500';
+    
     switch (brand.toLowerCase()) {
       case 'visa':
         return 'text-blue-500';
