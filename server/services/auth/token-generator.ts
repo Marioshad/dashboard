@@ -1,11 +1,10 @@
-import crypto from 'crypto';
+import { randomBytes } from 'crypto';
 
 /**
- * Generate a random token of specified length (in bytes)
- * 
- * @param length Length of token in bytes (actual string will be twice as long)
- * @returns Random token string
+ * Generate a random token of specified length
+ * @param length Length of token in bytes (will produce a hex string of 2*length characters)
+ * @returns Random hex string token
  */
 export function generateRandomToken(length: number = 32): string {
-  return crypto.randomBytes(length).toString('hex');
+  return randomBytes(length).toString('hex');
 }

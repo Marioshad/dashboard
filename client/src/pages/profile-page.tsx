@@ -29,6 +29,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useRef } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { EmailVerificationStatus, EmailVerifiedBadge } from "@/components/email-verification-status";
 
 export default function ProfilePage() {
   const { user } = useAuth();
@@ -140,12 +141,19 @@ export default function ProfilePage() {
           </p>
         </div>
 
+        <EmailVerificationStatus />
+
         <Card>
           <CardHeader>
-            <CardTitle>Personal Information</CardTitle>
-            <CardDescription>
-              Update your personal details and public profile
-            </CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Personal Information</CardTitle>
+                <CardDescription>
+                  Update your personal details and public profile
+                </CardDescription>
+              </div>
+              <EmailVerifiedBadge />
+            </div>
           </CardHeader>
           <CardContent>
             <Form {...form}>
