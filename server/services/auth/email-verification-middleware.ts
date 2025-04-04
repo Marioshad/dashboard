@@ -1,37 +1,44 @@
 import { Request, Response, NextFunction } from 'express';
 import { sendNotificationToUser } from '../../websockets/notification-service';
-import { log } from '../../vite';
 
 /**
  * Middleware to check if user's email is verified
  * This middleware should be applied to routes that require email verification
  */
 export function requireEmailVerification(req: Request, res: Response, next: NextFunction) {
+  // Skip checks if email verification is disabled
+  if (process.env.DISABLE_EMAIL_VERIFICATION === 'true') {
+    return next();
+  }
+  
+  // Check if the user is authenticated
   if (!req.isAuthenticated()) {
-    return res.status(401).json({
-      success: false,
-      message: 'You must be logged in to access this resource',
-      error: 'AUTHENTICATION_REQUIRED'
-    });
+    return res.status(401).json({ error: 'AUTHENTICATION_REQUIRED', message: 'You must be logged in to perform this action' });
   }
-
-  // Check if user's email is verified
+  
+  // Check if the user's email is verified
   if (!req.user.emailVerified) {
-    // Create a notification about email verification requirement
+    // Send notification to user
     sendNotificationToUser(
-      req.user.id,
-      'email_verification_required',
+      req.user.id, 
+      'email_verification_required', 
       'Email verification required to perform this action. Please verify your email to continue.',
-      req.user.id, // Actor is the user themselves
-      { action: req.path }
-    ).catch(err => log(`Failed to send verification notification: ${err}`, 'auth'));
-
+      req.user.id
+    );
+    
+    // Return 403 with details about verification requirement
     return res.status(403).json({
-      success: false,
-      message: 'You need to verify your email address before you can perform this action',
-      error: 'EMAIL_VERIFICATION_REQUIRED'
+      error: 'EMAIL_VERIFICATION_REQUIRED',
+      message: 'Email verification required',
+      details: {
+        title: 'Email Verification Required',
+        description: 'You need to verify your email address before you can perform this action. Please check your inbox for a verification email or request a new one.',
+        actionText: 'Go to Profile',
+        actionPath: '/profile',
+      }
     });
   }
-
+  
+  // If email is verified, proceed to the next middleware
   next();
 }

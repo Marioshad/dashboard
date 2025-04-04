@@ -1,99 +1,58 @@
-import { generateRandomToken } from "../auth/token-generator";
-import { storage } from "../../storage";
-import { getVerifiedSenderEmail } from "./email-service";
-import { User } from "@shared/schema";
-import sgMail from '@sendgrid/mail';
-
-if (!process.env.SENDGRID_API_KEY) {
-  console.warn("SENDGRID_API_KEY environment variable is not set. Email verification will not work.");
-}
-
-// Initialize SendGrid with API key
-if (process.env.SENDGRID_API_KEY) {
-  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-}
-
-// Verification token expiration time (24 hours)
-const TOKEN_EXPIRATION_HOURS = 24;
-
-/**
- * Generate a verification token for a user
- */
-export async function generateVerificationToken(userId: number): Promise<string> {
-  // Generate a random token
-  const token = generateRandomToken(48);
-  
-  // Set expiration time to 24 hours from now
-  const expiresAt = new Date();
-  expiresAt.setHours(expiresAt.getHours() + TOKEN_EXPIRATION_HOURS);
-  
-  // Update user with verification token
-  await storage.updateUserVerification(userId, {
-    verificationToken: token,
-    verificationTokenExpiresAt: expiresAt
-  });
-  
-  return token;
-}
+import { db } from '../../db';
+import { users } from '@shared/schema';
+import { storage } from '../../storage';
+import { generateVerificationToken, calculateTokenExpiration, isTokenExpired } from '../../services/auth/token-generator';
+import { sendEmail } from './email-service';
+import { eq } from 'drizzle-orm';
 
 /**
  * Send verification email to user
+ * @param userId User ID to send verification email to
+ * @param email Email address to send to
+ * @returns Boolean indicating if email was sent successfully
  */
-export async function sendVerificationEmail(user: User, baseUrl: string): Promise<boolean> {
-  if (!process.env.SENDGRID_API_KEY || !process.env.SENDGRID_FROM_EMAIL) {
-    console.error("SendGrid configuration missing. Cannot send verification email.");
+export async function sendVerificationEmail(userId: number, email: string | null): Promise<boolean> {
+  if (!email) {
+    console.error('Cannot send verification email: no email address');
     return false;
   }
-  
+
   try {
-    // Generate a new verification token
-    const token = await generateVerificationToken(user.id);
+    // Generate verification token and set expiration
+    const token = generateVerificationToken();
+    const expiresAt = calculateTokenExpiration(24); // 24 hours expiration
     
+    // Update user with verification token
+    await storage.updateUserVerification(userId, {
+      verificationToken: token,
+      verificationTokenExpiresAt: expiresAt,
+    });
+
     // Create verification URL
-    const verificationUrl = `${baseUrl}/verify-email?token=${token}&userId=${user.id}`;
-    
-    // Get the verified sender email
-    const fromEmail = getVerifiedSenderEmail();
-    
-    // Create email message
-    const msg = {
-      to: user.email!,
-      from: fromEmail,
-      subject: 'Verify Your Email - FoodVault',
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #4F46E5;">Verify Your Email Address</h2>
-          <p>Hello ${user.fullName || user.username},</p>
-          <p>Thank you for creating a FoodVault account. To complete your registration and access all features, please verify your email address by clicking the button below:</p>
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${verificationUrl}" style="background-color: #4F46E5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold;">Verify My Email</a>
-          </div>
-          <p>This verification link will expire in ${TOKEN_EXPIRATION_HOURS} hours.</p>
-          <p>If you did not create this account, please ignore this email.</p>
-          <hr style="border: 1px solid #eee; margin: 30px 0;" />
-          <p style="font-size: 12px; color: #666;">FoodVault - Track your food inventory, reduce waste, and save money.</p>
-        </div>
-      `,
-      text: `
-        Verify Your Email Address
-        
-        Hello ${user.fullName || user.username},
-        
-        Thank you for creating a FoodVault account. To complete your registration and access all features, please verify your email address by visiting the link below:
-        
-        ${verificationUrl}
-        
-        This verification link will expire in ${TOKEN_EXPIRATION_HOURS} hours.
-        
-        If you did not create this account, please ignore this email.
-        
-        FoodVault - Track your food inventory, reduce waste, and save money.
-      `
-    };
+    const verifyUrl = `${process.env.APP_URL || ''}/verify-email?token=${token}`;
     
     // Send email
-    await sgMail.send(msg);
-    return true;
+    const emailSent = await sendEmail({
+      to: email,
+      subject: 'Verify your email address',
+      text: `Please verify your email address by clicking the following link: ${verifyUrl}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #333;">Email Verification</h2>
+          <p>Thanks for signing up! Please verify your email address by clicking the button below:</p>
+          <a href="${verifyUrl}" style="display: inline-block; background-color: #4F46E5; color: white; padding: 12px 20px; text-decoration: none; border-radius: 4px; margin: 20px 0;">
+            Verify Email Address
+          </a>
+          <p>If the button doesn't work, you can copy and paste this link into your browser:</p>
+          <p style="word-break: break-all; color: #666;">
+            <a href="${verifyUrl}" style="color: #4F46E5;">${verifyUrl}</a>
+          </p>
+          <p>This verification link will expire in 24 hours.</p>
+        </div>
+      `,
+    });
+
+    return emailSent;
   } catch (error) {
     console.error('Error sending verification email:', error);
     return false;
@@ -101,65 +60,69 @@ export async function sendVerificationEmail(user: User, baseUrl: string): Promis
 }
 
 /**
- * Verify a user's email using a token
+ * Verify user email with token
+ * @param token Verification token
+ * @returns Object with success status and message
  */
-export async function verifyEmail(userId: number, token: string): Promise<boolean> {
+export async function verifyEmail(token: string): Promise<{ success: boolean; message: string }> {
   try {
-    // Get user
-    const user = await storage.getUser(userId);
+    // Find user with this token
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.verificationToken, token));
+
     if (!user) {
-      return false;
+      return { success: false, message: 'Invalid verification token' };
     }
-    
-    // Check if user is already verified
-    if (user.emailVerified) {
-      return true;
-    }
-    
-    // Check if token matches and is not expired
-    if (user.verificationToken !== token) {
-      return false;
-    }
-    
+
     // Check if token is expired
-    if (user.verificationTokenExpiresAt && new Date(user.verificationTokenExpiresAt) < new Date()) {
-      return false;
+    if (user.verificationTokenExpiresAt && new Date() > user.verificationTokenExpiresAt) {
+      return { success: false, message: 'Verification token has expired. Please request a new one.' };
     }
-    
-    // Update user as verified and clear token
-    await storage.updateUserVerification(userId, {
+
+    // Update user verification status
+    await storage.updateUserVerification(user.id, {
       emailVerified: true,
       verificationToken: null,
-      verificationTokenExpiresAt: null
+      verificationTokenExpiresAt: null,
     });
-    
-    // Also update user role to regular user (from unverified)
-    const regularUserRole = await storage.getRoleByName('user');
-    if (regularUserRole) {
-      await storage.updateUserRole(userId, regularUserRole.id);
-    }
-    
-    return true;
+
+    return { success: true, message: 'Email verified successfully' };
   } catch (error) {
     console.error('Error verifying email:', error);
-    return false;
+    return { success: false, message: 'Error verifying email. Please try again.' };
   }
 }
 
 /**
- * Resend verification email
+ * Resend verification email to user
+ * @param userId User ID to resend verification email to
+ * @returns Object with success status and message
  */
-export async function resendVerificationEmail(userId: number, baseUrl: string): Promise<boolean> {
+export async function resendVerificationEmail(userId: number): Promise<{ success: boolean; message: string }> {
   try {
+    // Get user
     const user = await storage.getUser(userId);
-    if (!user || !user.email) {
-      return false;
+    
+    if (!user) {
+      return { success: false, message: 'User not found' };
     }
     
-    // Send new verification email
-    return await sendVerificationEmail(user, baseUrl);
+    if (user.emailVerified) {
+      return { success: false, message: 'Email already verified' };
+    }
+    
+    // Send verification email
+    const emailSent = await sendVerificationEmail(userId, user.email);
+    
+    if (!emailSent) {
+      return { success: false, message: 'Failed to send verification email' };
+    }
+    
+    return { success: true, message: 'Verification email sent successfully' };
   } catch (error) {
     console.error('Error resending verification email:', error);
-    return false;
+    return { success: false, message: 'Error sending verification email. Please try again.' };
   }
 }

@@ -1,122 +1,156 @@
+import React from 'react';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Mail, Check, AlertTriangle, ArrowRight } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
-import { useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
-import { Loader2, MailCheck, AlertTriangle, BadgeCheck } from "lucide-react";
+import { Link } from 'wouter';
+import { Badge } from "@/components/ui/badge";
 
-export function EmailVerificationStatus() {
+/**
+ * Email verified badge component
+ * Shows a badge indicating email verification status
+ */
+export function EmailVerifiedBadge() {
   const { user } = useAuth();
-  const { toast } = useToast();
-
-  const resendVerificationMutation = useMutation({
-    mutationFn: async () => {
-      const response = await fetch("/api/email/resend-verification", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include"
-      });
-      if (!response.ok) {
-        throw new Error("Failed to send verification email");
-      }
-      return await response.json();
-    },
-    onSuccess: (data) => {
-      toast({
-        title: "Verification Email Sent",
-        description: "Please check your inbox for the verification link",
-      });
-    },
-    onError: (error) => {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to send verification email",
-        variant: "destructive",
-      });
-    },
-  });
-
-  // If user is not logged in, don't show anything
-  if (!user) {
-    return null;
+  
+  if (!user) return null;
+  
+  const isVerified = user.emailVerified;
+  
+  if (isVerified) {
+    return (
+      <Badge variant="outline" className="bg-green-50 text-green-700 hover:bg-green-50">
+        <Check className="mr-1 h-3 w-3" />
+        Email Verified
+      </Badge>
+    );
   }
-
-  // If email is verified or no email set, don't show verification card
-  if (user.emailVerified || !user.email) {
-    return null;
-  }
-
+  
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-center gap-2">
-          <AlertTriangle className="h-5 w-5 text-amber-500" />
-          <CardTitle>Email Verification Required</CardTitle>
-        </div>
-        <CardDescription>
-          Verify your email address to access all features
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Alert className="mb-4 bg-amber-50 border-amber-200">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertTitle>Your email is not verified</AlertTitle>
-          <AlertDescription>
-            We sent a verification link to <strong>{user.email}</strong>. 
-            Please check your inbox and click the verification link to unlock full access to all features.
-          </AlertDescription>
-        </Alert>
-        <div className="space-y-2">
-          <p className="text-sm text-muted-foreground">
-            If you don't see the email, check your spam folder or request a new verification link.
-          </p>
-        </div>
-      </CardContent>
-      <CardFooter className="border-t pt-4">
-        <Button
-          onClick={() => resendVerificationMutation.mutate()}
-          disabled={resendVerificationMutation.isPending}
-          className="w-full"
-        >
-          {resendVerificationMutation.isPending ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Sending...
-            </>
-          ) : (
-            <>
-              <MailCheck className="mr-2 h-4 w-4" />
-              Resend Verification Email
-            </>
-          )}
-        </Button>
-      </CardFooter>
-    </Card>
+    <Badge variant="outline" className="bg-amber-50 text-amber-700 hover:bg-amber-50">
+      <AlertTriangle className="mr-1 h-3 w-3" />
+      Verification Needed
+    </Badge>
   );
 }
 
-export function EmailVerifiedBadge() {
+/**
+ * Email verification status component
+ * Shows the email verification status and provides actions to verify or resend verification email
+ */
+export default function EmailVerificationStatus() {
   const { user } = useAuth();
-
-  if (!user || !user.email || !user.emailVerified) {
-    return null;
-  }
+  const { toast } = useToast();
+  const [isResending, setIsResending] = React.useState(false);
+  
+  // Get email verification status
+  const isVerified = user?.emailVerified;
+  const userEmail = user?.email;
+  
+  if (!user) return null;
+  
+  // Handler for resending verification email
+  const handleResendVerification = async () => {
+    try {
+      setIsResending(true);
+      const response = await apiRequest("/api/email/resend-verification", {
+        method: "POST"
+      });
+      const data = await response.json();
+      
+      toast({
+        title: data.success ? "Verification Email Sent" : "Could not send verification email",
+        description: data.message,
+        variant: data.success ? "default" : "destructive",
+      });
+      
+      // Invalidate user data to refresh verification status
+      if (data.success) {
+        queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Could not resend verification email. Please try again later.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsResending(false);
+    }
+  };
 
   return (
-    <div className="flex items-center gap-1.5 text-sm text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
-      <BadgeCheck className="h-3.5 w-3.5" />
-      <span>Email Verified</span>
-    </div>
+    <Card className="mt-6">
+      <CardHeader className="pb-4">
+        <CardTitle className="flex items-center text-xl">
+          {isVerified ? (
+            <Check className="h-5 w-5 mr-2 text-green-500" />
+          ) : (
+            <Mail className="h-5 w-5 mr-2 text-amber-500" />
+          )}
+          Email Verification
+        </CardTitle>
+        <CardDescription>
+          {isVerified 
+            ? "Your email has been verified." 
+            : "Your email needs to be verified to use all features."}
+        </CardDescription>
+      </CardHeader>
+      
+      <CardContent>
+        <div className={`bg-${isVerified ? 'green-50' : 'amber-50'} p-4 rounded-md border ${isVerified ? 'border-green-100' : 'border-amber-100'}`}>
+          <div className="flex items-start mb-2">
+            {isVerified ? (
+              <Check className="h-5 w-5 mt-0.5 mr-2 text-green-500 flex-shrink-0" />
+            ) : (
+              <AlertTriangle className="h-5 w-5 mt-0.5 mr-2 text-amber-500 flex-shrink-0" />
+            )}
+            <div>
+              <div className="font-medium">
+                {isVerified ? "Email Verified" : "Verification Required"}
+              </div>
+              <div className="text-sm text-muted-foreground mt-1">
+                {isVerified 
+                  ? `Your email (${userEmail}) has been successfully verified.` 
+                  : `We've sent a verification link to ${userEmail}. Please check your email and click the link to verify your address.`}
+              </div>
+            </div>
+          </div>
+          
+          {!isVerified && (
+            <div className="mt-3 text-sm text-muted-foreground">
+              <p>Without email verification, you won't be able to:</p>
+              <ul className="list-disc list-inside mt-1 ml-2 space-y-1">
+                <li>Add or edit items in your pantry</li>
+                <li>Create new locations or stores</li>
+                <li>Upload and process receipts</li>
+                <li>Use any premium features</li>
+              </ul>
+            </div>
+          )}
+        </div>
+      </CardContent>
+      
+      {!isVerified && (
+        <CardFooter className="flex flex-col sm:flex-row gap-2">
+          <Button
+            variant="outline"
+            onClick={handleResendVerification}
+            disabled={isResending}
+            className="w-full sm:w-auto"
+          >
+            {isResending ? "Sending..." : "Resend Verification Email"}
+          </Button>
+          
+          <Link href="/verify-email">
+            <Button className="w-full sm:w-auto">
+              Go to Verification Page <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+          </Link>
+        </CardFooter>
+      )}
+    </Card>
   );
 }
