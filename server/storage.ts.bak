@@ -143,6 +143,7 @@ export class DatabaseStorage implements IStorage {
         mentionNotifications: users.mentionNotifications,
         followNotifications: users.followNotifications,
         verificationToken: users.verificationToken,
+        verificationTokenExpiry: users.verificationTokenExpiry,
         verificationTokenExpiresAt: users.verificationTokenExpiresAt,
         stripeCustomerId: users.stripeCustomerId,
         stripeSubscriptionId: users.stripeSubscriptionId,
@@ -207,6 +208,7 @@ export class DatabaseStorage implements IStorage {
         mentionNotifications: users.mentionNotifications,
         followNotifications: users.followNotifications,
         verificationToken: users.verificationToken,
+        verificationTokenExpiry: users.verificationTokenExpiry,
         verificationTokenExpiresAt: users.verificationTokenExpiresAt,
         stripeCustomerId: users.stripeCustomerId,
         stripeSubscriptionId: users.stripeSubscriptionId,
@@ -1027,76 +1029,20 @@ export class DatabaseStorage implements IStorage {
         dataToUpdate.verification_token = verificationData.verificationToken;
       }
       
-      // Update both expiration columns in the database to maintain compatibility
       if (verificationData.verificationTokenExpiresAt !== undefined) {
         dataToUpdate.verification_token_expires_at = verificationData.verificationTokenExpiresAt;
-        // Also update the old column to maintain compatibility
-        dataToUpdate.verification_token_expiry = verificationData.verificationTokenExpiresAt;
       }
       
       console.log('Updating user verification with data:', dataToUpdate);
       
-      // Use a SQL query that doesn't fail if a column is missing
-      try {
-        const [user] = await db
-          .update(users)
-          .set(dataToUpdate)
-          .where(eq(users.id, userId))
-          .returning();
-        
-        return user;
-      } catch (dbError) {
-        console.error('Error in updateUserVerification with Drizzle:', dbError);
-        
-        // Fallback to raw SQL query
-        // Get all existing columns first
-        const columnsResult = await db.execute(sql`
-          SELECT column_name 
-          FROM information_schema.columns 
-          WHERE table_name = 'users'
-        `);
-        
-        const columnNames = columnsResult.rows.map((row: any) => row.column_name);
-        
-        // Build SQL sets that only include fields that exist in the database
-        const setParts = [];
-        Object.entries(dataToUpdate).forEach(([key, value]) => {
-          if (columnNames.includes(key)) {
-            if (value === null) {
-              setParts.push(`${key} = NULL`);
-            } else if (value instanceof Date) {
-              setParts.push(`${key} = '${value.toISOString()}'`);
-            } else if (typeof value === 'string') {
-              setParts.push(`${key} = '${value}'`);
-            } else if (typeof value === 'boolean') {
-              setParts.push(`${key} = ${value}`);
-            } else if (typeof value === 'number') {
-              setParts.push(`${key} = ${value}`);
-            } else if (value.constructor && value.constructor.name === 'PgSql') {
-              // SQL expression, include as is
-              setParts.push(`${key} = CURRENT_TIMESTAMP`);
-            }
-          }
-        });
-        
-        if (setParts.length === 0) {
-          throw new Error('No valid fields to update');
-        }
-        
-        // Execute the raw SQL query
-        const result = await db.execute(sql`
-          UPDATE users 
-          SET ${sql.raw(setParts.join(', '))} 
-          WHERE id = ${userId} 
-          RETURNING *
-        `);
-        
-        if (result.rows && result.rows.length > 0) {
-          return result.rows[0] as User;
-        } else {
-          throw new Error('User update failed, no rows returned');
-        }
-      }
+      // Use a raw SQL query to update the user
+      const [user] = await db
+        .update(users)
+        .set(dataToUpdate)
+        .where(eq(users.id, userId))
+        .returning();
+      
+      return user;
     } catch (error) {
       console.error('Error updating user verification:', error);
       throw error;
