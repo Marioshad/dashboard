@@ -277,8 +277,8 @@ async function handlePaymentSucceeded(
     log(`Payment intent metadata: ${JSON.stringify(paymentIntent.metadata || {})}`, 'stripe-webhook');
     
     // Find the invoice associated with this payment
-    // @ts-ignore - payment_intent is not in the TypeScript definitions but is supported by the API
-    const { data: invoices } = await stripe.invoices.list({
+    // Use type assertion to handle API parameters that are missing from the TypeScript definitions
+    const { data: invoices } = await (stripe.invoices.list as any)({
       payment_intent: paymentIntent.id,
     });
     
@@ -324,6 +324,24 @@ async function handlePaymentSucceeded(
       undefined,
       { amount: paymentIntent.amount / 100, currency: paymentIntent.currency }
     );
+    
+    // Send receipt email if user has an email address
+    if (user.email && invoice && invoice.hosted_invoice_url) {
+      try {
+        await sendInvoiceEmail(
+          user.email,
+          'Payment Receipt',
+          invoice.hosted_invoice_url || '',
+          paymentIntent.amount / 100,
+          paymentIntent.currency,
+          invoice.number || invoice.id || '',
+          new Date(invoice.created * 1000)
+        );
+        stripeLogger.info(`Sent receipt email to ${user.email} for payment ${paymentIntent.id}`);
+      } catch (emailError) {
+        stripeLogger.error(`Error sending receipt email: ${emailError}`);
+      }
+    }
     
     // First check if we already have tier information from payment intent metadata
     let effectiveTierId = tierId;
@@ -439,8 +457,8 @@ async function handlePaymentFailed(
     log(`Payment intent metadata for failed payment: ${JSON.stringify(paymentIntent.metadata || {})}`, 'stripe-webhook');
     
     // Find the invoice associated with this payment
-    // @ts-ignore - payment_intent is not in the TypeScript definitions but is supported by the API
-    const { data: invoices } = await stripe.invoices.list({
+    // Use type assertion to handle API parameters that are missing from the TypeScript definitions
+    const { data: invoices } = await (stripe.invoices.list as any)({
       payment_intent: paymentIntent.id,
     });
     
@@ -605,15 +623,12 @@ async function handleInvoiceFinalized(
       
       await sendInvoiceEmail(
         user.email,
-        {
-          invoiceNumber,
-          invoiceDate: new Date(invoice.created * 1000),
-          amount,
-          currency,
-          status: invoice.status || 'open',
-          tierName,
-          invoiceUrl
-        }
+        `${tierName} Subscription Invoice`,
+        invoiceUrl || '',
+        amount,
+        currency,
+        invoiceNumber || '',
+        new Date(invoice.created * 1000)
       );
     }
     
@@ -655,8 +670,8 @@ async function handleInvoicePaid(
     const invoiceUrl = invoice.hosted_invoice_url;
     const pdfUrl = invoice.invoice_pdf;
     
-    // Get the subscription ID from the invoice
-    const subscriptionId = invoice.subscription as string;
+    // Get the subscription ID from the invoice (using type assertion as it's not in the TypeScript definitions)
+    const subscriptionId = (invoice as any).subscription as string;
     log(`Found subscription ID in invoice: ${subscriptionId}`, 'stripe-webhook');
     
     if (subscriptionId) {
@@ -665,7 +680,10 @@ async function handleInvoicePaid(
         const subscription = await stripe.subscriptions.retrieve(subscriptionId, {
           expand: ['items.data.price.product']
         });
+        // More detailed logging of subscription object for debugging
         log(`Retrieved subscription ${subscriptionId} for invoice ${invoice.id}`, 'stripe-webhook');
+        log(`Subscription properties: ${Object.keys(subscription).join(', ')}`, 'stripe-webhook');
+        log(`Subscription has current_period_start: ${Boolean((subscription as any).current_period_start)}`, 'stripe-webhook');
         
         // Get first item in the subscription
         const item = subscription.items.data[0];
@@ -756,8 +774,8 @@ async function handleInvoicePaid(
               stripeSubscriptionId: subscriptionId,
               subscriptionStatus: subscription.status,
               subscriptionTier: tier,
-              currentBillingPeriodStart: new Date(subscription.current_period_start * 1000),
-              currentBillingPeriodEnd: new Date(subscription.current_period_end * 1000)
+              currentBillingPeriodStart: new Date((subscription as any).current_period_start * 1000),
+              currentBillingPeriodEnd: new Date((subscription as any).current_period_end * 1000)
             });
             
             // Update user limits based on the new tier
@@ -823,16 +841,12 @@ async function handleInvoicePaid(
       
       await sendInvoiceEmail(
         user.email,
-        {
-          invoiceNumber,
-          invoiceDate: new Date(invoice.created * 1000),
-          amount,
-          currency,
-          status: 'paid',
-          tierName,
-          invoiceUrl,
-          pdfUrl
-        }
+        `${tierName} Subscription Payment Receipt`,
+        invoiceUrl || '',
+        amount,
+        currency,
+        invoiceNumber || '',
+        new Date(invoice.created * 1000)
       );
     }
     
