@@ -160,9 +160,36 @@ export async function createSubscription(
       },
     });
 
-    // Type assertion to get the client secret
-    const invoice = subscription.latest_invoice as Stripe.Invoice;
-    const paymentIntent = invoice.payment_intent as Stripe.PaymentIntent;
+    // We need to use type assertions here because the TypeScript types don't match the actual API response
+    const invoice = subscription.latest_invoice as any;
+    
+    // Make sure we have a payment intent ID
+    if (!invoice || !invoice.payment_intent) {
+      throw new Error('No payment intent found in the subscription invoice');
+    }
+    
+    // The payment intent could be a string ID or the full object depending on the expand parameter
+    const paymentIntentId = typeof invoice.payment_intent === 'string' 
+      ? invoice.payment_intent 
+      : invoice.payment_intent.id;
+    
+    if (!paymentIntentId) {
+      throw new Error('Invalid payment intent ID');
+    }
+    
+    // Get the full payment intent so we can access and update all properties
+    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+    
+    // Set the same metadata on the payment intent for better tracking
+    await stripe.paymentIntents.update(paymentIntentId, {
+      metadata: {
+        tier: tierKey, // Use simple tier key for payment intent
+        tierId: tierId, // Also include full tier ID
+        subscriptionId: subscription.id, // Link to subscription
+      }
+    });
+    log(`Updated payment intent ${paymentIntentId} with tier metadata`, 'stripe');
+    
     const clientSecret = paymentIntent.client_secret;
 
     if (!clientSecret) {
@@ -320,11 +347,14 @@ export function formatSubscriptionData(subscription: Stripe.Subscription): any {
   const clientTier = tier === 'smart_pantry' ? 'smart' : 
                     tier === 'family_pantry_pro' ? 'pro' : 'free';
   
+  // Need to use type assertion since the Stripe types don't match actual API response
+  const subData = subscription as any;
+  
   return {
     id: subscription.id,
     status: subscription.status,
-    currentPeriodStart: new Date(subscription.current_period_start * 1000),
-    currentPeriodEnd: new Date(subscription.current_period_end * 1000),
+    currentPeriodStart: new Date((subData.current_period_start || 0) * 1000),
+    currentPeriodEnd: new Date((subData.current_period_end || 0) * 1000),
     cancelAtPeriodEnd: subscription.cancel_at_period_end,
     interval: price?.recurring?.interval || 'month',
     tier: clientTier, // Use client-friendly tier ID
