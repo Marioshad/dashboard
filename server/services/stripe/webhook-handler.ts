@@ -270,11 +270,13 @@ async function handlePaymentSucceeded(
     }
     
     // Check if we have tier info in the payment intent metadata
-    let tierId = paymentIntent.metadata?.tier as string;
+    // First check for tierId, then fall back to tier - this ensures compatibility with both naming conventions
+    let tierId = (paymentIntent.metadata?.tierId || paymentIntent.metadata?.tier) as string;
     let subscriptionId = paymentIntent.metadata?.subscriptionId as string;
     
     // Log payment intent metadata for debugging
     log(`Payment intent metadata: ${JSON.stringify(paymentIntent.metadata || {})}`, 'stripe-webhook');
+    log(`Extracted tier ID: ${tierId}`, 'stripe-webhook');
     
     // Find the invoice associated with this payment
     // Use type assertion to handle API parameters that are missing from the TypeScript definitions
@@ -698,18 +700,18 @@ async function handleInvoicePaid(
           let tier = 'free'; // Default to free
           
           // First check subscription metadata (this is our new preferred method)
-          if (subscription.metadata?.tierId) {
-            tier = subscription.metadata.tierId;
+          if (subscription.metadata?.tierId || subscription.metadata?.tier) {
+            tier = (subscription.metadata?.tierId || subscription.metadata?.tier) as string;
             log(`Found tier in subscription metadata: ${tier}`, 'stripe-webhook');
           }
           // Then check invoice metadata
-          else if (invoice.metadata?.tierId) {
-            tier = invoice.metadata.tierId;
+          else if (invoice.metadata?.tierId || invoice.metadata?.tier) {
+            tier = (invoice.metadata?.tierId || invoice.metadata?.tier) as string;
             log(`Found tier in invoice metadata: ${tier}`, 'stripe-webhook');
           }
           // Then check product metadata
-          else if (product.metadata?.tier) {
-            tier = product.metadata.tier;
+          else if (product.metadata?.tier || product.metadata?.tierId) {
+            tier = (product.metadata?.tierId || product.metadata?.tier) as string;
             log(`Found tier in product metadata: ${tier}`, 'stripe-webhook');
           }
           // If no tier in metadata, try to determine from product name

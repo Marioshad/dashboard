@@ -1096,7 +1096,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }],
         payment_behavior: 'default_incomplete',
         metadata: {
-          tier: tierId // Add the tier to the subscription metadata
+          tier: tierId, // Add the tier to the subscription metadata
+          tierId: tierId // Add tierId field to be consistent with other parts of the code
         }
       });
       
@@ -1143,6 +1144,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await stripe!.paymentIntents.update(paymentIntent.id, {
           metadata: { 
             tier: effectiveTierId,
+            tierId: effectiveTierId, // Adding tierId field to be consistent with other parts of the code
             subscriptionId: subscription.id,
             invoiceId: typeof latestInvoiceId === 'string' ? latestInvoiceId : latestInvoiceId.id
           },
