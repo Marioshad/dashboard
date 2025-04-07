@@ -146,14 +146,40 @@ async function handleSubscriptionCreatedOrUpdated(
     
     log(`Final determined tier: ${tier}`, 'stripe-webhook');
     
+    log(`USER BEFORE UPDATE (subscription created/updated): ${JSON.stringify({
+      id: user.id,
+      username: user.username,
+      subscriptionStatus: user.subscriptionStatus,
+      subscriptionTier: user.subscriptionTier,
+      stripeSubscriptionId: user.stripeSubscriptionId
+    })}`, 'stripe-webhook');
+    
+    log(`UPDATE DATA (subscription created/updated): ${JSON.stringify({
+      stripeSubscriptionId: subscription.id,
+      subscriptionStatus: subscription.status,
+      subscriptionTier: tier,
+      currentBillingPeriodStart: new Date((subscription as any).current_period_start * 1000),
+      currentBillingPeriodEnd: new Date((subscription as any).current_period_end * 1000)
+    })}`, 'stripe-webhook');
+    
     // Update user's subscription details
-    await storage.updateUserSubscription(user.id, {
+    const updatedUser = await storage.updateUserSubscription(user.id, {
       stripeSubscriptionId: subscription.id,
       subscriptionStatus: subscription.status,
       subscriptionTier: tier,
       currentBillingPeriodStart: new Date((subscription as any).current_period_start * 1000),
       currentBillingPeriodEnd: new Date((subscription as any).current_period_end * 1000),
     });
+    
+    log(`USER AFTER UPDATE (subscription created/updated): ${JSON.stringify({
+      id: updatedUser.id,
+      username: updatedUser.username,
+      subscriptionStatus: updatedUser.subscriptionStatus,
+      subscriptionTier: updatedUser.subscriptionTier,
+      stripeSubscriptionId: updatedUser.stripeSubscriptionId,
+      currentBillingPeriodStart: updatedUser.currentBillingPeriodStart,
+      currentBillingPeriodEnd: updatedUser.currentBillingPeriodEnd
+    })}`, 'stripe-webhook');
     
     // Update user's limits based on tier
     const limits = TIER_LIMITS[tier] || TIER_LIMITS.free;
@@ -413,12 +439,34 @@ async function handlePaymentSucceeded(
       // Log the conversion
       log(`Normalized tier ID from ${effectiveTierId} to ${systemTierId}`, 'stripe-webhook');
       
+      log(`USER BEFORE UPDATE (payment): ${JSON.stringify({
+        id: user.id,
+        username: user.username,
+        subscriptionStatus: user.subscriptionStatus,
+        subscriptionTier: user.subscriptionTier,
+        stripeSubscriptionId: user.stripeSubscriptionId
+      })}`, 'stripe-webhook');
+      
+      log(`UPDATE DATA (payment): ${JSON.stringify({
+        stripeSubscriptionId: effectiveSubscriptionId || user.stripeSubscriptionId || '',
+        subscriptionStatus: 'active',
+        subscriptionTier: systemTierId
+      })}`, 'stripe-webhook');
+      
       // Update user's subscription details with the correct tier format
-      await storage.updateUserSubscription(user.id, {
+      const updatedUser = await storage.updateUserSubscription(user.id, {
         stripeSubscriptionId: effectiveSubscriptionId || user.stripeSubscriptionId || '',
         subscriptionStatus: 'active',
         subscriptionTier: systemTierId, // Use the normalized tier ID here
       });
+      
+      log(`USER AFTER UPDATE (payment): ${JSON.stringify({
+        id: updatedUser.id,
+        username: updatedUser.username,
+        subscriptionStatus: updatedUser.subscriptionStatus,
+        subscriptionTier: updatedUser.subscriptionTier,
+        stripeSubscriptionId: updatedUser.stripeSubscriptionId
+      })}`, 'stripe-webhook');
       
       // Update user's limits based on tier
       const limits = TIER_LIMITS[systemTierId] || TIER_LIMITS.free;
@@ -771,10 +819,24 @@ async function handleInvoicePaid(
           }
           
           log(`Final determined tier: ${tier}`, 'stripe-webhook');
+          log(`USER BEFORE UPDATE: ${JSON.stringify({
+            id: user.id,
+            username: user.username,
+            subscriptionStatus: user.subscriptionStatus,
+            subscriptionTier: user.subscriptionTier,
+            stripeSubscriptionId: user.stripeSubscriptionId
+          })}`, 'stripe-webhook');
           
           // If we have a valid tier, update the user's subscription in our database
           if (tier && TIER_LIMITS[tier]) {
             log(`Updating user ${user.id} subscription to tier: ${tier}`, 'stripe-webhook');
+            log(`UPDATE DATA: ${JSON.stringify({
+              stripeSubscriptionId: subscriptionId,
+              subscriptionStatus: subscription.status,
+              subscriptionTier: tier,
+              currentBillingPeriodStart: new Date((subscription as any).current_period_start * 1000),
+              currentBillingPeriodEnd: new Date((subscription as any).current_period_end * 1000)
+            })}`, 'stripe-webhook');
             
             // Update subscription data in our database
             const updatedUser = await storage.updateUserSubscription(user.id, {
@@ -784,6 +846,24 @@ async function handleInvoicePaid(
               currentBillingPeriodStart: new Date((subscription as any).current_period_start * 1000),
               currentBillingPeriodEnd: new Date((subscription as any).current_period_end * 1000)
             });
+            
+            log(`USER AFTER UPDATE (invoice): ${JSON.stringify({
+              id: updatedUser.id,
+              username: updatedUser.username,
+              subscriptionStatus: updatedUser.subscriptionStatus,
+              subscriptionTier: updatedUser.subscriptionTier,
+              stripeSubscriptionId: updatedUser.stripeSubscriptionId,
+              currentBillingPeriodStart: updatedUser.currentBillingPeriodStart,
+              currentBillingPeriodEnd: updatedUser.currentBillingPeriodEnd
+            })}`, 'stripe-webhook');
+            
+            log(`USER AFTER UPDATE: ${JSON.stringify({
+              id: updatedUser.id,
+              username: updatedUser.username,
+              subscriptionStatus: updatedUser.subscriptionStatus,
+              subscriptionTier: updatedUser.subscriptionTier,
+              stripeSubscriptionId: updatedUser.stripeSubscriptionId
+            })}`, 'stripe-webhook');
             
             // Update user limits based on the new tier
             await storage.updateUserLimits(user.id, {
@@ -955,12 +1035,32 @@ async function handleCheckoutSessionCompleted(
         : tierId;
         
       log(`Updating user ${user.id} subscription to tier ${normalizedTierId} from checkout session`, 'stripe-webhook');
+      log(`USER BEFORE UPDATE (checkout): ${JSON.stringify({
+        id: user.id,
+        username: user.username,
+        subscriptionStatus: user.subscriptionStatus,
+        subscriptionTier: user.subscriptionTier,
+        stripeSubscriptionId: user.stripeSubscriptionId
+      })}`, 'stripe-webhook');
+      
+      log(`UPDATE DATA (checkout): ${JSON.stringify({
+        subscriptionStatus: 'active',
+        subscriptionTier: normalizedTierId
+      })}`, 'stripe-webhook');
       
       // Update user's subscription details
-      await storage.updateUserSubscription(user.id, {
+      const updatedUser = await storage.updateUserSubscription(user.id, {
         subscriptionStatus: 'active',
         subscriptionTier: normalizedTierId
       });
+      
+      log(`USER AFTER UPDATE (checkout): ${JSON.stringify({
+        id: updatedUser.id,
+        username: updatedUser.username,
+        subscriptionStatus: updatedUser.subscriptionStatus,
+        subscriptionTier: updatedUser.subscriptionTier,
+        stripeSubscriptionId: updatedUser.stripeSubscriptionId
+      })}`, 'stripe-webhook');
       
       // Update user's limits based on tier
       const limits = TIER_LIMITS[normalizedTierId] || TIER_LIMITS.free;
