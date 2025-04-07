@@ -183,6 +183,17 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                 Billing
               </div>
             </Link>
+            
+            {/* Webhook Test - Available to all users for troubleshooting */}
+            <Link href="/admin/webhook-test">
+              <div className={cn(
+                "nav-link",
+                location === "/admin/webhook-test" && "active"
+              )}>
+                <ServerCog className="nav-link-icon" />
+                Webhook Test
+              </div>
+            </Link>
 
             {/* Food Inventory Section */}
             <Collapsible
@@ -389,6 +400,15 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                     )}>
                       <Database className="nav-link-icon" />
                       System
+                    </div>
+                  </Link>
+                  <Link href="/admin/webhook-test">
+                    <div className={cn(
+                      "nav-link",
+                      location === "/admin/webhook-test" && "active"
+                    )}>
+                      <ServerCog className="nav-link-icon" />
+                      Webhook Test
                     </div>
                   </Link>
                 </CollapsibleContent>

@@ -64,7 +64,7 @@ function Router() {
       <ProtectedRoute path="/admin" component={AdminDashboardPage} />
       <ProtectedRoute path="/admin/stripe-settings" component={StripeSettingsPage} />
       <ProtectedRoute path="/admin/system" component={SystemPage} />
-      <ProtectedRoute path="/admin/webhook-test" component={WebhookTestPage} />
+      <Route path="/admin/webhook-test" component={WebhookTestPage} />
       <Route path="/auth" component={AuthPage} />
       <Route path="/verify-email" component={VerifyEmailPage} />
       <Route component={NotFound} />
