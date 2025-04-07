@@ -1117,20 +1117,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
         typeof latestInvoiceId === 'string' ? latestInvoiceId : latestInvoiceId.id
       );
       
-      // Check if the invoice has a payment intent reference
+      // If there's no payment intent yet, we need to create one
+      let paymentIntent;
+      
       if (!invoice.payment_intent) {
-        throw new Error('No payment intent found for this invoice');
-      }
-      
-      // Get the payment intent ID and retrieve it separately
-      const paymentIntentId = typeof invoice.payment_intent === 'string' 
-        ? invoice.payment_intent 
-        : invoice.payment_intent.id;
+        console.log('No payment intent on invoice, creating one manually...');
         
-      console.log('Payment intent ID:', paymentIntentId);
-      
-      // Retrieve the payment intent to get the client secret
-      const paymentIntent = await stripe!.paymentIntents.retrieve(paymentIntentId);
+        // Create a payment intent manually
+        paymentIntent = await stripe!.paymentIntents.create({
+          amount: invoice.amount_due,
+          currency: invoice.currency || 'eur',
+          customer: customer.id,
+          description: `Payment for subscription (${tierId || 'Unknown tier'})`,
+          metadata: {
+            subscriptionId: subscription.id,
+            invoiceId: invoice.id,
+            tier: tierId,
+            tierId: tierId
+          }
+        });
+        
+        // Update the invoice with the payment intent
+        try {
+          await stripe!.invoices.update(invoice.id, {
+            payment_intent: paymentIntent.id,
+          });
+          console.log('Updated invoice with payment intent:', paymentIntent.id);
+        } catch (updateError) {
+          console.error('Failed to update invoice with payment intent:', updateError);
+          // Continue anyway since we have a valid payment intent
+        }
+      } else {
+        // Get the payment intent ID and retrieve it separately
+        const paymentIntentId = typeof invoice.payment_intent === 'string' 
+          ? invoice.payment_intent 
+          : invoice.payment_intent.id;
+          
+        console.log('Payment intent found on invoice:', paymentIntentId);
+        
+        // Retrieve the payment intent to get the client secret
+        paymentIntent = await stripe!.paymentIntents.retrieve(paymentIntentId);
+      }
       
       // Always add tier info to the payment intent, using any available source
       if (paymentIntent) {
