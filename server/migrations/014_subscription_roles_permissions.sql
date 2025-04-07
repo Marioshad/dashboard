@@ -1,4 +1,4 @@
--- Migration 014: Update roles and permissions for subscription tiers
+-- Migration 014: Update roles and permissions for subscription tiers (CLEANED VERSION)
 
 -- Add basic permissions if they don't exist
 DO $$ BEGIN
@@ -15,7 +15,7 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- Add new tier-specific permissions
+-- Add tier-specific permissions
 DO $$ BEGIN
   -- Check if smart_pantry_features permission exists
   IF NOT EXISTS (SELECT 1 FROM permissions WHERE name = 'smart_pantry_features') THEN
@@ -48,31 +48,24 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- Create roles for tier-based access
+-- Create roles for tier-based access with standardized names
 DO $$ BEGIN
-  -- Check if free_tier role exists
-  IF NOT EXISTS (SELECT 1 FROM roles WHERE name = 'free_tier') THEN
+  -- Check if Smart Pantry User role exists (previously smart_pantry_tier)
+  IF NOT EXISTS (SELECT 1 FROM roles WHERE name = 'Smart Pantry User') THEN
     INSERT INTO roles (name, description, created_at, updated_at)
-    VALUES ('free_tier', 'Free tier user with basic access', NOW(), NOW());
+    VALUES ('Smart Pantry User', 'Smart Pantry tier with enhanced features', NOW(), NOW());
   END IF;
 
-  -- Check if smart_pantry_tier role exists
-  IF NOT EXISTS (SELECT 1 FROM roles WHERE name = 'smart_pantry_tier') THEN
+  -- Check if Family Pro User role exists (previously family_pro_tier)
+  IF NOT EXISTS (SELECT 1 FROM roles WHERE name = 'Family Pro User') THEN
     INSERT INTO roles (name, description, created_at, updated_at)
-    VALUES ('smart_pantry_tier', 'Smart Pantry tier with enhanced features', NOW(), NOW());
-  END IF;
-
-  -- Check if family_pro_tier role exists
-  IF NOT EXISTS (SELECT 1 FROM roles WHERE name = 'family_pro_tier') THEN
-    INSERT INTO roles (name, description, created_at, updated_at)
-    VALUES ('family_pro_tier', 'Family Pantry Pro tier with all features', NOW(), NOW());
+    VALUES ('Family Pro User', 'Family Pantry Pro tier with all features', NOW(), NOW());
   END IF;
 END $$;
 
 -- Assign permissions to roles with explicit error handling
 DO $$ 
 DECLARE
-  free_role_id INTEGER;
   smart_role_id INTEGER;
   pro_role_id INTEGER;
   basic_access_id INTEGER;
@@ -84,19 +77,14 @@ DECLARE
   unlimited_scans_id INTEGER;
 BEGIN
   -- Get role IDs
-  SELECT id INTO free_role_id FROM roles WHERE name = 'free_tier';
-  IF free_role_id IS NULL THEN
-    RAISE EXCEPTION 'free_tier role not found';
-  END IF;
-  
-  SELECT id INTO smart_role_id FROM roles WHERE name = 'smart_pantry_tier';
+  SELECT id INTO smart_role_id FROM roles WHERE name = 'Smart Pantry User';
   IF smart_role_id IS NULL THEN
-    RAISE EXCEPTION 'smart_pantry_tier role not found';
+    RAISE EXCEPTION 'Smart Pantry User role not found';
   END IF;
   
-  SELECT id INTO pro_role_id FROM roles WHERE name = 'family_pro_tier';
+  SELECT id INTO pro_role_id FROM roles WHERE name = 'Family Pro User';
   IF pro_role_id IS NULL THEN
-    RAISE EXCEPTION 'family_pro_tier role not found';
+    RAISE EXCEPTION 'Family Pro User role not found';
   END IF;
 
   -- Get permission IDs
@@ -136,15 +124,9 @@ BEGIN
   END IF;
 
   -- Delete existing role permissions for clean assignment
-  DELETE FROM role_permissions WHERE role_id IN (free_role_id, smart_role_id, pro_role_id);
+  DELETE FROM role_permissions WHERE role_id IN (smart_role_id, pro_role_id);
 
-  -- Free tier gets basic access and food tracking
-  INSERT INTO role_permissions (role_id, permission_id)
-  VALUES 
-    (free_role_id, basic_access_id),
-    (free_role_id, food_tracking_id);
-
-  -- Smart tier gets everything from free plus smart features and unlimited items
+  -- Smart tier gets basic access, food tracking, smart features and unlimited items
   INSERT INTO role_permissions (role_id, permission_id)
   VALUES 
     (smart_role_id, basic_access_id),

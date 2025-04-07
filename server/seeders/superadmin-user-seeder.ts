@@ -85,7 +85,7 @@ export async function seedSuperadminUser(
           fullName: 'System Administrator',
           currency: 'USD',
           emailVerified: true,
-          subscriptionTier: 'family_pro_tier',
+          subscriptionTier: 'pro', // Changed from 'family_pro_tier' to match current system
           subscriptionStatus: 'active',
           // Set unlimited usage limits for superadmin
           receiptScansLimit: 999999,
