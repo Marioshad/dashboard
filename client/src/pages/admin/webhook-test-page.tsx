@@ -25,12 +25,13 @@ export default function WebhookTestPage() {
     setResult(null);
 
     try {
-      const res = await apiRequest('POST', '/api/test-webhook', {
+      const requestOptions = {
         tier,
         status,
         userId: userId ? parseInt(userId) : undefined,
         notify
-      });
+      };
+      const res = await apiRequest('POST', '/api/test-webhook', requestOptions);
 
       const data = await res.json();
       setResult(data);
