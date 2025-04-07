@@ -573,4 +573,137 @@ export function registerAdminRoutes(app: Express) {
       });
     }
   });
+
+  // Get products and prices from Stripe
+  app.get('/api/admin/stripe-sync-products', isAdmin, async (req, res) => {
+    if (!stripe) {
+      return res.status(503).json({ 
+        success: false, 
+        message: "Stripe API is not configured. Please set STRIPE_SECRET_KEY environment variable."
+      });
+    }
+    
+    try {
+      // Get all products
+      const products = await stripe.products.list({
+        limit: 100,
+        active: true
+      });
+      
+      // Get all prices
+      const prices = await stripe.prices.list({
+        limit: 100,
+        active: true
+      });
+      
+      res.json({
+        success: true,
+        products: products.data.map(p => ({
+          id: p.id,
+          name: p.name,
+          active: p.active,
+          metadata: p.metadata
+        })),
+        prices: prices.data.map(p => ({
+          id: p.id,
+          product: p.product,
+          currency: p.currency,
+          unit_amount: p.unit_amount,
+          recurring: p.recurring,
+          metadata: p.metadata
+        }))
+      });
+    } catch (error: any) {
+      console.error('Error getting Stripe products and prices:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: error.message 
+      });
+    }
+  });
+  
+  // Clean up plans in Stripe (archive products and prices)
+  app.post('/api/admin/stripe-clean-plans', isAdmin, async (req, res) => {
+    if (!stripe) {
+      return res.status(503).json({ 
+        success: false, 
+        message: "Stripe API is not configured. Please set STRIPE_SECRET_KEY environment variable."
+      });
+    }
+    
+    try {
+      const client = await pool.connect();
+      
+      try {
+        // First update the database to remove all product and price IDs
+        await client.query(`
+          UPDATE app_settings
+          SET 
+            stripe_smart_product_id = 'prod_smart',
+            stripe_pro_product_id = 'prod_pro',
+            stripe_smart_monthly_price_id = 'price_smart_monthly',
+            stripe_smart_yearly_price_id = 'price_smart_yearly',
+            stripe_pro_monthly_price_id = 'price_pro_monthly',
+            stripe_pro_yearly_price_id = 'price_pro_yearly',
+            updated_at = NOW(),
+            updated_by = $1
+          WHERE id = 1
+        `, [req.user ? req.user.id : null]);
+        
+        // Now archive all products and prices in Stripe
+        const products = await stripe.products.list({
+          limit: 100, 
+          active: true
+        });
+        
+        const prices = await stripe.prices.list({
+          limit: 100,
+          active: true
+        });
+        
+        let productsArchived = 0;
+        let pricesArchived = 0;
+        
+        // Archive prices first
+        for (const price of prices.data) {
+          try {
+            await stripe.prices.update(price.id, {
+              active: false
+            });
+            pricesArchived++;
+          } catch (error) {
+            console.error(`Failed to archive price ${price.id}:`, error);
+            // Continue with other prices
+          }
+        }
+        
+        // Then archive products
+        for (const product of products.data) {
+          try {
+            await stripe.products.update(product.id, {
+              active: false
+            });
+            productsArchived++;
+          } catch (error) {
+            console.error(`Failed to archive product ${product.id}:`, error);
+            // Continue with other products
+          }
+        }
+        
+        res.json({
+          success: true,
+          productsArchived,
+          pricesArchived
+        });
+      } finally {
+        client.release();
+      }
+    } catch (error: any) {
+      console.error('Error cleaning Stripe plans:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: error.message 
+      });
+    }
+  });
 }

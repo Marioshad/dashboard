@@ -70,9 +70,21 @@ export default function StripeSettingsPage() {
     fetchSettings();
   }, [toast]);
 
-  // Check if plans are configured
-  const hasSmartPlan = !!(settings.prodSmart && (settings.priceSmartMonthly || settings.priceSmartYearly));
-  const hasProPlan = !!(settings.prodPro && (settings.priceProMonthly || settings.priceProYearly));
+  // Check if plans are configured - only consider actual product/price IDs that start with prod_ or price_
+  const hasSmartPlan = !!(
+    settings.prodSmart && settings.prodSmart.startsWith('prod_') && 
+    (
+      (settings.priceSmartMonthly && settings.priceSmartMonthly.startsWith('price_')) || 
+      (settings.priceSmartYearly && settings.priceSmartYearly.startsWith('price_'))
+    )
+  );
+  const hasProPlan = !!(
+    settings.prodPro && settings.prodPro.startsWith('prod_') && 
+    (
+      (settings.priceProMonthly && settings.priceProMonthly.startsWith('price_')) || 
+      (settings.priceProYearly && settings.priceProYearly.startsWith('price_'))
+    )
+  );
   const hasPlans = hasSmartPlan || hasProPlan;
 
   // Check if plans configuration has changed
@@ -450,7 +462,7 @@ export default function StripeSettingsPage() {
               </AlertDescription>
             </Alert>
 
-            <div className="space-y-4">
+            <div className="space-y-8">
               <div>
                 <h3 className="text-md font-medium mb-2">Reset All Subscription Data</h3>
                 <p className="text-sm text-muted-foreground mb-2">
@@ -464,6 +476,97 @@ export default function StripeSettingsPage() {
                 >
                   {resetLoading ? 'Resetting...' : 'Reset All Subscriptions'}
                 </Button>
+              </div>
+              
+              <div>
+                <h3 className="text-md font-medium mb-2">Sync Database with Stripe</h3>
+                <p className="text-sm text-muted-foreground mb-2">
+                  This will retrieve all subscription products and prices from Stripe and update the database settings.
+                  Use this if the database settings don't match what's in your Stripe account.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <Button
+                    variant="outline"
+                    onClick={async () => {
+                      try {
+                        const response = await fetch('/api/admin/stripe-sync-products', {
+                          method: 'GET',
+                          credentials: 'include'
+                        });
+                        
+                        if (!response.ok) {
+                          throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                        }
+                        
+                        const data = await response.json();
+                        if (data.success) {
+                          toast({
+                            title: 'Success',
+                            description: `Found ${data.products.length} products and ${data.prices.length} prices in Stripe`,
+                            variant: 'default',
+                          });
+                        }
+                      } catch (error: any) {
+                        toast({
+                          title: 'Error',
+                          description: error.message || 'Failed to get products from Stripe',
+                          variant: 'destructive',
+                        });
+                      }
+                    }}
+                  >
+                    Get Products from Stripe
+                  </Button>
+                  
+                  <Button
+                    variant="secondary"
+                    onClick={async () => {
+                      try {
+                        const response = await fetch('/api/admin/stripe-clean-plans', {
+                          method: 'POST',
+                          credentials: 'include'
+                        });
+                        
+                        if (!response.ok) {
+                          throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                        }
+                        
+                        const data = await response.json();
+                        if (data.success) {
+                          toast({
+                            title: 'Success',
+                            description: `Archived ${data.productsArchived} products and ${data.pricesArchived} prices in Stripe`,
+                            variant: 'default',
+                          });
+                          
+                          // Refresh the settings by calling the same function from useEffect
+                          setIsLoading(true);
+                          fetch('/api/admin/stripe-settings', {
+                            method: 'GET',
+                            credentials: 'include'
+                          })
+                            .then(res => res.json())
+                            .then(data => {
+                              setSettings(data);
+                              setIsLoading(false);
+                            })
+                            .catch(error => {
+                              console.error('Error fetching settings:', error);
+                              setIsLoading(false);
+                            });
+                        }
+                      } catch (error: any) {
+                        toast({
+                          title: 'Error',
+                          description: error.message || 'Failed to clean plans in Stripe',
+                          variant: 'destructive',
+                        });
+                      }
+                    }}
+                  >
+                    Clean Plans in Stripe
+                  </Button>
+                </div>
               </div>
             </div>
           </CardContent>
