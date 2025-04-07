@@ -34,6 +34,7 @@ import { ReceiptDetailPage } from "./pages/receipts/receipt-detail";
 import AdminDashboardPage from "@/pages/admin";
 import StripeSettingsPage from "@/pages/admin/stripe-settings";
 import SystemPage from "@/pages/admin/system";
+import WebhookTestPage from "@/pages/admin/webhook-test-page";
 
 function Router() {
   return (
@@ -63,6 +64,7 @@ function Router() {
       <ProtectedRoute path="/admin" component={AdminDashboardPage} />
       <ProtectedRoute path="/admin/stripe-settings" component={StripeSettingsPage} />
       <ProtectedRoute path="/admin/system" component={SystemPage} />
+      <ProtectedRoute path="/admin/webhook-test" component={WebhookTestPage} />
       <Route path="/auth" component={AuthPage} />
       <Route path="/verify-email" component={VerifyEmailPage} />
       <Route component={NotFound} />

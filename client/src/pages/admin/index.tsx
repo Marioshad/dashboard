@@ -1,6 +1,6 @@
 import DashboardLayout from "@/components/dashboard-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Database, ServerCog, CreditCard } from "lucide-react";
+import { Database, ServerCog, CreditCard, Webhook } from "lucide-react";
 import { Link } from "wouter";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -15,7 +15,7 @@ export default function AdminDashboardPage() {
           external service integrations, and more.
         </p>
 
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-lg font-medium">Stripe Settings</CardTitle>
@@ -66,6 +66,24 @@ export default function AdminDashboardPage() {
                 className={cn(buttonVariants({ variant: "default" }), "w-full")}
               >
                 Server Configuration
+              </Link>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-lg font-medium">Webhook Test</CardTitle>
+              <Webhook className="h-5 w-5 text-primary" />
+            </CardHeader>
+            <CardContent>
+              <CardDescription className="mb-4">
+                Test subscription webhook handling for troubleshooting tier updates.
+              </CardDescription>
+              <Link 
+                href="/admin/webhook-test" 
+                className={cn(buttonVariants({ variant: "default" }), "w-full")}
+              >
+                Test Webhooks
               </Link>
             </CardContent>
           </Card>
