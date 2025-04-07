@@ -16,7 +16,7 @@ import {
 } from "@shared/schema";
 import { eq, and, isNull, sql, desc } from "drizzle-orm";
 import Stripe from "stripe";
-import { initializeWebSocketServer, getConnectedClients } from './websockets';
+import { initializeWebSocketServer } from './websockets';
 import { WebSocketMessage } from './websockets/utils';
 import { Socket } from 'net';
 import { parse } from 'cookie';
@@ -28,6 +28,11 @@ import { sendTestEmail, isSendGridAvailable } from './services/email/email-servi
 import emailRouter from './services/email/routes';
 import { requireEmailVerification } from './services/auth/email-verification-middleware';
 import { sendNotificationToUser } from './websockets/notification-service';
+
+// Import the WebSocket handlers
+import { sendNotification as wsSendNotification } from './websockets/handlers/notificationHandler';
+import { updateReceiptScanUsage as wsUpdateReceiptScanUsage } from './websockets/handlers/usageUpdateHandler';
+import { getConnectedClients } from './websockets/index';
 
 const SESSION_SECRET = process.env.SESSION_SECRET || 'keyboard cat';
 
@@ -74,11 +79,6 @@ const upload = multer({
     cb(null, true);
   }
 });
-
-// Import the WebSocket handlers
-import { sendNotification as wsSendNotification } from './websockets/handlers/notificationHandler';
-import { updateReceiptScanUsage as wsUpdateReceiptScanUsage } from './websockets/handlers/usageUpdateHandler';
-import { getConnectedClients } from './websockets/index';
 
 async function sendNotification(userId: number, type: string, message: string, actorId?: number, metadata?: any) {
   try {
@@ -930,6 +930,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
               throw new Error('Unable to retrieve payment information');
             }
             
+            // Get and set tier information from subscription
+            let tierId = '';
+            try {
+              // First try to get tier from subscription items (product metadata)
+              if (subscription.items.data.length > 0) {
+                const item = subscription.items.data[0];
+                if (item.price && item.price.product) {
+                  const productId = typeof item.price.product === 'string' 
+                    ? item.price.product 
+                    : item.price.product.id;
+                    
+                  if (productId) {
+                    const product = await stripe!.products.retrieve(productId);
+                    
+                    // Check if the product has tier metadata
+                    if (product.metadata && product.metadata.tier) {
+                      tierId = product.metadata.tier;
+                      console.log('Found tier in product metadata:', tierId);
+                    } else if (product.name) {
+                      // Try to extract tier from product name
+                      const productNameLower = product.name.toLowerCase();
+                      if (productNameLower.includes('smart')) {
+                        tierId = 'smart';
+                        console.log('Determined tier from product name: smart');
+                      } else if (productNameLower.includes('family') || productNameLower.includes('pro')) {
+                        tierId = 'pro';
+                        console.log('Determined tier from product name: pro');
+                      }
+                    }
+                  }
+                }
+              }
+              
+              // If we found a tier, update the payment intent metadata
+              if (tierId) {
+                await stripe!.paymentIntents.update(paymentIntentId, {
+                  metadata: { 
+                    tierId,
+                    subscriptionId: subscription.id,
+                    invoiceId: finalizedInvoice.id
+                  }
+                });
+                console.log(`Updated payment intent ${paymentIntentId} with tier: ${tierId}`);
+              }
+            } catch (tierError) {
+              console.error('Error setting tier metadata on payment intent:', tierError);
+              // Don't throw, we can continue without this
+            }
+            
             res.send({
               subscriptionId: subscription.id,
               clientSecret: paymentIntent.client_secret
@@ -1037,6 +1086,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
             throw new Error('Unable to retrieve payment information');
           }
           
+          // Get and set tier information from subscription
+          let tierId = '';
+          try {
+            // First try to get tier from subscription items (product metadata)
+            if (subscription.items.data.length > 0) {
+              const item = subscription.items.data[0];
+              if (item.price && item.price.product) {
+                const productId = typeof item.price.product === 'string' 
+                  ? item.price.product 
+                  : item.price.product.id;
+                  
+                if (productId) {
+                  const product = await stripe!.products.retrieve(productId);
+                  
+                  // Check if the product has tier metadata
+                  if (product.metadata && product.metadata.tier) {
+                    tierId = product.metadata.tier;
+                    console.log('Found tier in product metadata:', tierId);
+                  } else if (product.name) {
+                    // Try to extract tier from product name
+                    const productNameLower = product.name.toLowerCase();
+                    if (productNameLower.includes('smart')) {
+                      tierId = 'smart';
+                      console.log('Determined tier from product name: smart');
+                    } else if (productNameLower.includes('family') || productNameLower.includes('pro')) {
+                      tierId = 'pro';
+                      console.log('Determined tier from product name: pro');
+                    }
+                  }
+                }
+              }
+            }
+            
+            // If we found a tier, update the payment intent metadata
+            if (tierId) {
+              await stripe!.paymentIntents.update(paymentIntentId, {
+                metadata: { 
+                  tierId,
+                  subscriptionId: subscription.id,
+                  invoiceId: invoice.id
+                }
+              });
+              console.log(`Updated payment intent ${paymentIntentId} with tier: ${tierId}`);
+            }
+          } catch (tierError) {
+            console.error('Error setting tier metadata on payment intent:', tierError);
+            // Don't throw, we can continue without this
+          }
+          
           res.send({
             subscriptionId: subscription.id,
             clientSecret: paymentIntent.client_secret
@@ -1096,7 +1194,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }],
         payment_behavior: 'default_incomplete',
         metadata: {
-          tier: tierId // Add the tier to the subscription metadata
+          tier: tierId, // Add the tier to the subscription metadata
+          tierId: tierId // Add tierId field to be consistent with other parts of the code
         }
       });
       
@@ -1116,20 +1215,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
         typeof latestInvoiceId === 'string' ? latestInvoiceId : latestInvoiceId.id
       );
       
-      // Check if the invoice has a payment intent reference
+      // If there's no payment intent yet, we need to create one
+      let paymentIntent;
+      
       if (!invoice.payment_intent) {
-        throw new Error('No payment intent found for this invoice');
-      }
-      
-      // Get the payment intent ID and retrieve it separately
-      const paymentIntentId = typeof invoice.payment_intent === 'string' 
-        ? invoice.payment_intent 
-        : invoice.payment_intent.id;
+        console.log('No payment intent on invoice, creating one manually...');
         
-      console.log('Payment intent ID:', paymentIntentId);
-      
-      // Retrieve the payment intent to get the client secret
-      const paymentIntent = await stripe!.paymentIntents.retrieve(paymentIntentId);
+        // Create a payment intent manually
+        paymentIntent = await stripe!.paymentIntents.create({
+          amount: invoice.amount_due,
+          currency: invoice.currency || 'eur',
+          customer: customer.id,
+          description: `Payment for subscription (${tierId || 'Unknown tier'})`,
+          metadata: {
+            subscriptionId: subscription.id,
+            invoiceId: invoice.id,
+            tier: tierId,
+            tierId: tierId
+          }
+        });
+        
+        // Update the invoice with the payment intent
+        try {
+          await stripe!.invoices.update(invoice.id, {
+            payment_intent: paymentIntent.id,
+          });
+          console.log('Updated invoice with payment intent:', paymentIntent.id);
+        } catch (updateError) {
+          console.error('Failed to update invoice with payment intent:', updateError);
+          // Continue anyway since we have a valid payment intent
+        }
+      } else {
+        // Get the payment intent ID and retrieve it separately
+        const paymentIntentId = typeof invoice.payment_intent === 'string' 
+          ? invoice.payment_intent 
+          : invoice.payment_intent.id;
+          
+        console.log('Payment intent found on invoice:', paymentIntentId);
+        
+        // Retrieve the payment intent to get the client secret
+        paymentIntent = await stripe!.paymentIntents.retrieve(paymentIntentId);
+      }
       
       // Always add tier info to the payment intent, using any available source
       if (paymentIntent) {
@@ -1143,6 +1269,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await stripe!.paymentIntents.update(paymentIntent.id, {
           metadata: { 
             tier: effectiveTierId,
+            tierId: effectiveTierId, // Adding tierId field to be consistent with other parts of the code
             subscriptionId: subscription.id,
             invoiceId: typeof latestInvoiceId === 'string' ? latestInvoiceId : latestInvoiceId.id
           },
@@ -3091,6 +3218,86 @@ const updateReceiptScanUsage = async (userId: number, scansUsed: number, scansLi
 
   registerBillingRoutes(app, sendNotification);
   registerAdminRoutes(app);
+  
+  // Test webhook endpoint for debugging
+  app.post('/api/test-webhook', async (req: Request, res: Response) => {
+    try {
+      const { tier, status, userId } = req.body;
+      log(`TEST WEBHOOK - Received webhook test with tier: ${tier}, status: ${status}, userId: ${userId || 'not provided'}`, 'stripe-webhook');
+      
+      // Get user (current user or specified user)
+      const user = userId ? await storage.getUser(userId) : (req.user as any);
+      
+      if (!user) {
+        return res.status(400).json({ error: 'User not found' });
+      }
+      
+      log(`TEST WEBHOOK - User before update: ${JSON.stringify({
+        id: user.id,
+        username: user.username,
+        subscriptionStatus: user.subscriptionStatus,
+        subscriptionTier: user.subscriptionTier,
+        stripeSubscriptionId: user.stripeSubscriptionId
+      })}`, 'stripe-webhook');
+      
+      // Update user's subscription
+      const updatedUser = await storage.updateUserSubscription(user.id, {
+        subscriptionStatus: status || 'active',
+        subscriptionTier: tier || 'free',
+      });
+      
+      log(`TEST WEBHOOK - User after update: ${JSON.stringify({
+        id: updatedUser.id,
+        username: updatedUser.username,
+        subscriptionStatus: updatedUser.subscriptionStatus,
+        subscriptionTier: updatedUser.subscriptionTier,
+        stripeSubscriptionId: updatedUser.stripeSubscriptionId
+      })}`, 'stripe-webhook');
+      
+      // Update user's limits based on tier
+      const TIER_LIMITS = {
+        free: { scans: 3, items: 50, sharedUsers: 1 },
+        smart: { scans: 10, items: 200, sharedUsers: 3 },
+        pro: { scans: 50, items: 1000, sharedUsers: 10 }
+      };
+      
+      const limits = TIER_LIMITS[tier as keyof typeof TIER_LIMITS] || TIER_LIMITS.free;
+      await storage.updateUserLimits(user.id, {
+        receiptScansLimit: limits.scans,
+        maxItems: limits.items,
+        maxSharedUsers: limits.sharedUsers
+      });
+      
+      // Send notification if requested
+      if (req.body.notify) {
+        await sendNotification(
+          user.id,
+          'subscription_updated',
+          `Your subscription has been updated to ${tier}. This is a test notification.`,
+          undefined,
+          { tier, status }
+        );
+      }
+      
+      return res.json({ 
+        success: true, 
+        message: 'Test webhook processed successfully',
+        user: {
+          id: updatedUser.id,
+          username: updatedUser.username,
+          subscriptionStatus: updatedUser.subscriptionStatus,
+          subscriptionTier: updatedUser.subscriptionTier,
+          stripeSubscriptionId: updatedUser.stripeSubscriptionId,
+          receiptScansLimit: limits.scans,
+          maxItems: limits.items,
+          maxSharedUsers: limits.sharedUsers
+        }
+      });
+    } catch (error: any) {
+      log(`TEST WEBHOOK ERROR: ${error.message}`, 'stripe-webhook');
+      return res.status(500).json({ error: error.message });
+    }
+  });
   
   // Register email routes
   app.use('/api/email', emailRouter);
