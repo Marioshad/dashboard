@@ -3257,8 +3257,8 @@ const updateReceiptScanUsage = async (userId: number, scansUsed: number, scansLi
       // Update user's limits based on tier
       const TIER_LIMITS = {
         free: { scans: 3, items: 50, sharedUsers: 1 },
-        smart: { scans: 10, items: 200, sharedUsers: 3 },
-        pro: { scans: 50, items: 1000, sharedUsers: 10 }
+        smart_pantry: { scans: 20, items: 200, sharedUsers: 2 },
+        family_pantry_pro: { scans: 100, items: 1000, sharedUsers: 10 }
       };
       
       const limits = TIER_LIMITS[tier as keyof typeof TIER_LIMITS] || TIER_LIMITS.free;

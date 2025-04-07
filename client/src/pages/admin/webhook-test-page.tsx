@@ -12,7 +12,7 @@ import { Loader2 } from 'lucide-react';
 
 export default function WebhookTestPage() {
   const [isLoading, setIsLoading] = useState(false);
-  const [tier, setTier] = useState('smart');
+  const [tier, setTier] = useState('smart_pantry');
   const [status, setStatus] = useState('active');
   const [userId, setUserId] = useState('');
   const [notify, setNotify] = useState(true);
@@ -80,8 +80,8 @@ export default function WebhookTestPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="free">Free</SelectItem>
-                      <SelectItem value="smart">Smart Pantry</SelectItem>
-                      <SelectItem value="pro">Family Pantry Pro</SelectItem>
+                      <SelectItem value="smart_pantry">Smart Pantry</SelectItem>
+                      <SelectItem value="family_pantry_pro">Family Pantry Pro</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
