@@ -403,17 +403,22 @@ async function handlePaymentSucceeded(
     if (effectiveTierId) {
       log(`Updating user ${user.id} subscription to tier ${effectiveTierId}`, 'stripe-webhook');
       
-      // Update user's subscription details
-      await storage.updateUserSubscription(user.id, {
-        stripeSubscriptionId: effectiveSubscriptionId || user.stripeSubscriptionId || '',
-        subscriptionStatus: 'active',
-        subscriptionTier: effectiveTierId,
-      });
-      
+      // Normalize the tier ID for our system
       // Convert simple tier IDs to system tier names if needed
       const systemTierId = effectiveTierId === 'smart' ? 'smart_pantry' 
         : effectiveTierId === 'pro' ? 'family_pantry_pro' 
         : effectiveTierId;
+      
+      // Key fix: Store the normalized tier ID with underscores in the database
+      // This is what our system expects in the subscriptionTier field
+      log(`Normalized tier ID from ${effectiveTierId} to ${systemTierId}`, 'stripe-webhook');
+      
+      // Update user's subscription details with the correct tier format
+      await storage.updateUserSubscription(user.id, {
+        stripeSubscriptionId: effectiveSubscriptionId || user.stripeSubscriptionId || '',
+        subscriptionStatus: 'active',
+        subscriptionTier: systemTierId, // Use the normalized tier ID here
+      });
       
       // Update user's limits based on tier
       const limits = TIER_LIMITS[systemTierId] || TIER_LIMITS.free;
@@ -863,6 +868,127 @@ async function handleInvoicePaid(
  * @param event Stripe event
  * @param sendNotification Function to send notifications
  */
+/**
+ * Handle checkout session completed event - this is a key event for updating subscription tier
+ * @param session Stripe Checkout Session
+ * @param sendNotification Function to send notifications
+ */
+async function handleCheckoutSessionCompleted(
+  session: Stripe.Checkout.Session,
+  sendNotification: SendNotificationFn
+): Promise<void> {
+  try {
+    if (!stripe) {
+      log('Stripe not initialized in webhook handler', 'stripe-webhook');
+      return;
+    }
+    
+    log(`Processing checkout session completed: ${session.id}`, 'stripe-webhook');
+    log(`Session metadata: ${JSON.stringify(session.metadata || {})}`, 'stripe-webhook');
+    
+    // Get the customer ID from the session
+    const customerId = typeof session.customer === 'string' 
+      ? session.customer 
+      : session.customer?.id;
+      
+    if (!customerId) {
+      log('No customer ID found in checkout session', 'stripe-webhook');
+      return;
+    }
+    
+    // Get user from database by Stripe customer ID
+    const user = await storage.getUserByStripeCustomerId(customerId);
+    if (!user) {
+      log(`No user found with Stripe customer ID: ${customerId}`, 'stripe-webhook');
+      return;
+    }
+    
+    // Determine tier from session metadata
+    let tierId = session.metadata?.tier || session.metadata?.tierId;
+    
+    // If no tier in metadata, check if there's a subscription
+    if (!tierId && session.subscription) {
+      const subscriptionId = typeof session.subscription === 'string' 
+        ? session.subscription 
+        : session.subscription.id;
+        
+      log(`Retrieving subscription ${subscriptionId} from checkout session`, 'stripe-webhook');
+      const subscription = await stripe.subscriptions.retrieve(subscriptionId, {
+        expand: ['items.data.price.product']
+      });
+      
+      // Check for tier in subscription metadata
+      if (subscription.metadata?.tier || subscription.metadata?.tierId) {
+        tierId = subscription.metadata?.tier || subscription.metadata?.tierId;
+        log(`Found tier in subscription metadata: ${tierId}`, 'stripe-webhook');
+      } 
+      // Check product metadata
+      else if (subscription.items.data.length > 0) {
+        const item = subscription.items.data[0];
+        const product = typeof item.price.product === 'string' 
+          ? await stripe.products.retrieve(item.price.product)
+          : item.price.product;
+          
+        if (product.metadata?.tier || product.metadata?.tierId) {
+          tierId = product.metadata?.tier || product.metadata?.tierId;
+          log(`Found tier in product metadata: ${tierId}`, 'stripe-webhook');
+        }
+        // Check product name
+        else if (product.name) {
+          const productNameLower = product.name.toLowerCase();
+          if (productNameLower.includes('smart')) {
+            tierId = 'smart';
+            log('Determined tier from product name: smart', 'stripe-webhook');
+          } else if (productNameLower.includes('family') || productNameLower.includes('pro')) {
+            tierId = 'pro';
+            log('Determined tier from product name: pro', 'stripe-webhook');
+          }
+        }
+      }
+    }
+    
+    // If we found a tier, normalize it and update the user
+    if (tierId) {
+      // Normalize tier IDs
+      const normalizedTierId = tierId === 'smart' ? 'smart_pantry'
+        : tierId === 'pro' ? 'family_pantry_pro'
+        : tierId;
+        
+      log(`Updating user ${user.id} subscription to tier ${normalizedTierId} from checkout session`, 'stripe-webhook');
+      
+      // Update user's subscription details
+      await storage.updateUserSubscription(user.id, {
+        subscriptionStatus: 'active',
+        subscriptionTier: normalizedTierId
+      });
+      
+      // Update user's limits based on tier
+      const limits = TIER_LIMITS[normalizedTierId] || TIER_LIMITS.free;
+      await storage.updateUserLimits(user.id, {
+        receiptScansLimit: limits.scans,
+        maxItems: limits.items,
+        maxSharedUsers: limits.sharedUsers
+      });
+      
+      // Send notification to user
+      const tierName = TIER_NAMES[normalizedTierId] || normalizedTierId;
+      await sendNotification(
+        user.id,
+        'subscription_activated',
+        `Your ${tierName} subscription has been activated! You now have access to all features.`,
+        undefined,
+        { tier: normalizedTierId, status: 'active' }
+      );
+      
+      log(`Successfully updated user ${user.id} to tier ${normalizedTierId} from checkout session`, 'stripe-webhook');
+    } else {
+      log(`No tier information found in checkout session ${session.id}`, 'stripe-webhook');
+    }
+  } catch (error) {
+    log(`Error handling checkout session completed: ${error}`, 'stripe-webhook');
+  }
+}
+
 export async function handleStripeWebhookEvent(
   event: Stripe.Event,
   sendNotification: SendNotificationFn
@@ -919,6 +1045,13 @@ export async function handleStripeWebhookEvent(
       case 'invoice.paid':
         await handleInvoicePaid(
           event.data.object as Stripe.Invoice,
+          sendNotification
+        );
+        break;
+        
+      case 'checkout.session.completed':
+        await handleCheckoutSessionCompleted(
+          event.data.object as Stripe.Checkout.Session,
           sendNotification
         );
         break;
