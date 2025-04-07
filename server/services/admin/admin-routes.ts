@@ -403,4 +403,307 @@ export function registerAdminRoutes(app: Express) {
       res.status(500).json({ message: error.message });
     }
   });
+  
+  // Update subscription plans in Stripe
+  app.post('/api/admin/update-subscription-plans', isAdmin, async (req, res) => {
+    if (!stripe) {
+      return res.status(503).json({ 
+        success: false, 
+        message: "Stripe API is not configured. Please set STRIPE_SECRET_KEY environment variable."
+      });
+    }
+    
+    try {
+      const client = await pool.connect();
+      
+      try {
+        // Get the settings from the database
+        const result = await client.query(`
+          SELECT 
+            stripe_smart_product_id,
+            stripe_pro_product_id,
+            stripe_smart_monthly_price_id,
+            stripe_smart_yearly_price_id,
+            stripe_pro_monthly_price_id,
+            stripe_pro_yearly_price_id
+          FROM app_settings 
+          WHERE id = 1
+        `);
+        
+        if (result.rows.length === 0) {
+          return res.status(404).json({ 
+            success: false, 
+            message: "Settings not found" 
+          });
+        }
+        
+        const dbSettings = result.rows[0];
+        const updatedProducts = [];
+        const updatedPrices = [];
+        
+        // Track products to update
+        const productsToVerify = [];
+        
+        // Track prices to update
+        const pricesToVerify = [];
+        
+        // Update Smart Pantry product if it exists
+        if (dbSettings.stripe_smart_product_id && dbSettings.stripe_smart_product_id.startsWith('prod_')) {
+          productsToVerify.push({
+            id: dbSettings.stripe_smart_product_id,
+            name: 'Smart Pantry',
+            metadata: { 
+              tier: 'smart',
+              subscription_tier: 'smart'
+            }
+          });
+        }
+        
+        // Update Pro Family plan product if it exists
+        if (dbSettings.stripe_pro_product_id && dbSettings.stripe_pro_product_id.startsWith('prod_')) {
+          productsToVerify.push({
+            id: dbSettings.stripe_pro_product_id,
+            name: 'Family Pantry Pro',
+            metadata: { 
+              tier: 'pro',
+              subscription_tier: 'pro'
+            }
+          });
+        }
+        
+        // Update Smart Monthly price if it exists
+        if (dbSettings.stripe_smart_monthly_price_id && dbSettings.stripe_smart_monthly_price_id.startsWith('price_')) {
+          pricesToVerify.push({
+            id: dbSettings.stripe_smart_monthly_price_id,
+            metadata: { 
+              tier: 'smart',
+              subscription_tier: 'smart',
+              interval: 'month'
+            }
+          });
+        }
+        
+        // Update Smart Yearly price if it exists
+        if (dbSettings.stripe_smart_yearly_price_id && dbSettings.stripe_smart_yearly_price_id.startsWith('price_')) {
+          pricesToVerify.push({
+            id: dbSettings.stripe_smart_yearly_price_id,
+            metadata: { 
+              tier: 'smart',
+              subscription_tier: 'smart',
+              interval: 'year'
+            }
+          });
+        }
+        
+        // Update Pro Monthly price if it exists
+        if (dbSettings.stripe_pro_monthly_price_id && dbSettings.stripe_pro_monthly_price_id.startsWith('price_')) {
+          pricesToVerify.push({
+            id: dbSettings.stripe_pro_monthly_price_id,
+            metadata: { 
+              tier: 'pro',
+              subscription_tier: 'pro',
+              interval: 'month'
+            }
+          });
+        }
+        
+        // Update Pro Yearly price if it exists
+        if (dbSettings.stripe_pro_yearly_price_id && dbSettings.stripe_pro_yearly_price_id.startsWith('price_')) {
+          pricesToVerify.push({
+            id: dbSettings.stripe_pro_yearly_price_id,
+            metadata: { 
+              tier: 'pro',
+              subscription_tier: 'pro', 
+              interval: 'year'
+            }
+          });
+        }
+        
+        // Update products
+        for (const product of productsToVerify) {
+          try {
+            // Check if product exists first
+            await stripe.products.retrieve(product.id);
+            
+            // Update product if it exists
+            const updatedProduct = await stripe.products.update(product.id, {
+              name: product.name,
+              metadata: product.metadata
+            });
+            
+            updatedProducts.push(updatedProduct.id);
+          } catch (error: any) {
+            console.log(`Product ${product.id} not found or couldn't be updated: ${error.message}`);
+            // Continue with other products even if this one fails
+          }
+        }
+        
+        // Update prices
+        for (const price of pricesToVerify) {
+          try {
+            // Check if price exists first
+            await stripe.prices.retrieve(price.id);
+            
+            // Update price if it exists
+            const updatedPrice = await stripe.prices.update(price.id, {
+              metadata: price.metadata
+            });
+            
+            updatedPrices.push(updatedPrice.id);
+          } catch (error: any) {
+            console.log(`Price ${price.id} not found or couldn't be updated: ${error.message}`);
+            // Continue with other prices even if this one fails
+          }
+        }
+        
+        res.json({
+          success: true,
+          message: "Subscription plans updated",
+          updatedProducts,
+          updatedPrices
+        });
+      } finally {
+        client.release();
+      }
+    } catch (error: any) {
+      console.error('Error updating subscription plans:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: error.message 
+      });
+    }
+  });
+
+  // Get products and prices from Stripe
+  app.get('/api/admin/stripe-sync-products', isAdmin, async (req, res) => {
+    if (!stripe) {
+      return res.status(503).json({ 
+        success: false, 
+        message: "Stripe API is not configured. Please set STRIPE_SECRET_KEY environment variable."
+      });
+    }
+    
+    try {
+      // Get all products
+      const products = await stripe.products.list({
+        limit: 100,
+        active: true
+      });
+      
+      // Get all prices
+      const prices = await stripe.prices.list({
+        limit: 100,
+        active: true
+      });
+      
+      res.json({
+        success: true,
+        products: products.data.map(p => ({
+          id: p.id,
+          name: p.name,
+          active: p.active,
+          metadata: p.metadata
+        })),
+        prices: prices.data.map(p => ({
+          id: p.id,
+          product: p.product,
+          currency: p.currency,
+          unit_amount: p.unit_amount,
+          recurring: p.recurring,
+          metadata: p.metadata
+        }))
+      });
+    } catch (error: any) {
+      console.error('Error getting Stripe products and prices:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: error.message 
+      });
+    }
+  });
+  
+  // Clean up plans in Stripe (archive products and prices)
+  app.post('/api/admin/stripe-clean-plans', isAdmin, async (req, res) => {
+    if (!stripe) {
+      return res.status(503).json({ 
+        success: false, 
+        message: "Stripe API is not configured. Please set STRIPE_SECRET_KEY environment variable."
+      });
+    }
+    
+    try {
+      const client = await pool.connect();
+      
+      try {
+        // First update the database to remove all product and price IDs
+        await client.query(`
+          UPDATE app_settings
+          SET 
+            stripe_smart_product_id = 'prod_smart',
+            stripe_pro_product_id = 'prod_pro',
+            stripe_smart_monthly_price_id = 'price_smart_monthly',
+            stripe_smart_yearly_price_id = 'price_smart_yearly',
+            stripe_pro_monthly_price_id = 'price_pro_monthly',
+            stripe_pro_yearly_price_id = 'price_pro_yearly',
+            updated_at = NOW(),
+            updated_by = $1
+          WHERE id = 1
+        `, [req.user ? req.user.id : null]);
+        
+        // Now archive all products and prices in Stripe
+        const products = await stripe.products.list({
+          limit: 100, 
+          active: true
+        });
+        
+        const prices = await stripe.prices.list({
+          limit: 100,
+          active: true
+        });
+        
+        let productsArchived = 0;
+        let pricesArchived = 0;
+        
+        // Archive prices first
+        for (const price of prices.data) {
+          try {
+            await stripe.prices.update(price.id, {
+              active: false
+            });
+            pricesArchived++;
+          } catch (error) {
+            console.error(`Failed to archive price ${price.id}:`, error);
+            // Continue with other prices
+          }
+        }
+        
+        // Then archive products
+        for (const product of products.data) {
+          try {
+            await stripe.products.update(product.id, {
+              active: false
+            });
+            productsArchived++;
+          } catch (error) {
+            console.error(`Failed to archive product ${product.id}:`, error);
+            // Continue with other products
+          }
+        }
+        
+        res.json({
+          success: true,
+          productsArchived,
+          pricesArchived
+        });
+      } finally {
+        client.release();
+      }
+    } catch (error: any) {
+      console.error('Error cleaning Stripe plans:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: error.message 
+      });
+    }
+  });
 }

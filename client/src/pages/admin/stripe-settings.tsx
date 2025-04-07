@@ -25,6 +25,7 @@ export default function StripeSettingsPage() {
   const [testLoading, setTestLoading] = useState(false);
   const [testResult, setTestResult] = useState<{ success?: boolean; accountId?: string; apiVersion?: string; message?: string } | null>(null);
   const [resetLoading, setResetLoading] = useState(false);
+  const [plansUpdated, setPlansUpdated] = useState(false);
   const [settings, setSettings] = useState<StripeSettings>({
     priceSmartMonthly: '',
     priceSmartYearly: '',
@@ -69,6 +70,36 @@ export default function StripeSettingsPage() {
     fetchSettings();
   }, [toast]);
 
+  // Check if plans are configured - only consider actual product/price IDs that start with prod_ or price_
+  const hasSmartPlan = !!(
+    settings.prodSmart && settings.prodSmart.startsWith('prod_') && 
+    (
+      (settings.priceSmartMonthly && settings.priceSmartMonthly.startsWith('price_')) || 
+      (settings.priceSmartYearly && settings.priceSmartYearly.startsWith('price_'))
+    )
+  );
+  const hasProPlan = !!(
+    settings.prodPro && settings.prodPro.startsWith('prod_') && 
+    (
+      (settings.priceProMonthly && settings.priceProMonthly.startsWith('price_')) || 
+      (settings.priceProYearly && settings.priceProYearly.startsWith('price_'))
+    )
+  );
+  const hasPlans = hasSmartPlan || hasProPlan;
+
+  // Check if plans configuration has changed
+  useEffect(() => {
+    setPlansUpdated(true);
+    
+    // Reset the updated flag after 3 seconds
+    const timer = setTimeout(() => {
+      setPlansUpdated(false);
+    }, 3000);
+    
+    return () => clearTimeout(timer);
+  }, [settings.prodSmart, settings.prodPro, settings.priceSmartMonthly, settings.priceSmartYearly, 
+      settings.priceProMonthly, settings.priceProYearly]);
+
   // Save settings
   const handleSave = async () => {
     setIsLoading(true);
@@ -99,6 +130,31 @@ export default function StripeSettingsPage() {
         // Update local state with the returned settings
         if (data.settings) {
           setSettings(data.settings);
+        }
+        
+        // Force subscription plans update after saving
+        try {
+          const updatePlansResponse = await fetch('/api/admin/update-subscription-plans', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            credentials: 'include'
+          });
+          
+          if (updatePlansResponse.ok) {
+            const plansData = await updatePlansResponse.json();
+            if (plansData.success) {
+              toast({
+                title: 'Success',
+                description: 'Subscription plans updated successfully',
+                variant: 'default',
+              });
+            }
+          }
+        } catch (plansError) {
+          console.error('Error updating subscription plans:', plansError);
+          // Don't show an error toast here as the settings were saved successfully
         }
       } else {
         throw new Error(data.message || 'Failed to save settings');
@@ -323,6 +379,32 @@ export default function StripeSettingsPage() {
             </div>
           </CardContent>
           <CardFooter className="flex flex-col space-y-4">
+            {/* Plans Status Section */}
+            <div className="w-full mb-4">
+              <h3 className="text-md font-medium mb-2">Subscription Plans Status</h3>
+              <div className="flex flex-col space-y-2">
+                <div className="flex items-center space-x-2">
+                  <div className={`w-3 h-3 rounded-full ${hasSmartPlan ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                  <span>Smart Pantry Plan: {hasSmartPlan ? 'Configured' : 'None'}</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <div className={`w-3 h-3 rounded-full ${hasProPlan ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                  <span>Family Pantry Pro Plan: {hasProPlan ? 'Configured' : 'None'}</span>
+                </div>
+                <div className="flex items-center space-x-2 mt-1">
+                  <div className={`w-3 h-3 rounded-full ${hasPlans ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                  <span className={`font-medium ${hasPlans ? 'text-green-600' : 'text-red-600'}`}>
+                    {hasPlans ? 'At least one plan is configured' : 'No subscription plans configured'}
+                  </span>
+                </div>
+                {plansUpdated && (
+                  <div className="text-sm text-blue-600 animate-pulse mt-1">
+                    Subscription plan configuration updated. Save to apply changes.
+                  </div>
+                )}
+              </div>
+            </div>
+            
             <div className="flex justify-between w-full">
               <Button onClick={handleSave} disabled={isLoading}>
                 {isLoading ? 'Saving...' : 'Save Settings'}
@@ -380,7 +462,7 @@ export default function StripeSettingsPage() {
               </AlertDescription>
             </Alert>
 
-            <div className="space-y-4">
+            <div className="space-y-8">
               <div>
                 <h3 className="text-md font-medium mb-2">Reset All Subscription Data</h3>
                 <p className="text-sm text-muted-foreground mb-2">
@@ -394,6 +476,97 @@ export default function StripeSettingsPage() {
                 >
                   {resetLoading ? 'Resetting...' : 'Reset All Subscriptions'}
                 </Button>
+              </div>
+              
+              <div>
+                <h3 className="text-md font-medium mb-2">Sync Database with Stripe</h3>
+                <p className="text-sm text-muted-foreground mb-2">
+                  This will retrieve all subscription products and prices from Stripe and update the database settings.
+                  Use this if the database settings don't match what's in your Stripe account.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <Button
+                    variant="outline"
+                    onClick={async () => {
+                      try {
+                        const response = await fetch('/api/admin/stripe-sync-products', {
+                          method: 'GET',
+                          credentials: 'include'
+                        });
+                        
+                        if (!response.ok) {
+                          throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                        }
+                        
+                        const data = await response.json();
+                        if (data.success) {
+                          toast({
+                            title: 'Success',
+                            description: `Found ${data.products.length} products and ${data.prices.length} prices in Stripe`,
+                            variant: 'default',
+                          });
+                        }
+                      } catch (error: any) {
+                        toast({
+                          title: 'Error',
+                          description: error.message || 'Failed to get products from Stripe',
+                          variant: 'destructive',
+                        });
+                      }
+                    }}
+                  >
+                    Get Products from Stripe
+                  </Button>
+                  
+                  <Button
+                    variant="secondary"
+                    onClick={async () => {
+                      try {
+                        const response = await fetch('/api/admin/stripe-clean-plans', {
+                          method: 'POST',
+                          credentials: 'include'
+                        });
+                        
+                        if (!response.ok) {
+                          throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                        }
+                        
+                        const data = await response.json();
+                        if (data.success) {
+                          toast({
+                            title: 'Success',
+                            description: `Archived ${data.productsArchived} products and ${data.pricesArchived} prices in Stripe`,
+                            variant: 'default',
+                          });
+                          
+                          // Refresh the settings by calling the same function from useEffect
+                          setIsLoading(true);
+                          fetch('/api/admin/stripe-settings', {
+                            method: 'GET',
+                            credentials: 'include'
+                          })
+                            .then(res => res.json())
+                            .then(data => {
+                              setSettings(data);
+                              setIsLoading(false);
+                            })
+                            .catch(error => {
+                              console.error('Error fetching settings:', error);
+                              setIsLoading(false);
+                            });
+                        }
+                      } catch (error: any) {
+                        toast({
+                          title: 'Error',
+                          description: error.message || 'Failed to clean plans in Stripe',
+                          variant: 'destructive',
+                        });
+                      }
+                    }}
+                  >
+                    Clean Plans in Stripe
+                  </Button>
+                </div>
               </div>
             </div>
           </CardContent>
