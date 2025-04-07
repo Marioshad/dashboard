@@ -20,6 +20,7 @@ export function CheckoutForm({ clientSecret, tierId, returnUrl = '/billing' }: C
   const elements = useElements();
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [debugData, setDebugData] = useState<any>(null);
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   
@@ -28,11 +29,62 @@ export function CheckoutForm({ clientSecret, tierId, returnUrl = '/billing' }: C
     queryKey: ['/api/subscription/info', clientSecret],
     queryFn: async () => {
       if (!clientSecret) return null;
-      const response = await fetch(`/api/subscription/info?secret=${encodeURIComponent(clientSecret)}`);
-      if (!response.ok) {
-        throw new Error('Failed to load payment information');
+      
+      try {
+        // Record that we're attempting to fetch payment info
+        setDebugData((prev: any) => ({
+          ...prev,
+          paymentInfoRequest: {
+            url: `/api/subscription/info?secret=${clientSecret.substring(0, 10)}...`,
+            timestamp: new Date().toISOString()
+          }
+        }));
+        
+        const response = await fetch(`/api/subscription/info?secret=${encodeURIComponent(clientSecret)}`);
+        
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => 'Failed to read error response');
+          
+          // Record error in debug data
+          setDebugData((prev: any) => ({
+            ...prev,
+            paymentInfoRequestError: {
+              status: response.status,
+              statusText: response.statusText,
+              errorText,
+              timestamp: new Date().toISOString()
+            }
+          }));
+          
+          throw new Error(`Failed to load payment information: ${response.status} ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        // Record successful response in debug data
+        setDebugData((prev: any) => ({
+          ...prev,
+          paymentInfoResponse: data,
+          paymentInfoSuccess: true,
+          timestamp: new Date().toISOString()
+        }));
+        
+        return data;
+      } catch (error: any) {
+        console.error('Error loading payment data:', error);
+        
+        // Record error in debug data
+        setDebugData((prev: any) => ({
+          ...prev,
+          paymentInfoError: {
+            message: error.message,
+            stack: error.stack,
+            timestamp: new Date().toISOString()
+          }
+        }));
+        
+        throw error;
       }
-      return response.json();
     },
     enabled: !!clientSecret,
   });
@@ -46,12 +98,62 @@ export function CheckoutForm({ clientSecret, tierId, returnUrl = '/billing' }: C
   // State to track when elements are ready
   const [elementsReady, setElementsReady] = useState(false);
   
-  // Listen for element ready event
+  // Listen for element ready event and fetch payment intent data for debugging
   useEffect(() => {
     if (elements) {
       setElementsReady(true);
+      
+      // Update debug info when elements are ready
+      setDebugData((prev: any) => ({
+        ...prev,
+        elementsReady: true,
+        elementsReadyTimestamp: new Date().toISOString(),
+        stripeReady: !!stripe,
+        stripeJsVersion: (stripe as any)?._apiVersion || 'unknown',
+      }));
+      
+      // Fetch payment intent debug data
+      if (clientSecret) {
+        // Capture that we're attempting a debug fetch
+        setDebugData((prev: any) => ({
+          ...prev,
+          debugFetchAttempt: {
+            url: `/api/subscription/info?secret=${clientSecret.substring(0, 8)}...`,
+            timestamp: new Date().toISOString(),
+          }
+        }));
+        
+        fetch(`/api/subscription/info?secret=${encodeURIComponent(clientSecret)}`)
+          .then(res => {
+            if (!res.ok) {
+              throw new Error(`Debug fetch failed: ${res.status} ${res.statusText}`);
+            }
+            return res.json();
+          })
+          .then(data => {
+            // Merge debug data rather than replacing it
+            setDebugData((prev: any) => ({
+              ...prev,
+              ...data,
+              debugFetchSuccess: true,
+              debugFetchTimestamp: new Date().toISOString(),
+            }));
+            console.log('Debug payment data:', data);
+          })
+          .catch(err => {
+            console.error('Error fetching debug data:', err);
+            // Record the error in debug data
+            setDebugData((prev: any) => ({
+              ...prev,
+              debugFetchError: {
+                message: err.message,
+                timestamp: new Date().toISOString(),
+              }
+            }));
+          });
+      }
     }
-  }, [elements]);
+  }, [elements, clientSecret, stripe]);
   
   // Reset loading state when elements are reset or changed
   // This helps when a user fixes validation errors and tries again
@@ -79,13 +181,26 @@ export function CheckoutForm({ clientSecret, tierId, returnUrl = '/billing' }: C
     setErrorMessage(null);
 
     try {
+      // Capture data before sending to Stripe for debugging purposes
+      const confirmParams = {
+        return_url: `${window.location.origin}${returnUrl}?success=true`,
+      };
+      
+      // Update debug data with what we're about to send to Stripe
+      setDebugData((prev: any) => ({
+        ...prev,
+        confirmParams,
+        clientSecret,
+        tierId: effectiveTierId,
+        timestamp: new Date().toISOString(),
+        elementsReady,
+      }));
+      
       // Use confirmPayment or confirmSetup based on whether this is a new subscription
       // or updating a payment method
       const { error } = await stripe.confirmPayment({
         elements,
-        confirmParams: {
-          return_url: `${window.location.origin}${returnUrl}?success=true`,
-        },
+        confirmParams,
         redirect: 'if_required',
       });
 
@@ -97,6 +212,20 @@ export function CheckoutForm({ clientSecret, tierId, returnUrl = '/billing' }: C
           description: error.message || 'An unexpected error occurred. Please try again.',
           variant: 'destructive',
         });
+        
+        // Add error information to the debug data
+        setDebugData((prev: any) => ({
+          ...prev,
+          error: {
+            type: error.type,
+            code: error.code,
+            message: error.message,
+            declined_code: error.decline_code,
+            param: error.param,
+            timestamp: new Date().toISOString()
+          }
+        }));
+        
         // Make sure to reset loading state on error
         setIsLoading(false);
       } else {
@@ -115,6 +244,18 @@ export function CheckoutForm({ clientSecret, tierId, returnUrl = '/billing' }: C
         description: err.message || 'An unexpected error occurred. Please try again.',
         variant: 'destructive',
       });
+      
+      // Add general error information to debug data
+      setDebugData((prev: any) => ({
+        ...prev,
+        generalError: {
+          message: err.message,
+          stack: err.stack,
+          name: err.name,
+          timestamp: new Date().toISOString()
+        }
+      }));
+      
       // Make sure to reset loading state on any error
       setIsLoading(false);
     }
@@ -246,6 +387,18 @@ export function CheckoutForm({ clientSecret, tierId, returnUrl = '/billing' }: C
               {errorMessage}
             </div>
           )}
+          
+          {/* Debug info box */}
+          <div className="mt-6 border border-gray-200 rounded-md bg-gray-50 p-3">
+            <h4 className="text-sm font-medium mb-2 text-gray-700">Debug Info (Stripe Data)</h4>
+            {debugData ? (
+              <pre className="whitespace-pre-wrap overflow-auto text-xs max-h-40 text-gray-600">
+                {JSON.stringify(debugData, null, 2)}
+              </pre>
+            ) : (
+              <p className="text-xs text-gray-500 italic">Loading debug information...</p>
+            )}
+          </div>
         </CardContent>
         
         <CardFooter className="flex flex-col sm:flex-row gap-4">
