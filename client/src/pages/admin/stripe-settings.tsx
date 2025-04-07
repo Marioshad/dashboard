@@ -25,6 +25,7 @@ export default function StripeSettingsPage() {
   const [testLoading, setTestLoading] = useState(false);
   const [testResult, setTestResult] = useState<{ success?: boolean; accountId?: string; apiVersion?: string; message?: string } | null>(null);
   const [resetLoading, setResetLoading] = useState(false);
+  const [plansUpdated, setPlansUpdated] = useState(false);
   const [settings, setSettings] = useState<StripeSettings>({
     priceSmartMonthly: '',
     priceSmartYearly: '',
@@ -69,6 +70,24 @@ export default function StripeSettingsPage() {
     fetchSettings();
   }, [toast]);
 
+  // Check if plans are configured
+  const hasSmartPlan = !!(settings.prodSmart && (settings.priceSmartMonthly || settings.priceSmartYearly));
+  const hasProPlan = !!(settings.prodPro && (settings.priceProMonthly || settings.priceProYearly));
+  const hasPlans = hasSmartPlan || hasProPlan;
+
+  // Check if plans configuration has changed
+  useEffect(() => {
+    setPlansUpdated(true);
+    
+    // Reset the updated flag after 3 seconds
+    const timer = setTimeout(() => {
+      setPlansUpdated(false);
+    }, 3000);
+    
+    return () => clearTimeout(timer);
+  }, [settings.prodSmart, settings.prodPro, settings.priceSmartMonthly, settings.priceSmartYearly, 
+      settings.priceProMonthly, settings.priceProYearly]);
+
   // Save settings
   const handleSave = async () => {
     setIsLoading(true);
@@ -99,6 +118,31 @@ export default function StripeSettingsPage() {
         // Update local state with the returned settings
         if (data.settings) {
           setSettings(data.settings);
+        }
+        
+        // Force subscription plans update after saving
+        try {
+          const updatePlansResponse = await fetch('/api/admin/update-subscription-plans', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            credentials: 'include'
+          });
+          
+          if (updatePlansResponse.ok) {
+            const plansData = await updatePlansResponse.json();
+            if (plansData.success) {
+              toast({
+                title: 'Success',
+                description: 'Subscription plans updated successfully',
+                variant: 'default',
+              });
+            }
+          }
+        } catch (plansError) {
+          console.error('Error updating subscription plans:', plansError);
+          // Don't show an error toast here as the settings were saved successfully
         }
       } else {
         throw new Error(data.message || 'Failed to save settings');
@@ -323,6 +367,32 @@ export default function StripeSettingsPage() {
             </div>
           </CardContent>
           <CardFooter className="flex flex-col space-y-4">
+            {/* Plans Status Section */}
+            <div className="w-full mb-4">
+              <h3 className="text-md font-medium mb-2">Subscription Plans Status</h3>
+              <div className="flex flex-col space-y-2">
+                <div className="flex items-center space-x-2">
+                  <div className={`w-3 h-3 rounded-full ${hasSmartPlan ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                  <span>Smart Pantry Plan: {hasSmartPlan ? 'Configured' : 'None'}</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <div className={`w-3 h-3 rounded-full ${hasProPlan ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                  <span>Family Pantry Pro Plan: {hasProPlan ? 'Configured' : 'None'}</span>
+                </div>
+                <div className="flex items-center space-x-2 mt-1">
+                  <div className={`w-3 h-3 rounded-full ${hasPlans ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                  <span className={`font-medium ${hasPlans ? 'text-green-600' : 'text-red-600'}`}>
+                    {hasPlans ? 'At least one plan is configured' : 'No subscription plans configured'}
+                  </span>
+                </div>
+                {plansUpdated && (
+                  <div className="text-sm text-blue-600 animate-pulse mt-1">
+                    Subscription plan configuration updated. Save to apply changes.
+                  </div>
+                )}
+              </div>
+            </div>
+            
             <div className="flex justify-between w-full">
               <Button onClick={handleSave} disabled={isLoading}>
                 {isLoading ? 'Saving...' : 'Save Settings'}
