@@ -230,7 +230,7 @@ export const tags = pgTable("tags", {
   id: serial("id").primaryKey(),
   name: text("name").notNull().unique(),
   color: text("color").default("#3B82F6"),
-  isSystem: boolean("is_system").default(false),
+  is_system: boolean("is_system").default(false),
   userId: integer("user_id").references(() => users.id), // null for system tags
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

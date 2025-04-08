@@ -4,7 +4,7 @@ This directory contains seeders for initializing the database with essential dat
 
 ## Available Seeders
 
-1. **Admin Roles Seeder** (`admin-roles-seeder.ts`):
+1. **Admin Roles Seeder** (`admin-001_roles-seeder.ts`):
    - Creates the 'Superadmin' and 'Admin' roles
    - Assigns appropriate permissions to each role
    - Superadmin gets all permissions

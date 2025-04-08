@@ -1,5 +1,4 @@
-import { seedAdminRoles } from './admin-roles-seeder';
-import { seedSuperadminUser } from './superadmin-user-seeder';
+import { seedRolesPermissionsAndSuperadminUser } from './001_roles-seeder.ts';
 import { appLogger as logger } from '../services/logger';
 
 /**
@@ -15,22 +14,13 @@ export async function runSeeders(options: {
 }) {
   try {
     logger.info('Starting database seeders...');
-    
-    // 1. Seed roles and permissions first
-    const rolesResult = await seedAdminRoles();
+
+    // Seed roles, permissions, and optionally the superadmin user
+    const rolesResult = await seedRolesPermissionsAndSuperadminUser(options.superadmin);
     if (!rolesResult.success) {
-      throw new Error('Admin roles seeder failed');
+      throw new Error('Roles & superadmin seeder failed');
     }
-    
-    // 2. Seed superadmin user if credentials provided
-    if (options.superadmin) {
-      const { username, password, email } = options.superadmin;
-      const superadminResult = await seedSuperadminUser(username, password, email);
-      if (!superadminResult.success) {
-        throw new Error('Superadmin user seeder failed');
-      }
-    }
-    
+
     logger.info('All seeders completed successfully!');
     return { success: true };
   } catch (error) {
