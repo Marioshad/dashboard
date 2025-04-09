@@ -152,10 +152,15 @@ export function setupAuth(app: Express) {
         return res.status(400).json({ message: "Username already exists" });
       }
 
-      // Create user with email_verified set to false by default
+      // Get the unverified_user role ID
+      const unverifiedRole = await storage.getRoleByName("unverified_user");
+      
+      // Create user with unverified_user role and email_verified set to false by default
       const user = await storage.createUser({
         ...req.body,
         password: await hashPassword(req.body.password),
+        roleId: unverifiedRole?.id || 6, // Default to ID 6 which is the unverified_user role
+        emailVerified: false,
       });
 
       console.log(`User registered successfully: ${user.username}`);
