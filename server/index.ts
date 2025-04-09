@@ -266,7 +266,10 @@ app.use((req, res, next) => {
     
     // Initialize WebSocket server with modular implementation
     log("Initializing WebSocket server with modular implementation...");
-    initializeWebSocketServer(httpServer, app, storage, SESSION_SECRET);
+    // Use the SESSION_SECRET from app.locals which is set in setupAuth
+    const appSessionSecret = app.locals.SESSION_SECRET || "development_secret";
+    log(`WebSocket initialization with session secret: ${appSessionSecret ? 'configured' : 'missing'}`);
+    initializeWebSocketServer(httpServer, app, storage, appSessionSecret);
     log("WebSocket server initialized with enhanced stability options");
     log("Routes registered successfully");
 

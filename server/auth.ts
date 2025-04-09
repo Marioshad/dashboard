@@ -31,16 +31,22 @@ async function comparePasswords(supplied: string, stored: string) {
 }
 
 export function setupAuth(app: Express) {
+  // Define session secret and make it available for WebSocket handlers
+  const SESSION_SECRET = process.env.SESSION_SECRET || "development_secret";
+  app.locals.SESSION_SECRET = SESSION_SECRET;
+  
   const sessionSettings: session.SessionOptions = {
-    secret: process.env.SESSION_SECRET || "development_secret",
+    secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
     store: storage.sessionStore,
+    name: 'connect.sid', // Explicitly set the cookie name for consistent access
     cookie: {
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
       secure: process.env.NODE_ENV === "production",
       sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-      httpOnly: true
+      httpOnly: true,
+      path: '/' // Ensure cookie is available for all paths including WebSocket requests
     }
   };
 
