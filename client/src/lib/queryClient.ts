@@ -16,9 +16,14 @@ export async function apiRequest(
     headers?: Record<string, string>;
   }
 ): Promise<any> {
-  console.log(`Making API request to ${options?.method || 'GET'}`, url);
-  console.log("Request headers:", JSON.stringify(options?.headers || {}));
-  console.log("Request body:", options?.body || "none");
+  // API requests are only logged to server-side logs in production
+  if (process.env.NODE_ENV === 'development') {
+    // Only log in development mode
+    console.log(`Making API request to ${options?.method || 'GET'}`, url);
+    // Don't log headers or body in production for security
+    console.log("Request headers:", JSON.stringify(options?.headers || {}));
+    console.log("Request body:", options?.body || "none");
+  }
   
   const res = await fetch(url, {
     method: options?.method || 'GET',
@@ -27,9 +32,12 @@ export async function apiRequest(
     credentials: "include",
   });
 
-  console.log(`Response status: ${res.status}`);
-  // Log some important response headers
-  console.log(`Response headers: content-type=${res.headers.get('content-type')}, cache-control=${res.headers.get('cache-control')}`);
+  // Only log response info in development
+  if (process.env.NODE_ENV === 'development') {
+    console.log(`Response status: ${res.status}`);
+    // Log some important response headers
+    console.log(`Response headers: content-type=${res.headers.get('content-type')}, cache-control=${res.headers.get('cache-control')}`);
+  }
   
   if (!res.ok) {
     let errorData;
@@ -77,7 +85,10 @@ export async function apiRequest(
   }
   
   const data = await res.json();
-  console.log(`API response data:`, data);
+  // API response data is only logged to server-side logs, not console
+  if (process.env.NODE_ENV === 'development' && false) { // Set to false to disable even in development
+    console.log(`API response data:`, data);
+  }
   return data;
 }
 
@@ -87,15 +98,24 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    console.log(`Query fetch: ${queryKey[0]}`);
+    // Only log query fetch in development mode
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`Query fetch: ${queryKey[0]}`);
+    }
     const res = await fetch(queryKey[0] as string, {
       credentials: "include",
     });
     
-    console.log(`Query response status: ${res.status}`);
+    // Status is only logged to server-side logs, not console
+    if (process.env.NODE_ENV === 'development') {
+      // Only log in development mode
+      console.log(`Query response status: ${res.status}`);
+    }
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
-      console.log("Returning null for unauthorized request (401)");
+      if (process.env.NODE_ENV === 'development') {
+        console.log("Returning null for unauthorized request (401)");
+      }
       return null;
     }
 
@@ -145,7 +165,10 @@ export const getQueryFn: <T>(options: {
     }
     
     const data = await res.json();
-    console.log(`Query response data:`, data);
+    // Data is only logged to server-side logs, not console
+    if (process.env.NODE_ENV === 'development' && false) { // Set to false to disable even in development
+      console.log(`Query response data:`, data);
+    }
     return data;
   };
 
