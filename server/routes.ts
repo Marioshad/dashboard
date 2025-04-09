@@ -2135,13 +2135,28 @@ const updateReceiptScanUsage = async (userId: number, scansUsed: number, scansLi
   // Receipt API endpoints
   app.get('/api/receipts', async (req, res, next) => {
     try {
+      console.log('GET /api/receipts endpoint called');
+      
       if (!req.isAuthenticated()) {
+        console.log('User not authenticated');
         return res.sendStatus(401);
       }
       
-      const receipts = await storage.getReceipts(req.user.id);
-      res.json(receipts);
+      console.log(`Fetching receipts for user: ${req.user.id}`);
+      try {
+        const receipts = await storage.getReceipts(req.user.id);
+        console.log(`Successfully retrieved ${receipts.length} receipts`);
+        res.json(receipts);
+      } catch (storageError) {
+        console.error('Error in storage.getReceipts:', storageError);
+        // Send a more descriptive error response
+        res.status(500).json({
+          error: 'Failed to retrieve receipts',
+          details: storageError.message
+        });
+      }
     } catch (error) {
+      console.error('Unexpected error in GET /api/receipts:', error);
       next(error);
     }
   });

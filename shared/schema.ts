@@ -281,7 +281,7 @@ export const foodItems = pgTable("food_items", {
   unit: text("unit").notNull(), // g, kg, pieces, etc.
   locationId: integer("location_id").notNull().references(() => locations.id),
   storeId: integer("store_id").references(() => stores.id), // Where the item was purchased
-  receiptId: integer("receiptId").references(() => receipts.id), // Add relation to receipts
+  receiptId: integer("receipt_id").references(() => receipts.id), // Add relation to receipts
   expiryDate: date("expiry_date").notNull(),
   price: decimal("price", { precision: 10, scale: 2 }), // direct price value
   pricePerUnit: decimal("price_per_unit", { precision: 10, scale: 2 }), // direct price per unit

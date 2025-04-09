@@ -1089,32 +1089,59 @@ export class DatabaseStorage implements IStorage {
 
   async getReceipts(userId: number): Promise<Receipt[]> {
     try {
-      // First get the receipts
+      console.log(`Getting receipts for user ${userId}`);
+      
+      // First get the receipts - use snake_case column names directly in SQL
       const receiptList = await db
         .select()
         .from(receipts)
         .where(eq(receipts.userId, userId))
-        .orderBy(sql`receipts."uploadDate" DESC`);
+        .orderBy(sql`receipts."upload_date" DESC`);
+      
+      console.log(`Found ${receiptList.length} receipts`);
       
       // For each receipt with a storeId, fetch the associated store
       const receiptsWithStores = await Promise.all(
         receiptList.map(async (receipt) => {
-          if (receipt.storeId) {
-            const [storeData] = await db
-              .select()
-              .from(stores)
-              .where(eq(stores.id, receipt.storeId));
+          try {
+            if (receipt.storeId) {
+              console.log(`Fetching store data for receipt ${receipt.id}, storeId ${receipt.storeId}`);
               
-            // Return receipt with store information
-            return {
-              ...receipt,
-              store: storeData
-            };
+              try {
+                const storeResults = await db
+                  .select()
+                  .from(stores)
+                  .where(eq(stores.id, receipt.storeId));
+                
+                const storeData = storeResults[0];
+                
+                if (storeData) {
+                  console.log(`Found store: ${storeData.name}`);
+                  // Return receipt with store information
+                  return {
+                    ...receipt,
+                    store: storeData
+                  };
+                } else {
+                  console.log(`Store not found for ID ${receipt.storeId}, returning receipt without store data`);
+                  return receipt;
+                }
+              } catch (storeError) {
+                console.error(`Error fetching store for receipt ${receipt.id}:`, storeError);
+                // If there's an error getting the store, just return the receipt without store info
+                return receipt;
+              }
+            }
+            return receipt;
+          } catch (receiptError) {
+            console.error(`Error processing receipt ${receipt?.id || 'unknown'}:`, receiptError);
+            // If there's an error processing this receipt, return it as is rather than failing the whole operation
+            return receipt;
           }
-          return receipt;
         })
       );
       
+      console.log(`Processed ${receiptsWithStores.length} receipts with their store data`);
       return receiptsWithStores;
     } catch (error) {
       console.error('Error getting receipts:', error);
@@ -1257,13 +1284,44 @@ export class DatabaseStorage implements IStorage {
 
   async getFoodItemsByReceiptId(receiptId: number): Promise<FoodItem[]> {
     try {
-      const result = await db
-        .select()
-        .from(foodItems)
-        .where(eq(foodItems.receiptId, receiptId))
-        .orderBy(foodItems.name);
+      console.log(`Getting food items for receipt ID: ${receiptId}`);
       
-      return result;
+      // Use SQL directly to ensure we use the correct column name in database
+      const result = await db.execute(sql`
+        SELECT *
+        FROM food_items
+        WHERE receipt_id = ${receiptId}
+        ORDER BY name
+      `);
+      
+      const formattedResults = result.rows.map(row => {
+        // Convert PostgreSQL snake_case to camelCase for the frontend
+        return {
+          id: row.id,
+          name: row.name,
+          normalizedName: row.normalized_name,
+          originalName: row.original_name,
+          category: row.category,
+          quantity: row.quantity,
+          unit: row.unit,
+          locationId: row.location_id,
+          storeId: row.store_id,
+          receiptId: row.receipt_id,
+          expiryDate: row.expiry_date,
+          price: row.price,
+          pricePerUnit: row.price_per_unit,
+          isWeightBased: row.is_weight_based,
+          normalizationConfidence: row.normalization_confidence,
+          lineNumbers: row.line_numbers,
+          purchased: row.purchased,
+          userId: row.user_id,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at
+        };
+      });
+      
+      console.log(`Found ${formattedResults.length} food items for receipt ${receiptId}`);
+      return formattedResults;
     } catch (error) {
       console.error('Error getting food items by receipt ID:', error);
       throw error;
