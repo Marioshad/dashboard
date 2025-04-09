@@ -122,12 +122,22 @@ const handleVerifyEmail = async (req: any, res: any) => {
         }
       }
       
+      // Always return HTTP 200 OK for successful verification
       return res.status(200).json({
         success: true,
-        message: result.message || 'Email verified successfully'
+        message: result.message || 'Email verified successfully',
+        user: result.user ? {
+          id: result.user.id,
+          username: result.user.username,
+          email: result.user.email,
+          emailVerified: result.user.emailVerified,
+          role: result.user.roleId
+        } : undefined
       });
     } else {
-      return res.status(400).json({
+      // Return HTTP 200 even for verification failures, but with success: false
+      // This allows the frontend to handle the error message properly
+      return res.status(200).json({
         success: false,
         message: result.message || 'Invalid or expired verification token'
       });

@@ -2,9 +2,10 @@ import { db } from '../../db';
 import { users } from '@shared/schema';
 import { storage } from '../../storage';
 import { generateVerificationToken, calculateTokenExpiration, isTokenExpired } from '../../services/auth/token-generator';
-import { sendEmail } from './email-service';
+import { sendEmail, sendVerificationConfirmationEmail } from './email-service';
 import { eq, sql, isNotNull } from 'drizzle-orm';
 import { emailLogger } from '../logger';
+import { sendNotificationToUser } from '../../websockets/notification-service';
 
 /**
  * Send verification email to user
@@ -186,6 +187,39 @@ export async function verifyEmail(token: string): Promise<{ success: boolean; me
 
     // Get the updated user
     const updatedUser = await storage.getUser(user.id);
+    
+    // Send a notification about successful verification
+    try {
+      await sendNotificationToUser(
+        user.id,
+        'email_verified',
+        'Your email has been successfully verified. You now have full access to all features.',
+      );
+      emailLogger.info(`Verification success notification sent to user ${user.id}`);
+    } catch (notificationError) {
+      emailLogger.error(`Error sending verification notification:`, notificationError);
+      // We don't want to fail verification if notification sending fails
+    }
+    
+    // Send confirmation email
+    try {
+      if (user.email) {
+        const emailSent = await sendVerificationConfirmationEmail(
+          user.email,
+          user.username || 'User'
+        );
+        
+        if (emailSent) {
+          emailLogger.info(`Verification confirmation email sent to ${user.email}`);
+        } else {
+          emailLogger.error(`Failed to send verification confirmation email to ${user.email}`);
+        }
+      }
+    } catch (confirmationEmailError) {
+      emailLogger.error(`Error sending verification confirmation email:`, confirmationEmailError);
+      // We don't want to fail verification if email sending fails
+    }
+    
     return { success: true, message: 'Email verified successfully', user: updatedUser };
   } catch (error) {
     emailLogger.error('Error verifying email:', error);
