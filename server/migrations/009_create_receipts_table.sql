@@ -3,8 +3,8 @@
 -- ==========================
 CREATE TABLE IF NOT EXISTS receipts (
     id SERIAL PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES "users"("id"),
-    store_id INTEGER REFERENCES "stores"("id"),
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    store_id INTEGER REFERENCES stores(id),
     language TEXT,
     image_url TEXT,
     file_path TEXT NOT NULL,

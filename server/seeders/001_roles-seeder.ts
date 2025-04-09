@@ -142,7 +142,6 @@ export async function seedRolesPermissionsAndSuperadminUser({ username, password
             subscriptionStatus: 'active',
             receiptScansLimit: 999999,
             maxItems: 999999,
-            maxSharedUsers: 999999,
             createdAt: sql`CURRENT_TIMESTAMP`,
             updatedAt: sql`CURRENT_TIMESTAMP`
         });

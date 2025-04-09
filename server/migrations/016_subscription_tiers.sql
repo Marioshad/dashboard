@@ -11,7 +11,6 @@ CREATE TABLE IF NOT EXISTS subscription_tiers (
     price_yearly DECIMAL(10,2) NOT NULL,
     max_items INTEGER NOT NULL,
     receipt_scans_per_month INTEGER NOT NULL,
-    max_shared_users INTEGER NOT NULL,
     description TEXT NOT NULL,
     features JSONB NOT NULL,
     stripe_price_id_monthly TEXT,

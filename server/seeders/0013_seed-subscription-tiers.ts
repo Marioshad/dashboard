@@ -13,9 +13,7 @@ export async function seedSubscriptionTiers() {
       priceMonthly: '0.00',
       priceYearly: '0.00',
       maxItems: 50,
-      receiptScansPerMonth: 3,
-      maxSharedUsers: 1,
-      description: 'Free plan for casual users and small households',
+      receiptScansPerMonth: 3, description: 'Free plan for casual users and small households',
       features: [
         "Track up to 50 items",
         "Receipt scanning up to 3 times per month",
@@ -34,7 +32,6 @@ export async function seedSubscriptionTiers() {
       priceYearly: '49.00',
       maxItems: -1,
       receiptScansPerMonth: 20,
-      maxSharedUsers: 3,
       description: 'For organized households looking to save money',
       features: [
         "Unlimited items",
@@ -55,7 +52,6 @@ export async function seedSubscriptionTiers() {
       priceYearly: '99.00',
       maxItems: -1,
       receiptScansPerMonth: -1,
-      maxSharedUsers: 6,
       description: 'For families, meal planners, and power users',
       features: [
         "Everything in Smart Pantry",

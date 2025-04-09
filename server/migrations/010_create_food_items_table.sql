@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS food_items
     store_id INTEGER                               NOT NULL REFERENCES stores(id),
     receipt_id INTEGER                             NOT NULL REFERENCES receipts(id),
     expiry_date DATE                               NOT NULL,
-    price      TYPE DECIMAL(10, 2),
+    price      DECIMAL(10, 2),
     purchased  TIMESTAMP                           NOT NULL,
     user_id    INTEGER                             NOT NULL REFERENCES users(id),
     price_per_unit DECIMAL(10, 2),
@@ -22,8 +22,8 @@ CREATE TABLE IF NOT EXISTS food_items
     original_name VARCHAR(255),
     normalization_confidence DECIMAL(5, 4),
     category VARCHAR(100),
-    line_numbers INTEGER[];
-);
+    line_numbers INTEGER[]
+    );
 
 -- Create indexes for performance
 CREATE INDEX "food_items_receiptId_idx" ON "food_items"("receipt_id");
