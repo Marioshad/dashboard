@@ -75,8 +75,14 @@ export default function VerifyEmailPage() {
         // For error responses (HTTP 400 or 500)
         else {
           try {
-            const contentType = response.headers.get("content-type");
             let errorMessage = 'Invalid or expired verification token';
+            
+            // Check if headers exists before accessing it
+            const contentType = response.headers ? response.headers.get("content-type") : null;
+            console.log("[EMAIL VERIFICATION] Response headers check:", {
+              hasHeaders: !!response.headers,
+              contentType: contentType
+            });
             
             if (contentType && contentType.includes("application/json")) {
               try {
@@ -154,8 +160,14 @@ export default function VerifyEmailPage() {
       
       if (response.ok) {
         try {
-          const contentType = response.headers.get("content-type");
           let successMessage = "A new verification email has been sent to your email address.";
+          
+          // Check if headers exists before accessing it
+          const contentType = response.headers ? response.headers.get("content-type") : null;
+          console.log("[EMAIL VERIFICATION] Resend response headers check:", {
+            hasHeaders: !!response.headers,
+            contentType: contentType
+          });
           
           if (contentType && contentType.includes("application/json")) {
             const data = await response.json();
@@ -181,8 +193,14 @@ export default function VerifyEmailPage() {
         }
       } else {
         try {
-          const contentType = response.headers.get("content-type");
           let errorMessage = "Failed to send verification email. Please try again later.";
+          
+          // Check if headers exists before accessing it
+          const contentType = response.headers ? response.headers.get("content-type") : null;
+          console.log("[EMAIL VERIFICATION] Resend error response headers check:", {
+            hasHeaders: !!response.headers,
+            contentType: contentType
+          });
           
           if (contentType && contentType.includes("application/json")) {
             try {
