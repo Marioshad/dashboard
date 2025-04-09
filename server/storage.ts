@@ -189,65 +189,198 @@ export class DatabaseStorage implements IStorage {
 
   async getUserByUsername(username: string): Promise<User | undefined> {
     try {
-      // Explicitly select columns to avoid issues with schema mismatches
-      const result = await db.select({
-        id: users.id,
-        username: users.username,
-        password: users.password,
-        fullName: users.fullName,
-        email: users.email,
-        bio: users.bio,
-        avatarUrl: users.avatarUrl,
-        roleId: users.roleId,
-        currency: users.currency,
-        twoFactorEnabled: users.twoFactorEnabled,
-        twoFactorSecret: users.twoFactorSecret,
-        emailNotifications: users.emailNotifications,
-        webNotifications: users.webNotifications,
-        mentionNotifications: users.mentionNotifications,
-        followNotifications: users.followNotifications,
-        verificationToken: users.verificationToken,
-        verificationTokenExpiresAt: users.verificationTokenExpiresAt,
-        stripeCustomerId: users.stripeCustomerId,
-        stripeSubscriptionId: users.stripeSubscriptionId,
-        subscriptionStatus: users.subscriptionStatus,
-        subscriptionTier: users.subscriptionTier,
-        receiptScansUsed: users.receiptScansUsed,
-        receiptScansLimit: users.receiptScansLimit,
-        maxItems: users.maxItems,
-        maxSharedUsers: users.maxSharedUsers,
-        currentBillingPeriodStart: users.currentBillingPeriodStart,
-        currentBillingPeriodEnd: users.currentBillingPeriodEnd,
-        createdAt: users.createdAt,
-        updatedAt: users.updatedAt,
-        deletedAt: users.deletedAt,
+      console.log(`Looking up user by username: ${username}`);
+      
+      if (!username) {
+        console.error('getUserByUsername called with empty username');
+        return undefined;
+      }
+      
+      // First, check if the user exists at all
+      const userCheck = await db.select({
+        id: users.id
       })
       .from(users)
       .where(eq(users.username, username))
       .limit(1);
       
-      // If email_verified column exists, get it separately to avoid errors
-      const user = result[0];
-      if (user) {
+      if (!userCheck.length) {
+        console.log(`No user found with username: ${username}`);
+        return undefined;
+      }
+      
+      console.log(`Found user with ID ${userCheck[0].id}, retrieving full details`);
+      
+      // Explicitly select columns to avoid issues with schema mismatches
+      // Use a try-catch for each potentially problematic column to avoid schema errors
+      const userResponse: Partial<User> = {
+        id: userCheck[0].id
+      };
+      
+      try {
+        // Build user data safely, field by field
+        const basicResult = await db.select({
+          username: users.username,
+          password: users.password,
+          fullName: users.fullName,
+          email: users.email,
+          bio: users.bio,
+          avatarUrl: users.avatarUrl,
+          roleId: users.roleId,
+          currency: users.currency,
+        })
+        .from(users)
+        .where(eq(users.id, userCheck[0].id))
+        .limit(1);
+        
+        if (basicResult.length) {
+          Object.assign(userResponse, basicResult[0]);
+        }
+        
+        // Now add any optional fields that might not exist
+        try {
+          const advancedResult = await db.select({
+            twoFactorEnabled: users.twoFactorEnabled,
+            twoFactorSecret: users.twoFactorSecret,
+            emailNotifications: users.emailNotifications,
+            webNotifications: users.webNotifications,
+            mentionNotifications: users.mentionNotifications,
+            followNotifications: users.followNotifications,
+            verificationToken: users.verificationToken,
+            verificationTokenExpiresAt: users.verificationTokenExpiresAt,
+          })
+          .from(users)
+          .where(eq(users.id, userCheck[0].id))
+          .limit(1);
+          
+          if (advancedResult.length) {
+            Object.assign(userResponse, advancedResult[0]);
+          }
+        } catch (err) {
+          console.warn('Some optional user fields not available:', err);
+        }
+        
+        // Add stripe-related fields separately
+        try {
+          const stripeResult = await db.select({
+            stripeCustomerId: users.stripeCustomerId,
+            stripeSubscriptionId: users.stripeSubscriptionId,
+            subscriptionStatus: users.subscriptionStatus,
+            subscriptionTier: users.subscriptionTier,
+            currentBillingPeriodStart: users.currentBillingPeriodStart,
+            currentBillingPeriodEnd: users.currentBillingPeriodEnd,
+          })
+          .from(users)
+          .where(eq(users.id, userCheck[0].id))
+          .limit(1);
+          
+          if (stripeResult.length) {
+            Object.assign(userResponse, stripeResult[0]);
+          }
+        } catch (err) {
+          console.warn('Stripe-related fields not available:', err);
+        }
+        
+        // Add limits-related fields - need to check each field individually
+        // because of the "Cannot convert undefined or null to object" error
+        try {
+          // Build the selection object with the fields that exist
+          const selectObj: Record<string, any> = {};
+          
+          // Check if each field exists on the users table
+          if ('receiptScansUsed' in users) {
+            selectObj.receiptScansUsed = users.receiptScansUsed;
+          }
+          if ('receiptScansLimit' in users) {
+            selectObj.receiptScansLimit = users.receiptScansLimit;
+          }
+          if ('maxItems' in users) {
+            selectObj.maxItems = users.maxItems;
+          }
+          
+          // Only attempt the query if we have at least one field to select
+          if (Object.keys(selectObj).length > 0) {
+            const limitsResult = await db.select(selectObj)
+              .from(users)
+              .where(eq(users.id, userCheck[0].id))
+              .limit(1);
+            
+            if (limitsResult.length) {
+              Object.assign(userResponse, limitsResult[0]);
+            }
+          }
+          
+          // Set default values for any missing fields
+          if (!('receiptScansUsed' in userResponse)) {
+            userResponse.receiptScansUsed = 0;
+          }
+          if (!('receiptScansLimit' in userResponse)) {
+            userResponse.receiptScansLimit = 10;
+          }
+          if (!('maxItems' in userResponse)) {
+            userResponse.maxItems = 100;
+          }
+          if (!('maxSharedUsers' in userResponse)) {
+            userResponse.maxSharedUsers = 1;
+          }
+        } catch (err) {
+          console.warn('Limits-related fields not available:', err);
+          // Set default values
+          userResponse.receiptScansUsed = 0;
+          userResponse.receiptScansLimit = 10;
+          userResponse.maxItems = 100;
+          userResponse.maxSharedUsers = 1;
+        }
+        
+        // Add timestamps separately
+        try {
+          const timestampResult = await db.select({
+            createdAt: users.createdAt,
+            updatedAt: users.updatedAt,
+            deletedAt: users.deletedAt,
+          })
+          .from(users)
+          .where(eq(users.id, userCheck[0].id))
+          .limit(1);
+          
+          if (timestampResult.length) {
+            Object.assign(userResponse, timestampResult[0]);
+          }
+        } catch (err) {
+          console.warn('Timestamp fields not available:', err);
+        }
+        
+        // If email_verified column exists, get it separately to avoid errors
         try {
           const emailVerifiedResult = await db.execute(
-            sql`SELECT email_verified FROM users WHERE id = ${user.id}`
+            sql`SELECT email_verified FROM users WHERE id = ${userCheck[0].id}`
           );
           if (emailVerifiedResult.rows && emailVerifiedResult.rows.length > 0) {
-            (user as any).emailVerified = emailVerifiedResult.rows[0].email_verified;
+            (userResponse as any).emailVerified = emailVerifiedResult.rows[0].email_verified;
           } else {
-            (user as any).emailVerified = false;
+            (userResponse as any).emailVerified = false;
           }
         } catch (err) {
           console.warn('email_verified column not available:', err);
-          (user as any).emailVerified = false;
+          (userResponse as any).emailVerified = false;
         }
+        
+        // Make sure we have the minimum required fields
+        if (!userResponse.id || !userResponse.username || !userResponse.password) {
+          console.error(`Missing critical user fields for ${username}:`, 
+                      { id: !!userResponse.id, username: !!userResponse.username, password: !!userResponse.password });
+          return undefined;
+        }
+        
+        return userResponse as User;
+        
+      } catch (fieldError) {
+        console.error('Error selecting user fields:', fieldError);
+        return undefined;
       }
-      
-      return user;
     } catch (error) {
       console.error('Error getting user by username:', error);
-      throw error;
+      return undefined; // Don't throw error, return undefined to handle gracefully
     }
   }
 
