@@ -125,6 +125,25 @@ export async function verifyEmail(token: string): Promise<{ success: boolean; me
         verificationTokenExpiresAt: null,
       });
       emailLogger.info(`User ${user.id} verification status updated successfully`);
+      
+      // Now update the user role from unverified_user to user
+      try {
+        // Get the standard user role
+        const userRole = await storage.getRoleByName('user');
+        
+        if (userRole) {
+          emailLogger.info(`Found user role with ID: ${userRole.id}, updating user role from unverified_user to user`);
+          
+          // Update the user's role
+          await storage.updateUserRole(user.id, userRole.id);
+          emailLogger.info(`User ${user.id} role updated successfully to 'user'`);
+        } else {
+          emailLogger.error(`Could not find 'user' role in the database`);
+        }
+      } catch (roleError) {
+        emailLogger.error(`Error updating user role:`, roleError);
+        // We don't want to fail verification if role update fails, so just log the error
+      }
     } catch (updateError) {
       emailLogger.error(`Error updating user verification status:`, updateError);
       throw updateError;

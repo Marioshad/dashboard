@@ -1337,89 +1337,145 @@ export class DatabaseStorage implements IStorage {
     verificationTokenExpiresAt?: Date | null;
   }): Promise<User> {
     try {
-      // For a direct implementation, let's avoid using the parameterized approach
-      // and just use the Drizzle ORM's native update functionality
-      const updateData: Record<string, any> = {
-        updatedAt: new Date() // Always update the timestamp
-      };
+      console.log(`[IMPORTANT] Updating user verification for userId: ${userId} with data:`, JSON.stringify(verificationData, null, 2));
       
-      // Map JavaScript properties to database column names
+      // We're going to use a direct SQL approach that explicitly maps to database column names
+      // This ensures we're setting the correct columns without relying on mappings
+      
+      // Prepare the SET clauses and values
+      const updates = [];
+      
+      // Always update the timestamp
+      updates.push(`updated_at = NOW()`);
+      
+      // Add email_verified if present
       if (verificationData.emailVerified !== undefined) {
-        updateData.emailVerified = verificationData.emailVerified;
+        updates.push(`email_verified = ${verificationData.emailVerified ? 'TRUE' : 'FALSE'}`);
       }
       
+      // Add verification_token if present
       if (verificationData.verificationToken !== undefined) {
-        updateData.verificationToken = verificationData.verificationToken;
+        if (verificationData.verificationToken === null) {
+          updates.push(`verification_token = NULL`);
+        } else {
+          updates.push(`verification_token = '${verificationData.verificationToken}'`);
+        }
       }
       
+      // Add verification_token_expires_at if present
       if (verificationData.verificationTokenExpiresAt !== undefined) {
-        updateData.verificationTokenExpiresAt = verificationData.verificationTokenExpiresAt;
+        if (verificationData.verificationTokenExpiresAt === null) {
+          updates.push(`verification_token_expires_at = NULL`);
+        } else {
+          const formattedDate = verificationData.verificationTokenExpiresAt.toISOString();
+          updates.push(`verification_token_expires_at = '${formattedDate}'`);
+        }
       }
       
-      console.log(`Updating user verification for userId: ${userId} with data:`, updateData);
-      
-      // Use Drizzle's built-in update method
-      const [updatedUser] = await db
-        .update(users)
-        .set(updateData)
-        .where(eq(users.id, userId))
-        .returning();
-      
-      if (!updatedUser) {
-        throw new Error('User update failed, no data returned');
+      if (updates.length === 0) {
+        throw new Error('No fields to update');
       }
       
-      console.log('User verification updated successfully', updatedUser);
-      return updatedUser;
+      // Build and execute the update query
+      const query = `
+        UPDATE users 
+        SET ${updates.join(', ')}
+        WHERE id = ${userId}
+        RETURNING *
+      `;
+      
+      console.log(`[IMPORTANT] Executing SQL update: ${query}`);
+      
+      const result = await db.execute(sql.raw(query));
+      
+      if (!result.rows || result.rows.length === 0) {
+        throw new Error('User update failed, no rows returned');
+      }
+      
+      console.log(`[IMPORTANT] Verification update success for user ${userId}:`, result.rows[0]);
+      return result.rows[0] as User;
+      
     } catch (error) {
-      console.error('Error updating user verification:', error);
+      console.error(`[IMPORTANT] Error updating user verification (userId: ${userId}):`, error);
       
-      // Fallback to direct SQL if the ORM approach fails
+      // Try an alternative approach with dynamic query construction
       try {
-        console.log('Attempting direct SQL update for email verification');
+        console.log(`[IMPORTANT] Attempting alternative update approach for user ${userId}`);
         
-        // Build a simple SQL query with direct values, not parameterized
-        let sqlQuery = `
-          UPDATE users SET 
-            updated_at = NOW()
-        `;
+        // Try a Drizzle update with explicitly mapped column names
+        const updateSet: any = {
+          updated_at: sql`NOW()`,
+        };
         
-        // Add the verification fields directly to the query
         if (verificationData.emailVerified !== undefined) {
-          sqlQuery += `, email_verified = ${verificationData.emailVerified}`;
+          updateSet.email_verified = verificationData.emailVerified;
         }
         
         if (verificationData.verificationToken !== undefined) {
-          if (verificationData.verificationToken === null) {
-            sqlQuery += `, verification_token = NULL`;
-          } else {
-            sqlQuery += `, verification_token = '${verificationData.verificationToken}'`;
-          }
+          updateSet.verification_token = verificationData.verificationToken;
         }
         
         if (verificationData.verificationTokenExpiresAt !== undefined) {
-          if (verificationData.verificationTokenExpiresAt === null) {
-            sqlQuery += `, verification_token_expires_at = NULL`;
-          } else {
-            sqlQuery += `, verification_token_expires_at = '${verificationData.verificationTokenExpiresAt.toISOString()}'`;
+          updateSet.verification_token_expires_at = verificationData.verificationTokenExpiresAt;
+        }
+        
+        console.log(`[IMPORTANT] Alternative update data:`, JSON.stringify(updateSet, null, 2));
+        
+        const [user] = await db
+          .update(users)
+          .set(updateSet)
+          .where(eq(users.id, userId))
+          .returning();
+          
+        console.log(`[IMPORTANT] Alternative update success:`, user);
+        return user;
+        
+      } catch (altError) {
+        console.error(`[IMPORTANT] Alternative update failed:`, altError);
+        
+        // Last resort - try a very basic query just to update the token
+        try {
+          console.log(`[IMPORTANT] Last resort update attempt for user ${userId}`);
+          
+          let finalQuery = `UPDATE users SET updated_at = NOW()`;
+          
+          // Just add the token if we're trying to set it
+          if (verificationData.verificationToken !== undefined) {
+            if (verificationData.verificationToken === null) {
+              finalQuery += `, verification_token = NULL`;
+            } else {
+              finalQuery += `, verification_token = '${verificationData.verificationToken}'`;
+            }
+            
+            // Also attempt to set the expiration time if we're setting a token
+            if (verificationData.verificationTokenExpiresAt) {
+              const formattedDate = verificationData.verificationTokenExpiresAt.toISOString();
+              finalQuery += `, verification_token_expires_at = '${formattedDate}'`;
+            }
           }
+          
+          // Add email verification status if present
+          if (verificationData.emailVerified !== undefined) {
+            finalQuery += `, email_verified = ${verificationData.emailVerified ? 'TRUE' : 'FALSE'}`;
+          }
+          
+          finalQuery += ` WHERE id = ${userId} RETURNING *`;
+          
+          console.log(`[IMPORTANT] Last resort query: ${finalQuery}`);
+          
+          const lastResult = await db.execute(sql.raw(finalQuery));
+          
+          if (!lastResult.rows || lastResult.rows.length === 0) {
+            throw new Error('Final update attempt failed, no rows returned');
+          }
+          
+          console.log(`[IMPORTANT] Last resort update succeeded:`, lastResult.rows[0]);
+          return lastResult.rows[0] as User;
+          
+        } catch (finalError) {
+          console.error(`[IMPORTANT] All update attempts failed for user ${userId}:`, finalError);
+          throw finalError;
         }
-        
-        // Complete the query
-        sqlQuery += ` WHERE id = ${userId} RETURNING *`;
-        
-        console.log(`Executing direct SQL: ${sqlQuery}`);
-        
-        const result = await db.execute(sql.raw(sqlQuery));
-        
-        if (!result.rows || result.rows.length === 0) {
-          throw new Error('User update failed in fallback SQL, no rows returned');
-        }
-        
-        return result.rows[0] as User;
-      } catch (fallbackError) {
-        console.error('Error in fallback SQL update:', fallbackError);
-        throw fallbackError;
       }
     }
   }
