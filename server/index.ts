@@ -165,12 +165,12 @@ async function ensureSystemTags() {
         // Insert using raw SQL to handle column name differences
         if (systemColumnName === 'is_system') {
           await db.execute(sql`
-            INSERT INTO tags (name, color, is_system, userid, createdat, updatedat)
+            INSERT INTO tags (name, color, is_system, user_id, created_at, updated_at)
             VALUES (${tag.name}, ${tag.color}, TRUE, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
           `);
         } else {
           await db.execute(sql`
-            INSERT INTO tags (name, color, issystem, userid, createdat, updatedat)
+            INSERT INTO tags (name, color, issystem, user_id, created_at, updated_at)
             VALUES (${tag.name}, ${tag.color}, TRUE, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
           `);
         }
