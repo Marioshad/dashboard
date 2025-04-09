@@ -1091,12 +1091,12 @@ export class DatabaseStorage implements IStorage {
     try {
       console.log(`Getting receipts for user ${userId}`);
       
-      // First get the receipts
+      // First get the receipts - use snake_case column names directly in SQL
       const receiptList = await db
         .select()
         .from(receipts)
         .where(eq(receipts.userId, userId))
-        .orderBy(sql`receipts."uploadDate" DESC`);
+        .orderBy(sql`receipts."upload_date" DESC`);
       
       console.log(`Found ${receiptList.length} receipts`);
       
@@ -1284,13 +1284,44 @@ export class DatabaseStorage implements IStorage {
 
   async getFoodItemsByReceiptId(receiptId: number): Promise<FoodItem[]> {
     try {
-      const result = await db
-        .select()
-        .from(foodItems)
-        .where(eq(foodItems.receiptId, receiptId))
-        .orderBy(foodItems.name);
+      console.log(`Getting food items for receipt ID: ${receiptId}`);
       
-      return result;
+      // Use SQL directly to ensure we use the correct column name in database
+      const result = await db.execute(sql`
+        SELECT *
+        FROM food_items
+        WHERE receipt_id = ${receiptId}
+        ORDER BY name
+      `);
+      
+      const formattedResults = result.rows.map(row => {
+        // Convert PostgreSQL snake_case to camelCase for the frontend
+        return {
+          id: row.id,
+          name: row.name,
+          normalizedName: row.normalized_name,
+          originalName: row.original_name,
+          category: row.category,
+          quantity: row.quantity,
+          unit: row.unit,
+          locationId: row.location_id,
+          storeId: row.store_id,
+          receiptId: row.receipt_id,
+          expiryDate: row.expiry_date,
+          price: row.price,
+          pricePerUnit: row.price_per_unit,
+          isWeightBased: row.is_weight_based,
+          normalizationConfidence: row.normalization_confidence,
+          lineNumbers: row.line_numbers,
+          purchased: row.purchased,
+          userId: row.user_id,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at
+        };
+      });
+      
+      console.log(`Found ${formattedResults.length} food items for receipt ${receiptId}`);
+      return formattedResults;
     } catch (error) {
       console.error('Error getting food items by receipt ID:', error);
       throw error;
