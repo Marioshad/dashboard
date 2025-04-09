@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Mail, XCircle } from 'lucide-react';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
-import { useEmailVerification } from './email-verification-provider';
+import { useEmailVerification } from '@/hooks/use-email-verification';
+import { useWebSocket } from '@/hooks/use-websocket-provider';
 
 interface EmailVerificationBannerProps {
   actionRequired?: string; // Custom message about what action requires verification
@@ -22,15 +23,46 @@ export function EmailVerificationBanner({
 }: EmailVerificationBannerProps) {
   const { user } = useAuth();
   const { toast } = useToast();
-  const { showVerificationDialog } = useEmailVerification();
+  const { showVerificationDialog, isEmailVerified } = useEmailVerification();
+  const { socket } = useWebSocket();
   const [isResending, setIsResending] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  const [hideOnVerify, setHideOnVerify] = useState(false);
+
+  // Listen for WebSocket verification messages
+  useEffect(() => {
+    if (!socket) return;
+    
+    const handleMessage = (event: MessageEvent) => {
+      try {
+        const message = JSON.parse(event.data);
+        
+        // Handle email verification notification
+        if (message.type === 'notification' && 
+            message.data && 
+            message.data.type === 'email_verified') {
+          console.log('Email verification notification received, hiding banner');
+          setHideOnVerify(true);
+        }
+      } catch (error) {
+        console.error('Failed to parse WebSocket message:', error);
+      }
+    };
+    
+    // Add event listener
+    socket.addEventListener('message', handleMessage);
+    
+    // Cleanup
+    return () => {
+      socket.removeEventListener('message', handleMessage);
+    };
+  }, [socket]);
 
   // Don't show if not logged in or if already dismissed (unless we want to show verified success)
-  if (!user || (dismissed && !showIfVerified)) return null;
+  if (!user || (dismissed && !showIfVerified) || hideOnVerify) return null;
 
-  // Check if user's email is verified
-  const isVerified = user.emailVerified;
+  // Check if user's email is verified - use the context value which is updated by WebSocket events
+  const isVerified = isEmailVerified || user.emailVerified;
   
   // Don't show if verified unless showIfVerified is true
   if (isVerified && !showIfVerified) return null;
