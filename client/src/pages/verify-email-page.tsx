@@ -29,12 +29,14 @@ export default function VerifyEmailPage() {
         setIsVerifying(true);
         console.log("[EMAIL VERIFICATION] Starting verification with token:", token?.substring(0, 10) + "...");
         
-        const response = await apiRequest("/api/email/verify", {
+        // Use raw fetch instead of apiRequest to have access to response object
+        const response = await fetch("/api/email/verify", {
           method: "POST",
           body: JSON.stringify({ token }),
           headers: {
             "Content-Type": "application/json"
-          }
+          },
+          credentials: "include"
         });
         
         console.log("[EMAIL VERIFICATION] Response status:", response.status, response.statusText);
@@ -152,8 +154,13 @@ export default function VerifyEmailPage() {
       setIsResending(true);
       console.log("[EMAIL VERIFICATION] Attempting to resend verification email");
       
-      const response = await apiRequest("/api/email/resend-verification", {
-        method: "POST"
+      // Use raw fetch instead of apiRequest to have access to response object
+      const response = await fetch("/api/email/resend-verification", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json"
+        }
       });
       
       console.log("[EMAIL VERIFICATION] Resend response status:", response.status, response.statusText);
