@@ -380,7 +380,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         where: eq(roles.id, req.user.roleId as number),
       });
 
-      if (!userRole || !['Superadmin', 'Admin'].includes(userRole.name)) {
+      if (!userRole || !['superadmin', 'admin'].includes(userRole.name)) {
         return res.sendStatus(403);
       }
 
@@ -407,7 +407,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         where: eq(roles.id, req.user.roleId as number),
       });
 
-      if (!userRole || !['Superadmin', 'Admin'].includes(userRole.name)) {
+      if (!userRole || !['superadmin', 'admin'].includes(userRole.name)) {
         return res.sendStatus(403);
       }
 
@@ -428,7 +428,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         where: eq(roles.id, req.user.roleId as number),
       });
 
-      if (!userRole || !['Superadmin', 'Admin'].includes(userRole.name)) {
+      if (!userRole || !['superadmin', 'admin'].includes(userRole.name)) {
         return res.sendStatus(403);
       }
 
