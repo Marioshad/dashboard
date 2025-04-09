@@ -115,7 +115,7 @@ const handleVerifyEmail = async (req: any, res: any) => {
       // If the current user is the one being verified, update their session
       if (req.isAuthenticated()) {
         // Force refresh of user data
-        const user = await storage.getUser(req.user.id);
+        const user = result.user || await storage.getUser(req.user.id);
         if (user) {
           // Update the session
           Object.assign(req.user, user);

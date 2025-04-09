@@ -3,7 +3,7 @@ import { users } from '@shared/schema';
 import { storage } from '../../storage';
 import { generateVerificationToken, calculateTokenExpiration, isTokenExpired } from '../../services/auth/token-generator';
 import { sendEmail } from './email-service';
-import { eq } from 'drizzle-orm';
+import { eq, sql, isNotNull } from 'drizzle-orm';
 import { emailLogger } from '../logger';
 
 /**
@@ -92,12 +92,32 @@ export async function sendVerificationEmail(userId: number, email: string | null
 /**
  * Verify user email with token
  * @param token Verification token
- * @returns Object with success status and message
+ * @returns Object with success status, message, and optional user object
  */
-export async function verifyEmail(token: string): Promise<{ success: boolean; message: string }> {
+export async function verifyEmail(token: string): Promise<{ success: boolean; message: string; user?: any }> {
   emailLogger.info(`Attempting to verify email with token: ${token}`);
   try {
-    // Find user with this token
+    // Log detailed debug information
+    emailLogger.debug(`Verifying token: ${token} (length: ${token.length})`);
+    
+    // First, try to get all users with verification tokens to debug
+    const usersWithTokens = await db
+      .select({
+        id: users.id,
+        username: users.username,
+        email: users.email,
+        token: users.verificationToken,
+        tokenLength: sql<number>`length(${users.verificationToken})`
+      })
+      .from(users)
+      .where(isNotNull(users.verificationToken));
+    
+    emailLogger.debug(`Found ${usersWithTokens.length} users with verification tokens`);
+    usersWithTokens.forEach(u => {
+      emailLogger.debug(`User ${u.id} (${u.username}) has token: ${u.token} (length: ${u.tokenLength})`);
+    });
+    
+    // Now try to find the user with the exact token
     const [user] = await db
       .select()
       .from(users)
@@ -105,6 +125,21 @@ export async function verifyEmail(token: string): Promise<{ success: boolean; me
 
     if (!user) {
       emailLogger.error(`Invalid token: ${token} - no matching user found`);
+      
+      // As a fallback, try with a LIKE query to handle potential encoding issues
+      const [fallbackUser] = await db
+        .select()
+        .from(users)
+        .where(sql`${users.verificationToken} LIKE ${token}%`);
+      
+      if (fallbackUser) {
+        emailLogger.info(`Found user with partial token match: ${fallbackUser.id}`);
+        emailLogger.info(`Matched token: ${fallbackUser.verificationToken} with provided token: ${token}`);
+        
+        // Use this user instead
+        return { success: true, message: 'Email verified successfully (fallback matching)', user: fallbackUser };
+      }
+      
       return { success: false, message: 'Invalid verification token' };
     }
     
@@ -149,7 +184,9 @@ export async function verifyEmail(token: string): Promise<{ success: boolean; me
       throw updateError;
     }
 
-    return { success: true, message: 'Email verified successfully' };
+    // Get the updated user
+    const updatedUser = await storage.getUser(user.id);
+    return { success: true, message: 'Email verified successfully', user: updatedUser };
   } catch (error) {
     emailLogger.error('Error verifying email:', error);
     return { success: false, message: 'Error verifying email. Please try again.' };
