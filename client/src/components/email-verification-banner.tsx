@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { Mail, XCircle, ArrowRight } from 'lucide-react';
-import { Link } from 'wouter';
+import { Mail, XCircle } from 'lucide-react';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/use-auth';
@@ -104,11 +103,6 @@ export function EmailVerificationBanner({
                 >
                   {isResending ? 'Sending...' : 'Resend Verification Email'}
                 </Button>
-                <Link href="/verify-email">
-                  <Button size="sm">
-                    Verification Page <ArrowRight className="ml-1 h-3 w-3" />
-                  </Button>
-                </Link>
               </div>
             </AlertDescription>
           </div>

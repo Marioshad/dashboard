@@ -10,7 +10,7 @@ import NotFound from "@/pages/not-found";
 import HomePage from "@/pages/home-page";
 import AuthPage from "@/pages/auth-page";
 import ProfilePage from "@/pages/profile-page";
-import VerifyEmailPage from "@/pages/verify-email-page";
+// Removed verify email page import
 import RolesPage from "@/pages/roles-page";
 import RolesMap from "@/pages/roles-map";
 import PermissionsPage from "@/pages/permissions-page";
@@ -66,7 +66,7 @@ function Router() {
       <ProtectedRoute path="/admin/system" component={SystemPage} />
       <Route path="/admin/webhook-test" component={WebhookTestPage} />
       <Route path="/auth" component={AuthPage} />
-      <Route path="/verify-email" component={VerifyEmailPage} />
+      {/* Removed verify-email route */}
       <Route component={NotFound} />
     </Switch>
   );

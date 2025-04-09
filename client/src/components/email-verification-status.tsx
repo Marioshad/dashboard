@@ -1,11 +1,10 @@
 import React from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Mail, Check, AlertTriangle, ArrowRight } from "lucide-react";
+import { Mail, Check, AlertTriangle } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useToast } from "@/hooks/use-toast";
-import { Link } from 'wouter';
 import { Badge } from "@/components/ui/badge";
 
 /**
@@ -149,21 +148,15 @@ export default function EmailVerificationStatus() {
       </CardContent>
       
       {!isVerified && (
-        <CardFooter className="flex flex-col sm:flex-row gap-2">
+        <CardFooter>
           <Button
             variant="outline"
             onClick={handleResendVerification}
             disabled={isResending}
-            className="w-full sm:w-auto"
+            className="w-full"
           >
             {isResending ? "Sending..." : "Resend Verification Email"}
           </Button>
-          
-          <Link href="/verify-email">
-            <Button className="w-full sm:w-auto">
-              Go to Verification Page <ArrowRight className="ml-2 h-4 w-4" />
-            </Button>
-          </Link>
         </CardFooter>
       )}
     </Card>
