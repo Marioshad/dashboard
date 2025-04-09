@@ -165,12 +165,12 @@ async function ensureSystemTags() {
         // Insert using raw SQL to handle column name differences
         if (systemColumnName === 'is_system') {
           await db.execute(sql`
-            INSERT INTO tags (name, color, is_system, userid, createdat, updatedat)
+            INSERT INTO tags (name, color, is_system, user_id, created_at, updated_at)
             VALUES (${tag.name}, ${tag.color}, TRUE, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
           `);
         } else {
           await db.execute(sql`
-            INSERT INTO tags (name, color, issystem, userid, createdat, updatedat)
+            INSERT INTO tags (name, color, issystem, user_id, created_at, updated_at)
             VALUES (${tag.name}, ${tag.color}, TRUE, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
           `);
         }
@@ -266,7 +266,10 @@ app.use((req, res, next) => {
     
     // Initialize WebSocket server with modular implementation
     log("Initializing WebSocket server with modular implementation...");
-    initializeWebSocketServer(httpServer, app, storage, SESSION_SECRET);
+    // Use the SESSION_SECRET from app.locals which is set in setupAuth
+    const appSessionSecret = app.locals.SESSION_SECRET || "development_secret";
+    log(`WebSocket initialization with session secret: ${appSessionSecret ? 'configured' : 'missing'}`);
+    initializeWebSocketServer(httpServer, app, storage, appSessionSecret);
     log("WebSocket server initialized with enhanced stability options");
     log("Routes registered successfully");
 
