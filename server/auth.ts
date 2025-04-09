@@ -106,22 +106,35 @@ export function setupAuth(app: Express) {
       // Ensure we have a valid ID
       if (id === undefined || id === null) {
         console.error('Deserialization error: Invalid user ID');
-        return done(new Error('Invalid user ID'));
+        return done(null, false); // Return false instead of error to prevent crash
       }
       
       console.log(`Attempting to deserialize user with ID: ${id}`);
-      const user = await storage.getUser(id);
       
-      if (!user) {
-        console.error(`Deserialization error: No user found with ID: ${id}`);
+      try {
+        const user = await storage.getUser(id);
+        
+        if (!user) {
+          console.error(`Deserialization error: No user found with ID: ${id}`);
+          return done(null, false);
+        }
+        
+        // Ensure maxSharedUsers exists on the user object
+        if (!('maxSharedUsers' in user)) {
+          (user as any).maxSharedUsers = 1;
+        }
+        
+        console.log(`Deserialized user ${id}: found`);
+        done(null, user);
+      } catch (getUserErr) {
+        console.error(`Error getting user in deserializeUser: ${getUserErr}`);
+        // Return false instead of error to prevent crash
         return done(null, false);
       }
-      
-      console.log(`Deserialized user ${id}: found`);
-      done(null, user);
     } catch (err) {
       console.error('Deserialization error:', err);
-      done(err);
+      // Return false instead of error to prevent crash
+      done(null, false);
     }
   });
 
