@@ -3,16 +3,16 @@ import fetch from 'node-fetch';
 
 async function testLogin() {
   try {
-    console.log('Testing login with superadmin/password123...');
+    console.log('Testing login with admin/password123...');
     
     const response = await fetch('http://localhost:5000/api/login', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      // Test login with the specified credentials: superadmin/password123 
+      // Test login with the admin user found in the database 
       body: JSON.stringify({
-        username: 'superadmin',
+        username: 'admin',
         password: 'password123',
       }),
     });
