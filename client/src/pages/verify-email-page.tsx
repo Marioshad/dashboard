@@ -41,35 +41,83 @@ export default function VerifyEmailPage() {
         
         // For successful response (HTTP 200)
         if (response.ok) {
-          const data = await response.json();
-          console.log("[EMAIL VERIFICATION] Success response data:", data);
-          
-          setVerificationStatus('success');
-          setMessage(data.message || 'Email verified successfully');
-          
-          toast({
-            title: "Email Verified",
-            description: "Your email has been successfully verified.",
-            variant: "default",
-          });
+          try {
+            const contentType = response.headers.get("content-type");
+            if (contentType && contentType.includes("application/json")) {
+              const data = await response.json();
+              console.log("[EMAIL VERIFICATION] Success response data:", data);
+              
+              setVerificationStatus('success');
+              setMessage(data.message || 'Email verified successfully');
+            } else {
+              console.log("[EMAIL VERIFICATION] Response is not JSON, using default success message");
+              setVerificationStatus('success');
+              setMessage('Email verified successfully');
+            }
+            
+            toast({
+              title: "Email Verified",
+              description: "Your email has been successfully verified.",
+              variant: "default",
+            });
+          } catch (jsonError) {
+            console.error("[EMAIL VERIFICATION] Error parsing JSON response:", jsonError);
+            setVerificationStatus('success'); // Still consider it a success since response.ok is true
+            setMessage('Email verified successfully');
+            
+            toast({
+              title: "Email Verified",
+              description: "Your email has been successfully verified.",
+              variant: "default",
+            });
+          }
         } 
         // For error responses (HTTP 400 or 500)
         else {
-          const errorData = await response.json();
-          console.error("[EMAIL VERIFICATION] Error response:", {
-            status: response.status,
-            statusText: response.statusText,
-            data: errorData
-          });
-          
-          setVerificationStatus('error');
-          setMessage(errorData.message || 'Invalid or expired verification token');
-          
-          toast({
-            title: "Verification Failed",
-            description: errorData.message || 'Could not verify your email',
-            variant: "destructive",
-          });
+          try {
+            const contentType = response.headers.get("content-type");
+            let errorMessage = 'Invalid or expired verification token';
+            
+            if (contentType && contentType.includes("application/json")) {
+              try {
+                const errorData = await response.json();
+                console.error("[EMAIL VERIFICATION] Error response:", {
+                  status: response.status,
+                  statusText: response.statusText,
+                  data: errorData
+                });
+                
+                errorMessage = errorData.message || errorMessage;
+              } catch (parseError) {
+                console.error("[EMAIL VERIFICATION] Failed to parse error JSON:", parseError);
+              }
+            } else {
+              console.error("[EMAIL VERIFICATION] Non-JSON error response:", {
+                status: response.status,
+                statusText: response.statusText,
+                contentType
+              });
+            }
+            
+            setVerificationStatus('error');
+            setMessage(errorMessage);
+            
+            toast({
+              title: "Verification Failed",
+              description: errorMessage,
+              variant: "destructive",
+            });
+          } catch (errorHandlingError) {
+            console.error("[EMAIL VERIFICATION] Error handling failed response:", errorHandlingError);
+            setVerificationStatus('error');
+            setMessage('An error occurred while verifying your email. Please try again later.');
+            
+            toast({
+              title: "Verification Failed",
+              description: "Could not verify your email. Please try again later.",
+              variant: "destructive",
+            });
+          }
         }
       } catch (error) {
         // For network errors or parsing errors
@@ -105,27 +153,72 @@ export default function VerifyEmailPage() {
       console.log("[EMAIL VERIFICATION] Resend response status:", response.status, response.statusText);
       
       if (response.ok) {
-        const data = await response.json();
-        console.log("[EMAIL VERIFICATION] Resend success response:", data);
-        
-        toast({
-          title: "Verification Email Sent",
-          description: data.message || "A new verification email has been sent to your email address.",
-          variant: "default",
-        });
+        try {
+          const contentType = response.headers.get("content-type");
+          let successMessage = "A new verification email has been sent to your email address.";
+          
+          if (contentType && contentType.includes("application/json")) {
+            const data = await response.json();
+            console.log("[EMAIL VERIFICATION] Resend success response:", data);
+            successMessage = data.message || successMessage;
+          } else {
+            console.log("[EMAIL VERIFICATION] Resend response is not JSON, using default success message");
+          }
+          
+          toast({
+            title: "Verification Email Sent",
+            description: successMessage,
+            variant: "default",
+          });
+        } catch (jsonError) {
+          console.error("[EMAIL VERIFICATION] Error parsing JSON response:", jsonError);
+          
+          toast({
+            title: "Verification Email Sent",
+            description: "A new verification email has been sent to your email address.",
+            variant: "default",
+          });
+        }
       } else {
-        const errorData = await response.json();
-        console.error("[EMAIL VERIFICATION] Resend error response:", {
-          status: response.status,
-          statusText: response.statusText,
-          data: errorData
-        });
-        
-        toast({
-          title: "Could not send verification email",
-          description: errorData.message || "Failed to send verification email. Please try again later.",
-          variant: "destructive",
-        });
+        try {
+          const contentType = response.headers.get("content-type");
+          let errorMessage = "Failed to send verification email. Please try again later.";
+          
+          if (contentType && contentType.includes("application/json")) {
+            try {
+              const errorData = await response.json();
+              console.error("[EMAIL VERIFICATION] Resend error response:", {
+                status: response.status,
+                statusText: response.statusText,
+                data: errorData
+              });
+              
+              errorMessage = errorData.message || errorMessage;
+            } catch (parseError) {
+              console.error("[EMAIL VERIFICATION] Failed to parse error JSON:", parseError);
+            }
+          } else {
+            console.error("[EMAIL VERIFICATION] Non-JSON error response:", {
+              status: response.status,
+              statusText: response.statusText,
+              contentType
+            });
+          }
+          
+          toast({
+            title: "Could not send verification email",
+            description: errorMessage,
+            variant: "destructive",
+          });
+        } catch (errorHandlingError) {
+          console.error("[EMAIL VERIFICATION] Error handling failed response:", errorHandlingError);
+          
+          toast({
+            title: "Could not send verification email",
+            description: "An error occurred. Please try again later.",
+            variant: "destructive",
+          });
+        }
       }
     } catch (error) {
       console.error("[EMAIL VERIFICATION] Resend exception caught:", error);
