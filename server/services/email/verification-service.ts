@@ -119,15 +119,29 @@ export async function verifyEmail(token: string): Promise<{ success: boolean; me
     });
     
     // Now try to find the user with the exact token
+    emailLogger.debug(`Searching for user with exact token match. Token starts with: ${token.substring(0, 10)}...`);
     const [user] = await db
       .select()
       .from(users)
       .where(eq(users.verificationToken, token));
 
     if (!user) {
-      emailLogger.error(`Invalid token: ${token} - no matching user found`);
+      emailLogger.error(`Invalid token: ${token.substring(0, 10)}... - no matching user found with exact match`);
+      
+      // Log all current verification tokens for debugging
+      const allTokens = await db
+        .select({ id: users.id, token: users.verificationToken, expires: users.verificationTokenExpiresAt })
+        .from(users)
+        .where(isNotNull(users.verificationToken));
+      
+      emailLogger.debug(`Current verification tokens in DB: ${JSON.stringify(allTokens.map(t => ({ 
+        id: t.id, 
+        tokenStart: t.token ? t.token.substring(0, 10) : null,
+        expires: t.expires 
+      })))}`);
       
       // As a fallback, try with a LIKE query to handle potential encoding issues
+      emailLogger.info(`Trying fallback with partial token match`);
       const [fallbackUser] = await db
         .select()
         .from(users)
@@ -135,7 +149,16 @@ export async function verifyEmail(token: string): Promise<{ success: boolean; me
       
       if (fallbackUser) {
         emailLogger.info(`Found user with partial token match: ${fallbackUser.id}`);
-        emailLogger.info(`Matched token: ${fallbackUser.verificationToken} with provided token: ${token}`);
+        emailLogger.info(`Matched token: ${fallbackUser.verificationToken?.substring(0, 10)}... with provided token: ${token.substring(0, 10)}...`);
+        
+        // Log full user data for debugging
+        emailLogger.debug(`Found fallback user: ${JSON.stringify({
+          id: fallbackUser.id,
+          email: fallbackUser.email,
+          verified: fallbackUser.emailVerified,
+          token: fallbackUser.verificationToken?.substring(0, 10) + '...',
+          expires: fallbackUser.verificationTokenExpiresAt
+        })}`);
         
         // Use this user instead
         return { success: true, message: 'Email verified successfully (fallback matching)', user: fallbackUser };
@@ -147,9 +170,23 @@ export async function verifyEmail(token: string): Promise<{ success: boolean; me
     emailLogger.info(`User found with ID: ${user.id}, email: ${user.email}`);
 
     // Check if token is expired
-    if (user.verificationTokenExpiresAt && new Date() > user.verificationTokenExpiresAt) {
-      emailLogger.error(`Token expired at: ${user.verificationTokenExpiresAt}`);
-      return { success: false, message: 'Verification token has expired. Please request a new one.' };
+    if (user.verificationTokenExpiresAt) {
+      const now = new Date();
+      const isExpired = now > user.verificationTokenExpiresAt;
+      
+      emailLogger.info(`Token expiration check for user ${user.id}:
+        - Token expiration time: ${user.verificationTokenExpiresAt.toISOString()}
+        - Current time: ${now.toISOString()}
+        - Is expired: ${isExpired}
+        - Time difference in hours: ${(now.getTime() - user.verificationTokenExpiresAt.getTime()) / (1000 * 60 * 60)}
+      `);
+      
+      if (isExpired) {
+        emailLogger.error(`Token expired at: ${user.verificationTokenExpiresAt.toISOString()}`);
+        return { success: false, message: 'Verification token has expired. Please request a new one.' };
+      }
+    } else {
+      emailLogger.warning(`User ${user.id} has no verification token expiration set. Allowing verification without expiration check.`);
     }
 
     // Update user verification status
