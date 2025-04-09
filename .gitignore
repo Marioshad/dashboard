@@ -11,4 +11,13 @@ uploads
 .env
 .env.local
 .env.*.local
+logs/auth.log
+logs/database.log
+logs/stripe.log
+logs/combined.log
+logs/notification.log
+logs/websocket.log
+logs/error.log
+logs/email.log
+logs/openai.log
 
