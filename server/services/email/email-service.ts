@@ -165,6 +165,41 @@ export async function sendInvoiceEmail(
 }
 
 /**
+ * Send an email verification confirmation
+ * @param userEmail Email address to send to
+ * @param username Username for personalization
+ * @returns Boolean indicating if email was sent successfully
+ */
+export async function sendVerificationConfirmationEmail(
+  userEmail: string,
+  username: string
+): Promise<boolean> {
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #333;">Email Verified Successfully</h2>
+      <p>Hello ${username},</p>
+      <p>Your email address has been successfully verified. Thank you!</p>
+      <div style="background-color: #f5f5f5; padding: 15px; border-radius: 4px; margin: 20px 0;">
+        <p style="margin: 5px 0;"><strong>Account Update:</strong></p>
+        <p style="margin: 5px 0;">✅ Your email is now verified</p>
+        <p style="margin: 5px 0;">✅ You can now add items to your pantry</p>
+        <p style="margin: 5px 0;">✅ You can create locations and stores</p>
+        <p style="margin: 5px 0;">✅ You can upload and process receipts</p>
+        <p style="margin: 5px 0;">✅ You have access to all features of your account</p>
+      </div>
+      <p>If you have any questions, please contact our support team.</p>
+    </div>
+  `;
+  
+  return sendEmail({
+    to: userEmail,
+    subject: 'Email Verification Successful',
+    html,
+    text: `Email Verified Successfully\n\nHello ${username},\n\nYour email address has been successfully verified. Thank you!\n\nAccount Update:\n✅ Your email is now verified\n✅ You can now add items to your pantry\n✅ You can create locations and stores\n✅ You can upload and process receipts\n✅ You have access to all features of your account\n\nIf you have any questions, please contact our support team.`,
+  });
+}
+
+/**
  * Send a test email to verify configuration
  * @param userEmail Email address to send test to
  * @param adminEmail Optional admin email to CC
