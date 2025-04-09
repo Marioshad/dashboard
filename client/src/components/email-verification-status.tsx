@@ -55,10 +55,24 @@ export default function EmailVerificationStatus() {
   const handleResendVerification = async () => {
     try {
       setIsResending(true);
+      
+      // Use the apiRequest function which throws on non-2xx responses
       const response = await apiRequest("/api/email/resend-verification", {
         method: "POST"
       });
-      const data = await response.json();
+      
+      // Try to parse as JSON and handle the case where it might not be JSON
+      let data = { success: true, message: "Verification email sent successfully" };
+      try {
+        // Only attempt to parse if content-type is application/json
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          data = await response.json();
+        }
+      } catch (jsonError) {
+        console.log("Response is not JSON, using default success message");
+        // Continue with default success values
+      }
       
       toast({
         title: data.success ? "Verification Email Sent" : "Could not send verification email",
@@ -70,10 +84,11 @@ export default function EmailVerificationStatus() {
       if (data.success) {
         queryClient.invalidateQueries({ queryKey: ["/api/user"] });
       }
-    } catch (error) {
+    } catch (error: any) {
+      console.error("Error resending verification email:", error);
       toast({
         title: "Error",
-        description: "Could not resend verification email. Please try again later.",
+        description: error.message || "Could not resend verification email. Please try again later.",
         variant: "destructive",
       });
     } finally {
