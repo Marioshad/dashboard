@@ -1089,6 +1089,8 @@ export class DatabaseStorage implements IStorage {
 
   async getReceipts(userId: number): Promise<Receipt[]> {
     try {
+      console.log(`Getting receipts for user ${userId}`);
+      
       // First get the receipts
       const receiptList = await db
         .select()
@@ -1096,25 +1098,50 @@ export class DatabaseStorage implements IStorage {
         .where(eq(receipts.userId, userId))
         .orderBy(sql`receipts."uploadDate" DESC`);
       
+      console.log(`Found ${receiptList.length} receipts`);
+      
       // For each receipt with a storeId, fetch the associated store
       const receiptsWithStores = await Promise.all(
         receiptList.map(async (receipt) => {
-          if (receipt.storeId) {
-            const [storeData] = await db
-              .select()
-              .from(stores)
-              .where(eq(stores.id, receipt.storeId));
+          try {
+            if (receipt.storeId) {
+              console.log(`Fetching store data for receipt ${receipt.id}, storeId ${receipt.storeId}`);
               
-            // Return receipt with store information
-            return {
-              ...receipt,
-              store: storeData
-            };
+              try {
+                const storeResults = await db
+                  .select()
+                  .from(stores)
+                  .where(eq(stores.id, receipt.storeId));
+                
+                const storeData = storeResults[0];
+                
+                if (storeData) {
+                  console.log(`Found store: ${storeData.name}`);
+                  // Return receipt with store information
+                  return {
+                    ...receipt,
+                    store: storeData
+                  };
+                } else {
+                  console.log(`Store not found for ID ${receipt.storeId}, returning receipt without store data`);
+                  return receipt;
+                }
+              } catch (storeError) {
+                console.error(`Error fetching store for receipt ${receipt.id}:`, storeError);
+                // If there's an error getting the store, just return the receipt without store info
+                return receipt;
+              }
+            }
+            return receipt;
+          } catch (receiptError) {
+            console.error(`Error processing receipt ${receipt?.id || 'unknown'}:`, receiptError);
+            // If there's an error processing this receipt, return it as is rather than failing the whole operation
+            return receipt;
           }
-          return receipt;
         })
       );
       
+      console.log(`Processed ${receiptsWithStores.length} receipts with their store data`);
       return receiptsWithStores;
     } catch (error) {
       console.error('Error getting receipts:', error);
