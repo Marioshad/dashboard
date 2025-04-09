@@ -29,6 +29,7 @@ import { Receipt } from '@/types/receipt';
 import { useAuth } from '@/hooks/use-auth';
 import { useWebSocket } from '@/hooks/use-websocket-provider';
 import { Badge } from '@/components/ui/badge';
+import { EmailVerificationBanner } from '@/components/email-verification-banner';
 import { 
   Tooltip,
   TooltipContent,
@@ -130,6 +131,11 @@ export function ReceiptsPage() {
   return (
     <DashboardLayout>
       <div className="container mx-auto p-4 max-w-7xl">
+        {/* Email verification banner */}
+        <EmailVerificationBanner 
+          actionRequired="You need to verify your email address to upload and process receipts." 
+        />
+        
         <div className="flex flex-col gap-2 mb-6">
           <div className="flex justify-between items-center">
             <h1 className="text-3xl font-bold">Receipts</h1>
