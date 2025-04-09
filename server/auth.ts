@@ -176,8 +176,11 @@ export function setupAuth(app: Express) {
         
         if (process.env.SENDGRID_API_KEY && process.env.SENDGRID_FROM_EMAIL && user.email) {
           try {
-            // Use user ID directly instead of trying to pass the full user object
-            const emailSent = await sendVerificationEmail(user.id, baseUrl);
+            // Set APP_URL environment variable for verification URL generation
+            process.env.APP_URL = baseUrl;
+            
+            // Call sendVerificationEmail with user ID and user's email (not baseUrl)
+            const emailSent = await sendVerificationEmail(user.id, user.email);
             if (emailSent) {
               log(`Verification email sent successfully to ${user.email}`, 'auth');
             } else {
