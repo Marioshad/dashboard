@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 import DashboardLayout from '@/components/dashboard-layout';
+import { EmailVerificationBanner } from '@/components/email-verification-banner';
 import { Button } from '@/components/ui/button';
 import { 
   Card, 
@@ -173,6 +174,10 @@ export function StoresPage() {
   return (
     <DashboardLayout>
       <div className="container mx-auto p-4">
+        {/* Add Email Verification Banner */}
+        <EmailVerificationBanner 
+          actionRequired="You need to verify your email address to add, edit, or delete stores." 
+        />
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-2xl font-bold">Stores Management</h1>
           <Dialog open={storeDialogOpen} onOpenChange={setStoreDialogOpen}>
