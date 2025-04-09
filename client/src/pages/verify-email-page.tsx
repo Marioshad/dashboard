@@ -34,25 +34,33 @@ export default function VerifyEmailPage() {
             "Content-Type": "application/json"
           }
         });
-        const data = await response.json();
         
-        setVerificationStatus(data.success ? 'success' : 'error');
-        setMessage(data.message);
-        
-        if (data.success) {
+        // For successful response (HTTP 200)
+        if (response.ok) {
+          const data = await response.json();
+          setVerificationStatus('success');
+          setMessage(data.message || 'Email verified successfully');
+          
           toast({
             title: "Email Verified",
             description: "Your email has been successfully verified.",
             variant: "default",
           });
-        } else {
+        } 
+        // For error responses (HTTP 400 or 500)
+        else {
+          const errorData = await response.json();
+          setVerificationStatus('error');
+          setMessage(errorData.message || 'Invalid or expired verification token');
+          
           toast({
             title: "Verification Failed",
-            description: data.message,
+            description: errorData.message || 'Could not verify your email',
             variant: "destructive",
           });
         }
       } catch (error) {
+        // For network errors or parsing errors
         setVerificationStatus('error');
         setMessage('An error occurred while verifying your email. Please try again later.');
         
@@ -76,13 +84,22 @@ export default function VerifyEmailPage() {
       const response = await apiRequest("/api/email/resend-verification", {
         method: "POST"
       });
-      const data = await response.json();
       
-      toast({
-        title: data.success ? "Verification Email Sent" : "Could not send verification email",
-        description: data.message,
-        variant: data.success ? "default" : "destructive",
-      });
+      if (response.ok) {
+        const data = await response.json();
+        toast({
+          title: "Verification Email Sent",
+          description: data.message || "A new verification email has been sent to your email address.",
+          variant: "default",
+        });
+      } else {
+        const errorData = await response.json();
+        toast({
+          title: "Could not send verification email",
+          description: errorData.message || "Failed to send verification email. Please try again later.",
+          variant: "destructive",
+        });
+      }
     } catch (error) {
       toast({
         title: "Error",
