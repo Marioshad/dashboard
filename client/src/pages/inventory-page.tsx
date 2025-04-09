@@ -5,6 +5,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { FoodItem, Location } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrency } from "@/hooks/use-currency";
+import { EmailVerificationBanner } from "@/components/email-verification-banner";
 import {
   Card,
   CardContent,
@@ -295,6 +296,11 @@ export default function InventoryPage() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
+        {/* Email verification banner */}
+        <EmailVerificationBanner 
+          actionRequired="You need to verify your email address to add or modify food items." 
+        />
+        
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Food Inventory</h1>

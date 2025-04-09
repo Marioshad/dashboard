@@ -4,6 +4,7 @@ import { DashboardLayout } from "@/components/dashboard-layout";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Location, InsertLocation } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
+import { EmailVerificationBanner } from "@/components/email-verification-banner";
 import {
   Card,
   CardContent,
@@ -201,6 +202,11 @@ export default function LocationsPage() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
+        {/* Email verification banner */}
+        <EmailVerificationBanner 
+          actionRequired="You need to verify your email address to add or modify storage locations." 
+        />
+        
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Storage Locations</h1>
