@@ -1,16 +1,24 @@
-// server/scripts/seed-db.ts
 import { runSeeders } from '../seeders';
 import { appLogger as logger } from '../services/logger';
+import dotenv from 'dotenv';
+
+dotenv.config(); // Load .env variables
 
 async function seedDatabase() {
     try {
         logger.info('🌱 Running seeders...');
 
+        const { SUPERADMIN_USERNAME, SUPERADMIN_PASSWORD, SUPERADMIN_EMAIL } = process.env;
+
+        if (!SUPERADMIN_USERNAME || !SUPERADMIN_PASSWORD || !SUPERADMIN_EMAIL) {
+            throw new Error('Missing SUPERADMIN credentials in .env');
+        }
+
         const result = await runSeeders({
             superadmin: {
-                username: 'superadmin',
-                password: 'changeme123',
-                email: 'superadmin@foodvault.local',
+                username: SUPERADMIN_USERNAME,
+                password: SUPERADMIN_PASSWORD,
+                email: SUPERADMIN_EMAIL,
             },
         });
 
