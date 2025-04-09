@@ -27,6 +27,8 @@ export default function VerifyEmailPage() {
     const verifyEmail = async () => {
       try {
         setIsVerifying(true);
+        console.log("[EMAIL VERIFICATION] Starting verification with token:", token?.substring(0, 10) + "...");
+        
         const response = await apiRequest("/api/email/verify", {
           method: "POST",
           body: JSON.stringify({ token }),
@@ -35,9 +37,13 @@ export default function VerifyEmailPage() {
           }
         });
         
+        console.log("[EMAIL VERIFICATION] Response status:", response.status, response.statusText);
+        
         // For successful response (HTTP 200)
         if (response.ok) {
           const data = await response.json();
+          console.log("[EMAIL VERIFICATION] Success response data:", data);
+          
           setVerificationStatus('success');
           setMessage(data.message || 'Email verified successfully');
           
@@ -50,6 +56,12 @@ export default function VerifyEmailPage() {
         // For error responses (HTTP 400 or 500)
         else {
           const errorData = await response.json();
+          console.error("[EMAIL VERIFICATION] Error response:", {
+            status: response.status,
+            statusText: response.statusText,
+            data: errorData
+          });
+          
           setVerificationStatus('error');
           setMessage(errorData.message || 'Invalid or expired verification token');
           
@@ -61,6 +73,8 @@ export default function VerifyEmailPage() {
         }
       } catch (error) {
         // For network errors or parsing errors
+        console.error("[EMAIL VERIFICATION] Exception caught:", error);
+        
         setVerificationStatus('error');
         setMessage('An error occurred while verifying your email. Please try again later.');
         
@@ -71,6 +85,7 @@ export default function VerifyEmailPage() {
         });
       } finally {
         setIsVerifying(false);
+        console.log("[EMAIL VERIFICATION] Verification process completed with status:", verificationStatus);
       }
     };
     
@@ -81,12 +96,18 @@ export default function VerifyEmailPage() {
   const handleResendVerification = async () => {
     try {
       setIsResending(true);
+      console.log("[EMAIL VERIFICATION] Attempting to resend verification email");
+      
       const response = await apiRequest("/api/email/resend-verification", {
         method: "POST"
       });
       
+      console.log("[EMAIL VERIFICATION] Resend response status:", response.status, response.statusText);
+      
       if (response.ok) {
         const data = await response.json();
+        console.log("[EMAIL VERIFICATION] Resend success response:", data);
+        
         toast({
           title: "Verification Email Sent",
           description: data.message || "A new verification email has been sent to your email address.",
@@ -94,6 +115,12 @@ export default function VerifyEmailPage() {
         });
       } else {
         const errorData = await response.json();
+        console.error("[EMAIL VERIFICATION] Resend error response:", {
+          status: response.status,
+          statusText: response.statusText,
+          data: errorData
+        });
+        
         toast({
           title: "Could not send verification email",
           description: errorData.message || "Failed to send verification email. Please try again later.",
@@ -101,6 +128,8 @@ export default function VerifyEmailPage() {
         });
       }
     } catch (error) {
+      console.error("[EMAIL VERIFICATION] Resend exception caught:", error);
+      
       toast({
         title: "Error",
         description: "Could not resend verification email. Please try again later.",
@@ -108,6 +137,7 @@ export default function VerifyEmailPage() {
       });
     } finally {
       setIsResending(false);
+      console.log("[EMAIL VERIFICATION] Resend verification process completed");
     }
   };
   
