@@ -32,9 +32,48 @@ export async function apiRequest(
   console.log(`Response headers: content-type=${res.headers.get('content-type')}, cache-control=${res.headers.get('cache-control')}`);
   
   if (!res.ok) {
-    const errorText = await res.text();
+    let errorData;
+    let errorText;
+    
+    try {
+      // Try to parse as JSON first
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        errorData = await res.json();
+        errorText = JSON.stringify(errorData);
+        
+        // Handle email verification errors in a special way
+        if (res.status === 403 && errorData.error === 'EMAIL_VERIFICATION_REQUIRED') {
+          const error = new Error('Email verification required');
+          error.name = 'EmailVerificationError';
+          // @ts-ignore - Adding properties to Error
+          error.status = res.status;
+          // @ts-ignore
+          error.errorData = errorData;
+          throw error;
+        }
+      } else {
+        errorText = await res.text();
+      }
+    } catch (e) {
+      if (e.name === 'EmailVerificationError') {
+        throw e; // Rethrow the special error
+      }
+      // If we fail to parse JSON, just use text
+      try {
+        errorText = await res.text();
+      } catch (textError) {
+        errorText = res.statusText;
+      }
+    }
+    
     console.error(`API error: ${res.status}`, errorText);
-    throw new Error(`${res.status}: ${errorText || res.statusText}`);
+    const error = new Error(`${res.status}: ${errorText || res.statusText}`);
+    // @ts-ignore - Adding properties to Error
+    error.status = res.status;
+    // @ts-ignore
+    error.errorData = errorData;
+    throw error;
   }
   
   const data = await res.json();
@@ -61,9 +100,48 @@ export const getQueryFn: <T>(options: {
     }
 
     if (!res.ok) {
-      const errorText = await res.text();
+      let errorData;
+      let errorText;
+      
+      try {
+        // Try to parse as JSON first
+        const contentType = res.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          errorData = await res.json();
+          errorText = JSON.stringify(errorData);
+          
+          // Handle email verification errors in a special way
+          if (res.status === 403 && errorData.error === 'EMAIL_VERIFICATION_REQUIRED') {
+            const error = new Error('Email verification required');
+            error.name = 'EmailVerificationError';
+            // @ts-ignore - Adding properties to Error
+            error.status = res.status;
+            // @ts-ignore
+            error.errorData = errorData;
+            throw error;
+          }
+        } else {
+          errorText = await res.text();
+        }
+      } catch (e) {
+        if (e.name === 'EmailVerificationError') {
+          throw e; // Rethrow the special error
+        }
+        // If we fail to parse JSON, just use text
+        try {
+          errorText = await res.text();
+        } catch (textError) {
+          errorText = res.statusText;
+        }
+      }
+      
       console.error(`Query error: ${res.status}`, errorText);
-      throw new Error(`${res.status}: ${errorText || res.statusText}`);
+      const error = new Error(`${res.status}: ${errorText || res.statusText}`);
+      // @ts-ignore - Adding properties to Error
+      error.status = res.status;
+      // @ts-ignore
+      error.errorData = errorData;
+      throw error;
     }
     
     const data = await res.json();

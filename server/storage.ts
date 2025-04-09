@@ -1,5 +1,6 @@
+import * as schema from "@shared/schema";
 import { 
-  users, locations, foodItems, stores, receipts,
+  users, locations, foodItems, stores, receipts, roles,
   type User, type InsertUser, type UpdateProfile,
   type Location, type InsertLocation, type UpdateLocation,
   type Store, type InsertStore, type UpdateStore,
@@ -18,8 +19,29 @@ export interface IStorage {
   // User methods
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  getUserByStripeCustomerId(stripeCustomerId: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateProfile(userId: number, profile: UpdateProfile): Promise<User>;
+  updateUserSubscription(userId: number, subscription: {
+    stripeSubscriptionId?: string;
+    subscriptionStatus?: string;
+    subscriptionTier?: string;
+    currentBillingPeriodStart?: Date | null;
+    currentBillingPeriodEnd?: Date | null;
+  }): Promise<User>;
+  updateUserLimits(userId: number, limits: {
+    receiptScansLimit?: number;
+    maxItems?: number;
+    maxSharedUsers?: number;
+  }): Promise<User>;
+  updateStripeCustomerId(userId: number, stripeCustomerId: string): Promise<User>;
+  updateUserVerification(userId: number, verificationData: {
+    emailVerified?: boolean;
+    verificationToken?: string | null;
+    verificationTokenExpiresAt?: Date | null;
+  }): Promise<User>;
+  getRoleByName(roleName: string): Promise<{ id: number; name: string } | undefined>;
+  updateUserRole(userId: number, roleId: number): Promise<User>;
   
   // Location methods
   createLocation(location: InsertLocation & { userId: number }): Promise<Location>;
@@ -103,8 +125,62 @@ export class DatabaseStorage implements IStorage {
 
   async getUser(id: number): Promise<User | undefined> {
     try {
-      const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
-      return result[0];
+      // Explicitly select columns to avoid issues with schema mismatches
+      const result = await db.select({
+        id: users.id,
+        username: users.username,
+        password: users.password,
+        fullName: users.fullName,
+        email: users.email,
+        bio: users.bio,
+        avatarUrl: users.avatarUrl,
+        roleId: users.roleId,
+        currency: users.currency,
+        twoFactorEnabled: users.twoFactorEnabled,
+        twoFactorSecret: users.twoFactorSecret,
+        emailNotifications: users.emailNotifications,
+        webNotifications: users.webNotifications,
+        mentionNotifications: users.mentionNotifications,
+        followNotifications: users.followNotifications,
+        verificationToken: users.verificationToken,
+        verificationTokenExpiresAt: users.verificationTokenExpiresAt,
+        stripeCustomerId: users.stripeCustomerId,
+        stripeSubscriptionId: users.stripeSubscriptionId,
+        subscriptionStatus: users.subscriptionStatus,
+        subscriptionTier: users.subscriptionTier,
+        receiptScansUsed: users.receiptScansUsed,
+        receiptScansLimit: users.receiptScansLimit,
+        maxItems: users.maxItems,
+        maxSharedUsers: users.maxSharedUsers,
+        currentBillingPeriodStart: users.currentBillingPeriodStart,
+        currentBillingPeriodEnd: users.currentBillingPeriodEnd,
+        createdAt: users.createdAt,
+        updatedAt: users.updatedAt,
+        deletedAt: users.deletedAt,
+      })
+      .from(users)
+      .where(eq(users.id, id))
+      .limit(1);
+      
+      // If email_verified column exists, get it separately to avoid errors
+      const user = result[0];
+      if (user) {
+        try {
+          const emailVerifiedResult = await db.execute(
+            sql`SELECT email_verified FROM users WHERE id = ${id}`
+          );
+          if (emailVerifiedResult.rows && emailVerifiedResult.rows.length > 0) {
+            (user as any).emailVerified = emailVerifiedResult.rows[0].email_verified;
+          } else {
+            (user as any).emailVerified = false;
+          }
+        } catch (err) {
+          console.warn('email_verified column not available:', err);
+          (user as any).emailVerified = false;
+        }
+      }
+      
+      return user;
     } catch (error) {
       console.error('Error getting user by ID:', error);
       throw error;
@@ -113,8 +189,62 @@ export class DatabaseStorage implements IStorage {
 
   async getUserByUsername(username: string): Promise<User | undefined> {
     try {
-      const result = await db.select().from(users).where(eq(users.username, username)).limit(1);
-      return result[0];
+      // Explicitly select columns to avoid issues with schema mismatches
+      const result = await db.select({
+        id: users.id,
+        username: users.username,
+        password: users.password,
+        fullName: users.fullName,
+        email: users.email,
+        bio: users.bio,
+        avatarUrl: users.avatarUrl,
+        roleId: users.roleId,
+        currency: users.currency,
+        twoFactorEnabled: users.twoFactorEnabled,
+        twoFactorSecret: users.twoFactorSecret,
+        emailNotifications: users.emailNotifications,
+        webNotifications: users.webNotifications,
+        mentionNotifications: users.mentionNotifications,
+        followNotifications: users.followNotifications,
+        verificationToken: users.verificationToken,
+        verificationTokenExpiresAt: users.verificationTokenExpiresAt,
+        stripeCustomerId: users.stripeCustomerId,
+        stripeSubscriptionId: users.stripeSubscriptionId,
+        subscriptionStatus: users.subscriptionStatus,
+        subscriptionTier: users.subscriptionTier,
+        receiptScansUsed: users.receiptScansUsed,
+        receiptScansLimit: users.receiptScansLimit,
+        maxItems: users.maxItems,
+        maxSharedUsers: users.maxSharedUsers,
+        currentBillingPeriodStart: users.currentBillingPeriodStart,
+        currentBillingPeriodEnd: users.currentBillingPeriodEnd,
+        createdAt: users.createdAt,
+        updatedAt: users.updatedAt,
+        deletedAt: users.deletedAt,
+      })
+      .from(users)
+      .where(eq(users.username, username))
+      .limit(1);
+      
+      // If email_verified column exists, get it separately to avoid errors
+      const user = result[0];
+      if (user) {
+        try {
+          const emailVerifiedResult = await db.execute(
+            sql`SELECT email_verified FROM users WHERE id = ${user.id}`
+          );
+          if (emailVerifiedResult.rows && emailVerifiedResult.rows.length > 0) {
+            (user as any).emailVerified = emailVerifiedResult.rows[0].email_verified;
+          } else {
+            (user as any).emailVerified = false;
+          }
+        } catch (err) {
+          console.warn('email_verified column not available:', err);
+          (user as any).emailVerified = false;
+        }
+      }
+      
+      return user;
     } catch (error) {
       console.error('Error getting user by username:', error);
       throw error;
@@ -123,7 +253,37 @@ export class DatabaseStorage implements IStorage {
 
   async createUser(insertUser: InsertUser): Promise<User> {
     try {
+      // First, ensure we don't try to insert email_verified if it doesn't exist
+      const columnsResult = await db.execute(sql`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'users'
+      `);
+      
+      const existingColumns = columnsResult.rows.map((row: any) => row.column_name);
+      const insertValues = { ...insertUser };
+      
+      // Check if the column exists and set default emailVerified
+      const hasEmailVerifiedColumn = existingColumns.includes('email_verified');
+      
+      // Insert the user with the filtered values
       const [user] = await db.insert(users).values([insertUser]).returning();
+      
+      // If email_verified column exists, set it to false for new users
+      if (hasEmailVerifiedColumn) {
+        try {
+          await db.execute(sql`
+            UPDATE users SET email_verified = FALSE 
+            WHERE id = ${user.id} AND email_verified IS NULL
+          `);
+        } catch (err) {
+          console.warn('Unable to set email_verified for new user:', err);
+        }
+      }
+      
+      // Add emailVerified property to returned user
+      (user as any).emailVerified = false;
+      
       return user;
     } catch (error) {
       console.error('Error creating user:', error);
@@ -154,6 +314,81 @@ export class DatabaseStorage implements IStorage {
         console.error('STORAGE: Error message:', error.message);
         console.error('STORAGE: Error stack:', error.stack);
       }
+      throw error;
+    }
+  }
+  
+  async getUserByStripeCustomerId(stripeCustomerId: string): Promise<User | undefined> {
+    try {
+      const result = await db
+        .select()
+        .from(users)
+        .where(eq(users.stripeCustomerId, stripeCustomerId))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error('Error getting user by Stripe customer ID:', error);
+      throw error;
+    }
+  }
+  
+  async updateUserSubscription(userId: number, subscription: {
+    stripeSubscriptionId?: string;
+    subscriptionStatus?: string;
+    subscriptionTier?: string;
+    currentBillingPeriodStart?: Date | null;
+    currentBillingPeriodEnd?: Date | null;
+  }): Promise<User> {
+    try {
+      const [user] = await db
+        .update(users)
+        .set({
+          ...subscription,
+          updatedAt: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(users.id, userId))
+        .returning();
+      return user;
+    } catch (error) {
+      console.error('Error updating user subscription:', error);
+      throw error;
+    }
+  }
+  
+  async updateUserLimits(userId: number, limits: {
+    receiptScansLimit?: number;
+    maxItems?: number;
+    maxSharedUsers?: number;
+  }): Promise<User> {
+    try {
+      const [user] = await db
+        .update(users)
+        .set({
+          ...limits,
+          updatedAt: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(users.id, userId))
+        .returning();
+      return user;
+    } catch (error) {
+      console.error('Error updating user limits:', error);
+      throw error;
+    }
+  }
+  
+  async updateStripeCustomerId(userId: number, stripeCustomerId: string): Promise<User> {
+    try {
+      const [user] = await db
+        .update(users)
+        .set({
+          stripeCustomerId,
+          updatedAt: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(users.id, userId))
+        .returning();
+      return user;
+    } catch (error) {
+      console.error('Error updating Stripe customer ID:', error);
       throw error;
     }
   }
@@ -765,6 +1000,145 @@ export class DatabaseStorage implements IStorage {
       return result;
     } catch (error) {
       console.error('Error getting food items by receipt ID:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update user email verification status and token
+   */
+  async updateUserVerification(userId: number, verificationData: {
+    emailVerified?: boolean;
+    verificationToken?: string | null;
+    verificationTokenExpiresAt?: Date | null;
+  }): Promise<User> {
+    try {
+      // Fix the field names to match the database schema
+      const dataToUpdate: any = {
+        updatedAt: sql`CURRENT_TIMESTAMP`,
+      };
+      
+      // Map the fields to the actual database column names
+      if (verificationData.emailVerified !== undefined) {
+        dataToUpdate.email_verified = verificationData.emailVerified;
+      }
+      
+      if (verificationData.verificationToken !== undefined) {
+        dataToUpdate.verification_token = verificationData.verificationToken;
+      }
+      
+      // Update both expiration columns in the database to maintain compatibility
+      if (verificationData.verificationTokenExpiresAt !== undefined) {
+        dataToUpdate.verification_token_expires_at = verificationData.verificationTokenExpiresAt;
+        // Also update the old column to maintain compatibility
+        dataToUpdate.verification_token_expiry = verificationData.verificationTokenExpiresAt;
+      }
+      
+      console.log('Updating user verification with data:', dataToUpdate);
+      
+      // Use a SQL query that doesn't fail if a column is missing
+      try {
+        const [user] = await db
+          .update(users)
+          .set(dataToUpdate)
+          .where(eq(users.id, userId))
+          .returning();
+        
+        return user;
+      } catch (dbError) {
+        console.error('Error in updateUserVerification with Drizzle:', dbError);
+        
+        // Fallback to raw SQL query
+        // Get all existing columns first
+        const columnsResult = await db.execute(sql`
+          SELECT column_name 
+          FROM information_schema.columns 
+          WHERE table_name = 'users'
+        `);
+        
+        const columnNames = columnsResult.rows.map((row: any) => row.column_name);
+        
+        // Build SQL sets that only include fields that exist in the database
+        const setParts = [];
+        Object.entries(dataToUpdate).forEach(([key, value]) => {
+          if (columnNames.includes(key)) {
+            if (value === null) {
+              setParts.push(`${key} = NULL`);
+            } else if (value instanceof Date) {
+              setParts.push(`${key} = '${value.toISOString()}'`);
+            } else if (typeof value === 'string') {
+              setParts.push(`${key} = '${value}'`);
+            } else if (typeof value === 'boolean') {
+              setParts.push(`${key} = ${value}`);
+            } else if (typeof value === 'number') {
+              setParts.push(`${key} = ${value}`);
+            } else if (value.constructor && value.constructor.name === 'PgSql') {
+              // SQL expression, include as is
+              setParts.push(`${key} = CURRENT_TIMESTAMP`);
+            }
+          }
+        });
+        
+        if (setParts.length === 0) {
+          throw new Error('No valid fields to update');
+        }
+        
+        // Execute the raw SQL query
+        const result = await db.execute(sql`
+          UPDATE users 
+          SET ${sql.raw(setParts.join(', '))} 
+          WHERE id = ${userId} 
+          RETURNING *
+        `);
+        
+        if (result.rows && result.rows.length > 0) {
+          return result.rows[0] as User;
+        } else {
+          throw new Error('User update failed, no rows returned');
+        }
+      }
+    } catch (error) {
+      console.error('Error updating user verification:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get a role by name
+   */
+  async getRoleByName(roleName: string): Promise<{ id: number; name: string } | undefined> {
+    try {
+      // Use the directly imported roles reference
+      const [role] = await db
+        .select({
+          id: roles.id,
+          name: roles.name
+        })
+        .from(roles)
+        .where(eq(roles.name, roleName));
+      return role;
+    } catch (error) {
+      console.error('Error getting role by name:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update user role
+   */
+  async updateUserRole(userId: number, roleId: number): Promise<User> {
+    try {
+      const [user] = await db
+        .update(users)
+        .set({
+          roleId,
+          updatedAt: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(users.id, userId))
+        .returning();
+      return user;
+    } catch (error) {
+      console.error('Error updating user role:', error);
       throw error;
     }
   }

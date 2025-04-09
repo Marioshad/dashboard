@@ -1,3 +1,7 @@
+// !!!DEPRECATED!!! - Use use-websocket-provider.tsx instead
+// This file is kept for reference only and should not be imported anywhere.
+// It has been replaced by the WebSocketProvider implementation.
+
 import { useState, useEffect, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { queryClient } from '@/lib/queryClient';
@@ -7,7 +11,9 @@ interface WebSocketMessage {
   data: any;
 }
 
-export function useWebSocket() {
+// This function is deprecated and should not be used anymore
+// Use the useWebSocket hook from use-websocket-provider.tsx instead
+export function useWebSocketLegacy() {
   const [socket, setSocket] = useState<WebSocket | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);

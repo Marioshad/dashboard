@@ -27,7 +27,6 @@ export const SUBSCRIPTION_TIERS = [
     icon: "⬆️",
     maxItems: 50,
     receiptScansPerMonth: 3,
-    maxSharedUsers: 1,
     description: "Free plan for casual users and small households",
     features: [
       "Track up to 50 items",
@@ -47,7 +46,6 @@ export const SUBSCRIPTION_TIERS = [
     icon: "💡",
     maxItems: -1, // unlimited
     receiptScansPerMonth: 20,
-    maxSharedUsers: 3,
     description: "For organized households looking to save money",
     features: [
       "Unlimited items",
@@ -68,7 +66,6 @@ export const SUBSCRIPTION_TIERS = [
     icon: "🧑‍🍳",
     maxItems: -1, // unlimited
     receiptScansPerMonth: -1, // unlimited
-    maxSharedUsers: 6,
     description: "For families, meal planners, and power users",
     features: [
       "Everything in Smart Pantry",
@@ -91,6 +88,13 @@ export const appSettings = pgTable("app_settings", {
   require2FA: boolean("require_2fa").default(false).notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   updatedBy: integer("updated_by").references(() => users.id),
+  // Stripe settings
+  stripeSmartProductId: text("stripe_smart_product_id"),
+  stripeProProductId: text("stripe_pro_product_id"),
+  stripeSmartMonthlyPriceId: text("stripe_smart_monthly_price_id"),
+  stripeSmartYearlyPriceId: text("stripe_smart_yearly_price_id"),
+  stripeProMonthlyPriceId: text("stripe_pro_monthly_price_id"),
+  stripeProYearlyPriceId: text("stripe_pro_yearly_price_id"),
 });
 
 export const notifications = pgTable("notifications", {
@@ -119,6 +123,12 @@ export const users = pgTable("users", {
   webNotifications: boolean("web_notifications").default(true),
   mentionNotifications: boolean("mention_notifications").default(true),
   followNotifications: boolean("follow_notifications").default(true),
+  
+  // Email verification fields
+  emailVerified: boolean("email_verified").default(false),
+  verificationToken: text("verification_token"),
+  verificationTokenExpiresAt: timestamp("verification_token_expires_at"),
+  
   stripeCustomerId: text("stripe_customer_id"),
   stripeSubscriptionId: text("stripe_subscription_id"),
   subscriptionStatus: text("subscription_status").default("inactive"),
@@ -126,7 +136,6 @@ export const users = pgTable("users", {
   receiptScansUsed: integer("receipt_scans_used").default(0), // Used in current billing period
   receiptScansLimit: integer("receipt_scans_limit").default(3), // Based on subscription tier
   maxItems: integer("max_items").default(50), // Based on subscription tier (50, -1=unlimited, -1=unlimited)
-  maxSharedUsers: integer("max_shared_users").default(1), // Based on subscription tier (1, 3, 6)
   currentBillingPeriodStart: timestamp("current_billing_period_start"), // For tracking receipt scan resets
   currentBillingPeriodEnd: timestamp("current_billing_period_end"), // For tracking receipt scan resets
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -196,20 +205,20 @@ export const stores = pgTable("stores", {
 // Receipts table for storing uploaded receipts
 export const receipts = pgTable("receipts", {
   id: serial("id").primaryKey(),
-  userId: integer("userId").notNull().references(() => users.id),
-  storeId: integer("storeId").references(() => stores.id),
-  filePath: text("filePath").notNull(),
-  fileName: text("fileName").notNull(),
-  fileSize: integer("fileSize").notNull(),
-  mimeType: text("mimeType").notNull(),
-  uploadDate: timestamp("uploadDate").defaultNow().notNull(),
-  extractedData: jsonb("extractedData"),
-  totalAmount: decimal("totalAmount", { precision: 10, scale: 2 }),
-  receiptDate: timestamp("receiptDate"),
-  receiptNumber: text("receiptNumber"),
+  userId: integer("user_id").notNull().references(() => users.id),
+  storeId: integer("store_id").references(() => stores.id),
+  filePath: text("file_path").notNull(),
+  fileName: text("file_name").notNull(),
+  fileSize: integer("file_size").notNull(),
+  mimeType: text("mime_type").notNull(),
+  uploadDate: timestamp("upload_date").defaultNow().notNull(),
+  extractedData: jsonb("extracted_data"),
+  totalAmount: decimal("total_amount", { precision: 10, scale: 2 }),
+  receiptDate: timestamp("receipt_date"),
+  receiptNumber: text("receipt_number"),
   language: text("language"), // Receipt language detected
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 // Tags table for categorizing food items
@@ -217,7 +226,7 @@ export const tags = pgTable("tags", {
   id: serial("id").primaryKey(),
   name: text("name").notNull().unique(),
   color: text("color").default("#3B82F6"),
-  isSystem: boolean("is_system").default(false),
+  is_system: boolean("is_system").default(false),
   userId: integer("user_id").references(() => users.id), // null for system tags
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -242,7 +251,6 @@ export const subscriptionTiers = pgTable("subscription_tiers", {
   priceYearly: decimal("price_yearly", { precision: 10, scale: 2 }).notNull(),
   maxItems: integer("max_items").notNull(),
   receiptScansPerMonth: integer("receipt_scans_per_month").notNull(),
-  maxSharedUsers: integer("max_shared_users").notNull(),
   description: text("description").notNull(),
   features: jsonb("features").notNull(), // Storing features as JSON
   stripePriceIdMonthly: text("stripe_price_id_monthly"),
@@ -614,6 +622,7 @@ export type InsertFoodItem = z.infer<typeof insertFoodItemSchema>;
 export type UpdateFoodItem = z.infer<typeof updateFoodItemSchema>;
 export type InsertReceipt = z.infer<typeof insertReceiptSchema>;
 export type UpdateReceipt = z.infer<typeof updateReceiptSchema>;
+// Get the full User type directly from the database schema
 export type User = typeof users.$inferSelect;
 export type Role = typeof roles.$inferSelect;
 export type Permission = typeof permissions.$inferSelect;

@@ -1,0 +1,709 @@
+import type { Express, Request, Response } from "express";
+import { storage } from "../../storage";
+import Stripe from "stripe";
+import { pool } from "../../db";
+import { OpenAI } from "openai";
+
+// Initialize Stripe if API key is available
+let stripe: Stripe | null = null;
+try {
+  if (process.env.STRIPE_SECRET_KEY) {
+    stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+      apiVersion: "2025-03-31.basil",
+    });
+    console.log("[admin] Stripe service initialized");
+  } else {
+    console.log("[admin] Stripe service not initialized (no API key)");
+  }
+} catch (error) {
+  console.error("[admin] Error initializing Stripe:", error);
+}
+
+// Initialize OpenAI if API key is available
+let openai: OpenAI | null = null;
+try {
+  if (process.env.OPENAI_API_KEY) {
+    openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+    console.log("[admin] OpenAI service initialized");
+  } else {
+    console.log("[admin] OpenAI service not initialized (no API key)");
+  }
+} catch (error) {
+  console.error("[admin] Error initializing OpenAI:", error);
+}
+
+// Check if the user is an admin
+function isAdmin(req: Request, res: Response, next: any) {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ message: "Not authenticated" });
+  }
+
+  const user = req.user;
+  if (user.roleId !== 1 && user.roleId !== 2) {
+    return res.status(403).json({ message: "Not authorized" });
+  }
+
+  next();
+}
+
+export function registerAdminRoutes(app: Express) {
+  // Middleware to ensure admin access
+  app.use('/api/admin', isAdmin);
+
+  // Get Stripe settings
+  app.get('/api/admin/stripe-settings', async (req, res) => {
+    try {
+      const client = await pool.connect();
+      try {
+        // Ensure we have a settings record
+        await client.query(`
+          INSERT INTO app_settings (id, require_2fa, updated_at)
+          SELECT 1, false, NOW()
+          WHERE NOT EXISTS (SELECT 1 FROM app_settings WHERE id = 1)
+        `);
+        
+        // Get the settings from the database
+        const result = await client.query(`
+          SELECT 
+            stripe_smart_product_id,
+            stripe_pro_product_id,
+            stripe_smart_monthly_price_id,
+            stripe_smart_yearly_price_id,
+            stripe_pro_monthly_price_id,
+            stripe_pro_yearly_price_id
+          FROM app_settings 
+          WHERE id = 1
+        `);
+        
+        const dbSettings = result.rows[0] || {};
+        
+        // Fallback to environment variables if database values are not set
+        res.json({
+          priceSmartMonthly: dbSettings.stripe_smart_monthly_price_id || process.env.STRIPE_PRICE_SMART_MONTHLY || "price_smart_monthly",
+          priceSmartYearly: dbSettings.stripe_smart_yearly_price_id || process.env.STRIPE_PRICE_SMART_YEARLY || "price_smart_yearly",
+          priceProMonthly: dbSettings.stripe_pro_monthly_price_id || process.env.STRIPE_PRICE_PRO_MONTHLY || "price_pro_monthly",
+          priceProYearly: dbSettings.stripe_pro_yearly_price_id || process.env.STRIPE_PRICE_PRO_YEARLY || "price_pro_yearly",
+          prodSmart: dbSettings.stripe_smart_product_id || process.env.STRIPE_PRODUCT_SMART || "prod_smart",
+          prodPro: dbSettings.stripe_pro_product_id || process.env.STRIPE_PRODUCT_PRO || "prod_pro",
+        });
+      } finally {
+        client.release();
+      }
+    } catch (error: any) {
+      console.error('Error fetching Stripe settings:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Save Stripe settings
+  app.post('/api/admin/stripe-settings', async (req, res) => {
+    try {
+      const { 
+        priceSmartMonthly, 
+        priceSmartYearly, 
+        priceProMonthly, 
+        priceProYearly,
+        prodSmart,
+        prodPro
+      } = req.body;
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        
+        // Ensure we have a settings record
+        await client.query(`
+          INSERT INTO app_settings (id, require_2fa, updated_at)
+          SELECT 1, false, NOW()
+          WHERE NOT EXISTS (SELECT 1 FROM app_settings WHERE id = 1)
+        `);
+        
+        // Update the settings
+        await client.query(`
+          UPDATE app_settings
+          SET 
+            stripe_smart_product_id = $1,
+            stripe_pro_product_id = $2,
+            stripe_smart_monthly_price_id = $3,
+            stripe_smart_yearly_price_id = $4,
+            stripe_pro_monthly_price_id = $5,
+            stripe_pro_yearly_price_id = $6,
+            updated_at = NOW(),
+            updated_by = $7
+          WHERE id = 1
+        `, [
+          prodSmart,
+          prodPro,
+          priceSmartMonthly,
+          priceSmartYearly,
+          priceProMonthly,
+          priceProYearly,
+          req.user.id
+        ]);
+        
+        await client.query('COMMIT');
+        
+        res.json({ 
+          success: true,
+          message: "Stripe settings updated successfully",
+          settings: {
+            priceSmartMonthly, 
+            priceSmartYearly, 
+            priceProMonthly, 
+            priceProYearly,
+            prodSmart,
+            prodPro
+          }
+        });
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    } catch (error: any) {
+      console.error('Error saving Stripe settings:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Test Stripe connection
+  app.post('/api/admin/stripe-test-connection', async (req, res) => {
+    try {
+      if (!stripe) {
+        return res.status(500).json({ message: "Stripe is not configured" });
+      }
+
+      // Test the connection by getting account info
+      const account = await stripe.accounts.retrieve();
+      
+      res.json({ 
+        success: true, 
+        accountId: account.id,
+        apiVersion: "2025-03-31.basil" // Use the known API version directly
+      });
+    } catch (error: any) {
+      console.error('Error testing Stripe connection:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Reset all user subscription data
+  app.post('/api/admin/reset-all-subscriptions', async (req, res) => {
+    try {
+      // Get all users with subscription IDs
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        
+        // Reset subscription data for all users
+        const resetResult = await client.query(`
+          UPDATE users 
+          SET stripe_subscription_id = NULL, 
+              subscription_status = 'inactive',
+              subscription_tier = 'free',
+              current_billing_period_start = NULL,
+              current_billing_period_end = NULL
+          WHERE stripe_subscription_id IS NOT NULL
+        `);
+        
+        await client.query('COMMIT');
+        
+        res.json({ 
+          success: true, 
+          message: "All subscription data has been reset",
+          count: resetResult.rowCount
+        });
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    } catch (error: any) {
+      console.error('Error resetting subscription data:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get system status
+  app.get('/api/admin/system/status', async (req, res) => {
+    try {
+      // Database status
+      let dbStatus = {
+        connected: false,
+        version: "",
+        lastPing: ""
+      };
+
+      try {
+        const client = await pool.connect();
+        try {
+          const result = await client.query('SELECT version()');
+          dbStatus.connected = true;
+          dbStatus.version = result.rows[0].version;
+          dbStatus.lastPing = new Date().toISOString();
+        } finally {
+          client.release();
+        }
+      } catch (error) {
+        console.error("Database connection error:", error);
+      }
+
+      // Stripe status
+      let stripeStatus = {
+        connected: false,
+        apiVersion: "",
+        productsCount: 0,
+        pricesCount: 0
+      };
+
+      if (stripe) {
+        try {
+          // Check connection by listing a product
+          const products = await stripe.products.list({ limit: 10 });
+          const prices = await stripe.prices.list({ limit: 10 });
+          
+          stripeStatus.connected = true;
+          stripeStatus.apiVersion = "2025-03-31.basil"; // Use the API version defined in the initialization
+          stripeStatus.productsCount = products.data.length;
+          stripeStatus.pricesCount = prices.data.length;
+        } catch (error) {
+          console.error("Stripe connection error:", error);
+        }
+      }
+
+      // OpenAI status
+      let openaiStatus = {
+        connected: false,
+        availableModels: "",
+        defaultModel: ""
+      };
+
+      if (openai) {
+        try {
+          // Check connection by listing models
+          const models = await openai.models.list();
+          
+          openaiStatus.connected = true;
+          openaiStatus.availableModels = models.data.length.toString();
+          openaiStatus.defaultModel = "gpt-4o"; // Assuming default model
+        } catch (error) {
+          console.error("OpenAI connection error:", error);
+        }
+      }
+
+      // Environment variables
+      const environmentVariables = [
+        { name: "STRIPE_SECRET_KEY", exists: !!process.env.STRIPE_SECRET_KEY, description: "Stripe Secret API key" },
+        { name: "VITE_STRIPE_PUBLIC_KEY", exists: !!process.env.VITE_STRIPE_PUBLIC_KEY, description: "Stripe Public API key" },
+        { name: "OPENAI_API_KEY", exists: !!process.env.OPENAI_API_KEY, description: "OpenAI API key" },
+        { name: "DATABASE_URL", exists: !!process.env.DATABASE_URL, description: "PostgreSQL connection URL" },
+        { name: "SENDGRID_API_KEY", exists: !!process.env.SENDGRID_API_KEY, description: "SendGrid Email API key" },
+      ];
+
+      res.json({
+        database: dbStatus,
+        stripe: stripeStatus,
+        openai: openaiStatus,
+        env: environmentVariables
+      });
+    } catch (error: any) {
+      console.error('Error getting system status:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Refresh database connection
+  app.post('/api/admin/system/refresh-db', async (req, res) => {
+    try {
+      let connected = false;
+      let version = "";
+      
+      try {
+        const client = await pool.connect();
+        try {
+          const result = await client.query('SELECT version()');
+          connected = true;
+          version = result.rows[0].version;
+        } finally {
+          client.release();
+        }
+      } catch (error) {
+        console.error("Database connection error during refresh:", error);
+        throw new Error("Failed to connect to database");
+      }
+      
+      res.json({ 
+        success: true, 
+        connected, 
+        version
+      });
+    } catch (error: any) {
+      console.error('Error refreshing DB connection:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Check external services
+  app.post('/api/admin/system/check-services', async (req, res) => {
+    try {
+      // Results object to track service status
+      const results: any = {
+        database: { connected: false },
+        stripe: { connected: false },
+        openai: { connected: false }
+      };
+      
+      // Check database
+      try {
+        const client = await pool.connect();
+        try {
+          await client.query('SELECT 1');
+          results.database.connected = true;
+        } finally {
+          client.release();
+        }
+      } catch (error) {
+        results.database.error = "Failed to connect to database";
+      }
+      
+      // Check Stripe
+      if (stripe) {
+        try {
+          await stripe.products.list({ limit: 1 });
+          results.stripe.connected = true;
+        } catch (error) {
+          results.stripe.error = "Failed to connect to Stripe API";
+        }
+      } else {
+        results.stripe.error = "Stripe is not configured";
+      }
+      
+      // Check OpenAI
+      if (openai) {
+        try {
+          await openai.models.list();
+          results.openai.connected = true;
+        } catch (error) {
+          results.openai.error = "Failed to connect to OpenAI API";
+        }
+      } else {
+        results.openai.error = "OpenAI is not configured";
+      }
+      
+      res.json({ 
+        success: true, 
+        services: results
+      });
+    } catch (error: any) {
+      console.error('Error checking services:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+  
+  // Update subscription plans in Stripe
+  app.post('/api/admin/update-subscription-plans', isAdmin, async (req, res) => {
+    if (!stripe) {
+      return res.status(503).json({ 
+        success: false, 
+        message: "Stripe API is not configured. Please set STRIPE_SECRET_KEY environment variable."
+      });
+    }
+    
+    try {
+      const client = await pool.connect();
+      
+      try {
+        // Get the settings from the database
+        const result = await client.query(`
+          SELECT 
+            stripe_smart_product_id,
+            stripe_pro_product_id,
+            stripe_smart_monthly_price_id,
+            stripe_smart_yearly_price_id,
+            stripe_pro_monthly_price_id,
+            stripe_pro_yearly_price_id
+          FROM app_settings 
+          WHERE id = 1
+        `);
+        
+        if (result.rows.length === 0) {
+          return res.status(404).json({ 
+            success: false, 
+            message: "Settings not found" 
+          });
+        }
+        
+        const dbSettings = result.rows[0];
+        const updatedProducts = [];
+        const updatedPrices = [];
+        
+        // Track products to update
+        const productsToVerify = [];
+        
+        // Track prices to update
+        const pricesToVerify = [];
+        
+        // Update Smart Pantry product if it exists
+        if (dbSettings.stripe_smart_product_id && dbSettings.stripe_smart_product_id.startsWith('prod_')) {
+          productsToVerify.push({
+            id: dbSettings.stripe_smart_product_id,
+            name: 'Smart Pantry',
+            metadata: { 
+              tier: 'smart',
+              subscription_tier: 'smart'
+            }
+          });
+        }
+        
+        // Update Pro Family plan product if it exists
+        if (dbSettings.stripe_pro_product_id && dbSettings.stripe_pro_product_id.startsWith('prod_')) {
+          productsToVerify.push({
+            id: dbSettings.stripe_pro_product_id,
+            name: 'Family Pantry Pro',
+            metadata: { 
+              tier: 'pro',
+              subscription_tier: 'pro'
+            }
+          });
+        }
+        
+        // Update Smart Monthly price if it exists
+        if (dbSettings.stripe_smart_monthly_price_id && dbSettings.stripe_smart_monthly_price_id.startsWith('price_')) {
+          pricesToVerify.push({
+            id: dbSettings.stripe_smart_monthly_price_id,
+            metadata: { 
+              tier: 'smart',
+              subscription_tier: 'smart',
+              interval: 'month'
+            }
+          });
+        }
+        
+        // Update Smart Yearly price if it exists
+        if (dbSettings.stripe_smart_yearly_price_id && dbSettings.stripe_smart_yearly_price_id.startsWith('price_')) {
+          pricesToVerify.push({
+            id: dbSettings.stripe_smart_yearly_price_id,
+            metadata: { 
+              tier: 'smart',
+              subscription_tier: 'smart',
+              interval: 'year'
+            }
+          });
+        }
+        
+        // Update Pro Monthly price if it exists
+        if (dbSettings.stripe_pro_monthly_price_id && dbSettings.stripe_pro_monthly_price_id.startsWith('price_')) {
+          pricesToVerify.push({
+            id: dbSettings.stripe_pro_monthly_price_id,
+            metadata: { 
+              tier: 'pro',
+              subscription_tier: 'pro',
+              interval: 'month'
+            }
+          });
+        }
+        
+        // Update Pro Yearly price if it exists
+        if (dbSettings.stripe_pro_yearly_price_id && dbSettings.stripe_pro_yearly_price_id.startsWith('price_')) {
+          pricesToVerify.push({
+            id: dbSettings.stripe_pro_yearly_price_id,
+            metadata: { 
+              tier: 'pro',
+              subscription_tier: 'pro', 
+              interval: 'year'
+            }
+          });
+        }
+        
+        // Update products
+        for (const product of productsToVerify) {
+          try {
+            // Check if product exists first
+            await stripe.products.retrieve(product.id);
+            
+            // Update product if it exists
+            const updatedProduct = await stripe.products.update(product.id, {
+              name: product.name,
+              metadata: product.metadata
+            });
+            
+            updatedProducts.push(updatedProduct.id);
+          } catch (error: any) {
+            console.log(`Product ${product.id} not found or couldn't be updated: ${error.message}`);
+            // Continue with other products even if this one fails
+          }
+        }
+        
+        // Update prices
+        for (const price of pricesToVerify) {
+          try {
+            // Check if price exists first
+            await stripe.prices.retrieve(price.id);
+            
+            // Update price if it exists
+            const updatedPrice = await stripe.prices.update(price.id, {
+              metadata: price.metadata
+            });
+            
+            updatedPrices.push(updatedPrice.id);
+          } catch (error: any) {
+            console.log(`Price ${price.id} not found or couldn't be updated: ${error.message}`);
+            // Continue with other prices even if this one fails
+          }
+        }
+        
+        res.json({
+          success: true,
+          message: "Subscription plans updated",
+          updatedProducts,
+          updatedPrices
+        });
+      } finally {
+        client.release();
+      }
+    } catch (error: any) {
+      console.error('Error updating subscription plans:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: error.message 
+      });
+    }
+  });
+
+  // Get products and prices from Stripe
+  app.get('/api/admin/stripe-sync-products', isAdmin, async (req, res) => {
+    if (!stripe) {
+      return res.status(503).json({ 
+        success: false, 
+        message: "Stripe API is not configured. Please set STRIPE_SECRET_KEY environment variable."
+      });
+    }
+    
+    try {
+      // Get all products
+      const products = await stripe.products.list({
+        limit: 100,
+        active: true
+      });
+      
+      // Get all prices
+      const prices = await stripe.prices.list({
+        limit: 100,
+        active: true
+      });
+      
+      res.json({
+        success: true,
+        products: products.data.map(p => ({
+          id: p.id,
+          name: p.name,
+          active: p.active,
+          metadata: p.metadata
+        })),
+        prices: prices.data.map(p => ({
+          id: p.id,
+          product: p.product,
+          currency: p.currency,
+          unit_amount: p.unit_amount,
+          recurring: p.recurring,
+          metadata: p.metadata
+        }))
+      });
+    } catch (error: any) {
+      console.error('Error getting Stripe products and prices:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: error.message 
+      });
+    }
+  });
+  
+  // Clean up plans in Stripe (archive products and prices)
+  app.post('/api/admin/stripe-clean-plans', isAdmin, async (req, res) => {
+    if (!stripe) {
+      return res.status(503).json({ 
+        success: false, 
+        message: "Stripe API is not configured. Please set STRIPE_SECRET_KEY environment variable."
+      });
+    }
+    
+    try {
+      const client = await pool.connect();
+      
+      try {
+        // First update the database to remove all product and price IDs
+        await client.query(`
+          UPDATE app_settings
+          SET 
+            stripe_smart_product_id = 'prod_smart',
+            stripe_pro_product_id = 'prod_pro',
+            stripe_smart_monthly_price_id = 'price_smart_monthly',
+            stripe_smart_yearly_price_id = 'price_smart_yearly',
+            stripe_pro_monthly_price_id = 'price_pro_monthly',
+            stripe_pro_yearly_price_id = 'price_pro_yearly',
+            updated_at = NOW(),
+            updated_by = $1
+          WHERE id = 1
+        `, [req.user ? req.user.id : null]);
+        
+        // Now archive all products and prices in Stripe
+        const products = await stripe.products.list({
+          limit: 100, 
+          active: true
+        });
+        
+        const prices = await stripe.prices.list({
+          limit: 100,
+          active: true
+        });
+        
+        let productsArchived = 0;
+        let pricesArchived = 0;
+        
+        // Archive prices first
+        for (const price of prices.data) {
+          try {
+            await stripe.prices.update(price.id, {
+              active: false
+            });
+            pricesArchived++;
+          } catch (error) {
+            console.error(`Failed to archive price ${price.id}:`, error);
+            // Continue with other prices
+          }
+        }
+        
+        // Then archive products
+        for (const product of products.data) {
+          try {
+            await stripe.products.update(product.id, {
+              active: false
+            });
+            productsArchived++;
+          } catch (error) {
+            console.error(`Failed to archive product ${product.id}:`, error);
+            // Continue with other products
+          }
+        }
+        
+        res.json({
+          success: true,
+          productsArchived,
+          pricesArchived
+        });
+      } finally {
+        client.release();
+      }
+    } catch (error: any) {
+      console.error('Error cleaning Stripe plans:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: error.message 
+      });
+    }
+  });
+}
