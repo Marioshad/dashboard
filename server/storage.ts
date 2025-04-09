@@ -1337,93 +1337,90 @@ export class DatabaseStorage implements IStorage {
     verificationTokenExpiresAt?: Date | null;
   }): Promise<User> {
     try {
-      // Fix the field names to match the database schema
-      const dataToUpdate: any = {
-        updatedAt: sql`CURRENT_TIMESTAMP`,
+      // For a direct implementation, let's avoid using the parameterized approach
+      // and just use the Drizzle ORM's native update functionality
+      const updateData: Record<string, any> = {
+        updatedAt: new Date() // Always update the timestamp
       };
       
-      // Map the fields to the actual database column names
+      // Map JavaScript properties to database column names
       if (verificationData.emailVerified !== undefined) {
-        dataToUpdate.email_verified = verificationData.emailVerified;
+        updateData.emailVerified = verificationData.emailVerified;
       }
       
       if (verificationData.verificationToken !== undefined) {
-        dataToUpdate.verification_token = verificationData.verificationToken;
+        updateData.verificationToken = verificationData.verificationToken;
       }
       
-      // Update both expiration columns in the database to maintain compatibility
       if (verificationData.verificationTokenExpiresAt !== undefined) {
-        dataToUpdate.verification_token_expires_at = verificationData.verificationTokenExpiresAt;
-        // Also update the old column to maintain compatibility
-        dataToUpdate.verification_token_expiry = verificationData.verificationTokenExpiresAt;
+        updateData.verificationTokenExpiresAt = verificationData.verificationTokenExpiresAt;
       }
       
-      console.log('Updating user verification with data:', dataToUpdate);
+      console.log(`Updating user verification for userId: ${userId} with data:`, updateData);
       
-      // Use a SQL query that doesn't fail if a column is missing
-      try {
-        const [user] = await db
-          .update(users)
-          .set(dataToUpdate)
-          .where(eq(users.id, userId))
-          .returning();
-        
-        return user;
-      } catch (dbError) {
-        console.error('Error in updateUserVerification with Drizzle:', dbError);
-        
-        // Fallback to raw SQL query
-        // Get all existing columns first
-        const columnsResult = await db.execute(sql`
-          SELECT column_name 
-          FROM information_schema.columns 
-          WHERE table_name = 'users'
-        `);
-        
-        const columnNames = columnsResult.rows.map((row: any) => row.column_name);
-        
-        // Build SQL sets that only include fields that exist in the database
-        const setParts = [];
-        Object.entries(dataToUpdate).forEach(([key, value]) => {
-          if (columnNames.includes(key)) {
-            if (value === null) {
-              setParts.push(`${key} = NULL`);
-            } else if (value instanceof Date) {
-              setParts.push(`${key} = '${value.toISOString()}'`);
-            } else if (typeof value === 'string') {
-              setParts.push(`${key} = '${value}'`);
-            } else if (typeof value === 'boolean') {
-              setParts.push(`${key} = ${value}`);
-            } else if (typeof value === 'number') {
-              setParts.push(`${key} = ${value}`);
-            } else if (value.constructor && value.constructor.name === 'PgSql') {
-              // SQL expression, include as is
-              setParts.push(`${key} = CURRENT_TIMESTAMP`);
-            }
-          }
-        });
-        
-        if (setParts.length === 0) {
-          throw new Error('No valid fields to update');
-        }
-        
-        // Execute the raw SQL query
-        const result = await db.execute(sql`
-          UPDATE users 
-          SET ${sql.raw(setParts.join(', '))} 
-          WHERE id = ${userId} 
-          RETURNING *
-        `);
-        
-        if (result.rows && result.rows.length > 0) {
-          return result.rows[0] as User;
-        } else {
-          throw new Error('User update failed, no rows returned');
-        }
+      // Use Drizzle's built-in update method
+      const [updatedUser] = await db
+        .update(users)
+        .set(updateData)
+        .where(eq(users.id, userId))
+        .returning();
+      
+      if (!updatedUser) {
+        throw new Error('User update failed, no data returned');
       }
+      
+      console.log('User verification updated successfully', updatedUser);
+      return updatedUser;
     } catch (error) {
       console.error('Error updating user verification:', error);
-      throw error;
+      
+      // Fallback to direct SQL if the ORM approach fails
+      try {
+        console.log('Attempting direct SQL update for email verification');
+        
+        // Build a simple SQL query with direct values, not parameterized
+        let sqlQuery = `
+          UPDATE users SET 
+            updated_at = NOW()
+        `;
+        
+        // Add the verification fields directly to the query
+        if (verificationData.emailVerified !== undefined) {
+          sqlQuery += `, email_verified = ${verificationData.emailVerified}`;
+        }
+        
+        if (verificationData.verificationToken !== undefined) {
+          if (verificationData.verificationToken === null) {
+            sqlQuery += `, verification_token = NULL`;
+          } else {
+            sqlQuery += `, verification_token = '${verificationData.verificationToken}'`;
+          }
+        }
+        
+        if (verificationData.verificationTokenExpiresAt !== undefined) {
+          if (verificationData.verificationTokenExpiresAt === null) {
+            sqlQuery += `, verification_token_expires_at = NULL`;
+          } else {
+            sqlQuery += `, verification_token_expires_at = '${verificationData.verificationTokenExpiresAt.toISOString()}'`;
+          }
+        }
+        
+        // Complete the query
+        sqlQuery += ` WHERE id = ${userId} RETURNING *`;
+        
+        console.log(`Executing direct SQL: ${sqlQuery}`);
+        
+        const result = await db.execute(sql.raw(sqlQuery));
+        
+        if (!result.rows || result.rows.length === 0) {
+          throw new Error('User update failed in fallback SQL, no rows returned');
+        }
+        
+        return result.rows[0] as User;
+      } catch (fallbackError) {
+        console.error('Error in fallback SQL update:', fallbackError);
+        throw fallbackError;
+      }
     }
   }
 
