@@ -51,10 +51,24 @@ export default function VerifyEmailPage() {
               
               setVerificationStatus('success');
               setMessage(data.message || 'Email verified successfully');
+              
+              // Auto-redirect to home after successful verification
+              setTimeout(() => {
+                console.log("[EMAIL VERIFICATION] Auto-redirecting to home page after successful verification");
+                navigate('/');
+                window.location.reload(); // Force reload to update all components
+              }, 1500);
             } else {
               console.log("[EMAIL VERIFICATION] Response is not JSON, using default success message");
               setVerificationStatus('success');
               setMessage('Email verified successfully');
+              
+              // Auto-redirect to home after successful verification
+              setTimeout(() => {
+                console.log("[EMAIL VERIFICATION] Auto-redirecting to home page after successful verification");
+                navigate('/');
+                window.location.reload(); // Force reload to update all components
+              }, 1500);
             }
             
             toast({
@@ -66,6 +80,13 @@ export default function VerifyEmailPage() {
             console.error("[EMAIL VERIFICATION] Error parsing JSON response:", jsonError);
             setVerificationStatus('success'); // Still consider it a success since response.ok is true
             setMessage('Email verified successfully');
+            
+            // Auto-redirect to home after successful verification
+            setTimeout(() => {
+              console.log("[EMAIL VERIFICATION] Auto-redirecting to home page after successful verification");
+              navigate('/');
+              window.location.reload(); // Force reload to update all components
+            }, 1500);
             
             toast({
               title: "Email Verified",

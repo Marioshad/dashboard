@@ -1,0 +1,22 @@
+use-websocket-provider.tsx:61 WebSocket connection to 'wss://414db6ca-3556-4208-a0ce-8313d30e4f78-00-324813i7gbvxk.kirk.replit.dev/api/ws' failed: 
+
+use-websocket-provider.tsx:124 WebSocket error: 
+Event {isTrusted: true, type: 'error', target: WebSocket, currentTarget: WebSocket, eventPhase: 2, …}
+use-websocket-provider.tsx:108 WebSocket connection closed 
+CloseEvent {isTrusted: true, wasClean: false, code: 1006, reason: '', type: 'close', …}
+use-websocket-provider.tsx:43 Current window location: https://414db6ca-3556-4208-a0ce-8313d30e4f78-00-324813i7gbvxk.kirk.replit.dev/auth
+use-websocket-provider.tsx:59 Final WebSocket URL: wss://414db6ca-3556-4208-a0ce-8313d30e4f78-00-324813i7gbvxk.kirk.replit.dev/api/ws
+use-websocket-provider.tsx:43 Current window location: https://414db6ca-3556-4208-a0ce-8313d30e4f78-00-324813i7gbvxk.kirk.replit.dev/auth
+use-websocket-provider.tsx:59 Final WebSocket URL: wss://414db6ca-3556-4208-a0ce-8313d30e4f78-00-324813i7gbvxk.kirk.replit.dev/api/ws
+use-websocket-provider.tsx:61 WebSocket connection to 'wss://414db6ca-3556-4208-a0ce-8313d30e4f78-00-324813i7gbvxk.kirk.replit.dev/api/ws' failed: 
+use-websocket-provider.tsx:124 WebSocket error: 
+Event {isTrusted: true, type: 'error', target: WebSocket, currentTarget: WebSocket, eventPhase: 2, …}
+use-websocket-provider.tsx:108 WebSocket connection closed 
+CloseEvent {isTrusted: true, wasClean: false, code: 1006, reason: '', type: 'close', …}
+use-websocket-provider.tsx:43 Current window location: https://414db6ca-3556-4208-a0ce-8313d30e4f78-00-324813i7gbvxk.kirk.replit.dev/auth
+use-websocket-provider.tsx:59 Final WebSocket URL: wss://414db6ca-3556-4208-a0ce-8313d30e4f78-00-324813i7gbvxk.kirk.replit.dev/api/ws
+use-websocket-provider.tsx:43 Current window location: https://414db6ca-3556-4208-a0ce-8313d30e4f78-00-324813i7gbvxk.kirk.replit.dev/auth
+use-websocket-provider.tsx:59 Final WebSocket URL: wss://414db6ca-3556-4208-a0ce-8313d30e4f78-00-324813i7gbvxk.kirk.replit.dev/api/ws
+use-websocket-provider.tsx:61 WebSocket connection to 'wss://414db6ca-3556-4208-a0ce-8313d30e4f78-00-324813i7gbvxk.kirk.replit.dev/api/ws' failed: 
+use-websocket-provider.tsx:124 WebSocket error: 
+Event {isTrusted: true, type: 'error', target: WebSocket, currentTarget: WebSocket, eventPhase: 2, …}
