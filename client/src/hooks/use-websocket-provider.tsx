@@ -226,7 +226,21 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const attemptConnection = () => {
       // Check if we're authenticated
-      if (!checkAuthenticated()) return;
+      if (!checkAuthenticated()) {
+        console.log('Not authenticated, skipping WebSocket connection attempt');
+        return;
+      }
+      
+      // Debug authentication token issues
+      if (userData) {
+        const hasToken = !!(userData as any)._websocketToken;
+        console.log('User data available with WebSocket token:', hasToken);
+        if (!hasToken) {
+          console.warn('WebSocket token is missing from user data');
+        }
+      } else {
+        console.warn('User data not available for WebSocket connection');
+      }
     
       // Only attempt connection if we have no excessive failures  
       const currentTime = Date.now();
@@ -235,8 +249,11 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         (currentTime - lastAuthAttempt) > AUTH_FAILURE_BACKOFF_MS * Math.min(authFailureCount, 5);
     
       if (shouldAttemptConnect) {
+        console.log('Attempting WebSocket connection');
         connect();
         setLastAuthAttempt(currentTime);
+      } else {
+        console.log('Skipping connection due to excessive failures');
       }
     };
     
