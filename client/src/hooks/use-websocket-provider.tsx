@@ -87,21 +87,33 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   // Create a WebSocket connection
   const connect = useCallback(() => {
     // Don't connect if already connecting or connected
-    if (isConnecting || (socket && socket.readyState === WebSocket.OPEN)) return;
-    
-    // Check if user has WebSocket token
-    if (!hasWebSocketToken(userData)) {
-      console.log('Not attempting WebSocket connection - no WebSocket token available');
+    if (isConnecting) {
+      console.log('Already connecting, skipping additional connection attempt');
       return;
     }
     
-    // Close any existing socket before creating a new one
     if (socket) {
+      // If socket exists, check its state
+      if (socket.readyState === WebSocket.OPEN) {
+        console.log('WebSocket already connected, skipping connection attempt');
+        return;
+      } else if (socket.readyState === WebSocket.CONNECTING) {
+        console.log('WebSocket already connecting, skipping duplicate connection attempt');
+        return;
+      }
+      
+      // Close any existing socket that's in a closing or closed state
       try {
         socket.close();
       } catch (err) {
         console.error('Error closing existing socket:', err);
       }
+    }
+    
+    // Check if user has WebSocket token
+    if (!hasWebSocketToken(userData)) {
+      console.log('Not attempting WebSocket connection - no WebSocket token available');
+      return;
     }
     
     setIsConnecting(true);
@@ -209,17 +221,24 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   }, [isConnecting, socket, toast, authFailureCount, getWebSocketToken, userData]);
 
   // Check if the userData has changed and attempt to reconnect
+  // But only if we're not already connecting or connected
   useEffect(() => {
-    // If the user data changes and we have a WebSocket token, reconnect
-    if (userData && (userData as any)._websocketToken && !isConnected) {
+    // If the user data changes and we have a WebSocket token, and we're not already connecting/connected
+    if (userData && (userData as any)._websocketToken && !isConnected && !isConnecting && !socket) {
       console.log('User data with WebSocket token available, attempting to connect');
       connect();
     }
-  }, [userData, isConnected, connect]);
+  }, [userData, isConnected, isConnecting, socket, connect]);
   
   // Connect on component mount and handle reconnection with backoff
   useEffect(() => {
     const attemptConnection = () => {
+      // Skip if we're already connected, connecting, or have a socket
+      if (isConnected || isConnecting || socket) {
+        console.log('Already connected or connecting, skipping connection attempt');
+        return;
+      }
+      
       // Check if we have the token
       if (!hasWebSocketToken(userData)) {
         console.log('No WebSocket token available, skipping connection attempt');
@@ -254,12 +273,12 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       }
     };
     
-    // Try to connect on component mount
+    // Try to connect on component mount but only once
     attemptConnection();
     
     // Set up reconnection on tab visibility change
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && !isConnected) {
+      if (document.visibilityState === 'visible' && !isConnected && !isConnecting && !socket) {
         attemptConnection();
       }
     };
@@ -279,7 +298,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         }
       }
     };
-  }, [connect, isConnected, authFailureCount, lastAuthAttempt]);
+  }, [connect, isConnected, isConnecting, socket, authFailureCount, lastAuthAttempt, userData]);
 
   return (
     <WebSocketContext.Provider
