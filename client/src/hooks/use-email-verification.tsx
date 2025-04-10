@@ -1,6 +1,5 @@
 import { createContext, ReactNode, useContext, useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/use-auth';
-import { useWebSocket } from '@/hooks/use-websocket-provider';
 import { queryClient } from '@/lib/queryClient';
 import { EmailVerificationDialog } from '@/components/email-verification-dialog';
 
@@ -23,7 +22,6 @@ const EmailVerificationContext = createContext<EmailVerificationContextType>({
 // Provider component that will wrap the app
 export function EmailVerificationProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
-  const { socket } = useWebSocket();
   const [isOpen, setIsOpen] = useState<boolean>(false);
   const [dialogDetails, setDialogDetails] = useState<any>(null);
   const [isEmailVerified, setIsEmailVerified] = useState<boolean>(user?.emailVerified || false);
@@ -37,39 +35,23 @@ export function EmailVerificationProvider({ children }: { children: ReactNode })
     }
   }, [user]);
   
-  // Listen for WebSocket messages about email verification
+  // Set up polling to check for verification status changes
   useEffect(() => {
-    if (!socket) return;
+    // Only poll if user exists and is not verified
+    if (!user || user.emailVerified) return;
     
-    const handleMessage = (event: MessageEvent) => {
-      try {
-        const message = JSON.parse(event.data);
-        
-        // Handle email verification notification
-        if (message.type === 'notification' && 
-            message.data && 
-            message.data.type === 'email_verified') {
-          console.log('Email verification notification received through WebSocket');
-          
-          // Invalidate user data to refresh the UI
-          queryClient.invalidateQueries({ queryKey: ["/api/user"] });
-          
-          // Immediately update our local state
-          setIsEmailVerified(true);
-        }
-      } catch (error) {
-        console.error('Failed to parse WebSocket message:', error);
-      }
-    };
+    console.log('Setting up email verification polling');
     
-    // Add event listener
-    socket.addEventListener('message', handleMessage);
+    // Refresh user data every 10 seconds to check verification status
+    const intervalId = setInterval(() => {
+      console.log('Polling for email verification status updates');
+      queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+    }, 10000); // 10 seconds
     
-    // Cleanup
     return () => {
-      socket.removeEventListener('message', handleMessage);
+      clearInterval(intervalId);
     };
-  }, [socket]);
+  }, [user]);
   
   // Setup global error handler to catch email verification errors
   useEffect(() => {
