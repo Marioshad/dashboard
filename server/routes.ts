@@ -120,6 +120,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   setupAuth(app);
+  
+  // Generate a WebSocket authentication token for the current user
+  app.get('/api/ws-token', (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    const token = generateWebSocketToken(req.user.id);
+    res.json({ token });
+  });
 
   app.post('/api/profile/avatar', upload.single('avatar'), async (req: MulterRequest, res, next) => {
     try {

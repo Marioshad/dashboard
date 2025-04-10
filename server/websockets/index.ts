@@ -133,52 +133,99 @@ export function initializeWebSocketServer(
   // Store the function in the app for use in other routes
   app.locals.sendWebSocketNotification = sendWebSocketNotification;
 
+  // Helper function to validate WebSocket tokens
+  function validateWebSocketToken(token: string): { valid: boolean; userId?: number } {
+    try {
+      // Decode the token (Base64)
+      const decodedToken = Buffer.from(token, 'base64').toString();
+      const payload = JSON.parse(decodedToken);
+      
+      // Check if token has required fields
+      if (!payload.userId || !payload.timestamp) {
+        log('Invalid token format', 'websocket');
+        return { valid: false };
+      }
+      
+      // Check token expiration (24 hour validity)
+      const tokenAge = Date.now() - payload.timestamp;
+      const TOKEN_VALIDITY_MS = 24 * 60 * 60 * 1000; // 24 hours
+      
+      if (tokenAge > TOKEN_VALIDITY_MS) {
+        log('Token expired', 'websocket');
+        return { valid: false };
+      }
+      
+      return { valid: true, userId: payload.userId };
+    } catch (error) {
+      log(`Token validation error: ${error}`, 'websocket');
+      return { valid: false };
+    }
+  }
+
   // Handle upgrade of WebSocket connections
   httpServer.on('upgrade', (request: IncomingMessage, socket: Socket, head: Buffer) => {
     // Check if this is a WebSocket request for our endpoint
     if (request.url && request.url.startsWith('/api/ws')) {
       log(`WebSocket upgrade request received for URL: ${request.url}`, 'websocket');
       
-      // Parse the URL to get the query parameters
+      // First try to authenticate using token-based auth
       const url = new URL(request.url, `http://${request.headers.host}`);
+      const token = url.searchParams.get('token');
       
-      // Extract session ID from URL query parameter
-      let sid = url.searchParams.get('sid');
-      
-      // If no session ID in query, try from cookies as fallback
-      if (!sid) {
-        const cookies = parse(request.headers.cookie || '');
-        sid = cookies['connect.sid'];
+      if (token) {
+        // Validate token-based authentication
+        const validation = validateWebSocketToken(token);
+        
+        if (validation.valid && validation.userId) {
+          log(`WebSocket authenticated with token for user ID: ${validation.userId}`, 'websocket');
+          
+          // Create a session-like object with passport user data
+          (request as any).session = {
+            passport: {
+              user: validation.userId
+            }
+          };
+          
+          // Continue with the WebSocket connection handling
+          try {
+            wss.handleUpgrade(request, socket, head, (ws: WsWebSocket) => {
+              wss.emit('connection', ws, request);
+            });
+          } catch (error: any) {
+            console.error('Error during WebSocket upgrade:', error);
+            socket.destroy();
+          }
+          return;
+        } else {
+          log('WebSocket upgrade rejected: Invalid token', 'websocket');
+          socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+          socket.destroy();
+          return;
+        }
       }
       
+      // Fall back to session-based authentication if no token is provided
+      const cookies = parse(request.headers.cookie || '');
+      const sid = cookies['connect.sid'];
+      
       if (!sid) {
-        log('WebSocket upgrade rejected: No session ID found in URL or cookies', 'websocket');
+        log('WebSocket upgrade rejected: No authentication method available', 'websocket');
         socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
         socket.destroy();
         return;
       }
 
       // Extract and prepare the session ID
+      log(`Falling back to cookie-based authentication`, 'websocket');
       let sessionId;
-      
-      // Debug logging
-      log(`Raw session ID from request: ${sid}`, 'websocket');
       
       // Try different formats to extract the session ID
       if (sid.startsWith('s:')) {
         // Format: s:PAYLOAD.SIGNATURE - This is the standard Express session ID format
         sessionId = cookieSignature.unsign(sid.slice(2), sessionSecret);
-        log(`Unsigned session ID from s: format: ${sessionId}`, 'websocket');
       } else {
         // Try to unsign it directly
         sessionId = cookieSignature.unsign(sid, sessionSecret);
-        
-        if (!sessionId) {
-          // If that didn't work, maybe it's a raw session ID without signature 
-          // (not secure, but testing for now)
-          log('Attempting to use raw session ID', 'websocket');
-          sessionId = sid;
-        }
       }
       
       if (!sessionId) {
