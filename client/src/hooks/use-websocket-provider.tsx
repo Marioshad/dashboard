@@ -53,9 +53,10 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   // Get WebSocket token from user data or server
   const getWebSocketToken = useCallback(async () => {
     // First try to get token from user data (added in the /api/user endpoint)
-    if (userData && userData._websocketToken) {
+    // Access _websocketToken with a type assertion to avoid TypeScript errors
+    if (userData && (userData as any)._websocketToken) {
       console.log('Using WebSocket token from user data');
-      return userData._websocketToken;
+      return (userData as any)._websocketToken;
     }
     
     // Fallback to fetching the token directly
@@ -115,6 +116,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       
       if (token) {
         // Use token-based authentication
+        console.log('Using token for WebSocket authentication:', token.substring(0, 20) + '...');
         wsUrl = `${wsProtocol}//${wsHost}/api/ws?token=${encodeURIComponent(token)}`;
       } else {
         // Fallback to cookie-based authentication
@@ -122,6 +124,9 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         const cookieMatch = document.cookie.match(/connect\.sid=([^;]+)/);
         if (cookieMatch && cookieMatch[1]) {
           sessionId = cookieMatch[1];
+          console.log('Using session cookie for WebSocket authentication');
+        } else {
+          console.warn('No session cookie found for WebSocket authentication');
         }
         wsUrl = `${wsProtocol}//${wsHost}/api/ws?sid=${encodeURIComponent(sessionId)}`;
       }
