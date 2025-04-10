@@ -1,0 +1,72 @@
+🚨 The Core Issue
+The WebSocket connection is being rejected by the server with this message:
+
+nginx
+Copy
+Edit
+WebSocket connection closed ... reason: 'Not authenticated'
+Your frontend does not pass any authentication (like a token or session) when opening the WebSocket connection:
+
+ts
+Copy
+Edit
+const ws = new WebSocket(wsUrl); // No token/cookie/header passed
+But you do check for auth via cookies:
+
+ts
+Copy
+Edit
+const isLikelyAuthenticated = useCallback(() => {
+  return document.cookie.includes('connect.sid');
+}, []);
+So you're assuming a cookie-based session (connect.sid) is sent automatically. However, WebSocket connections DO NOT send cookies by default, especially in modern browsers or certain deployments.
+
+✅ Solutions
+You need to explicitly authenticate the WebSocket connection. Here are two solid options:
+
+🔐 Option 1: Add token to WebSocket URL (simplest)
+If you use JWTs or tokens, append it as a query param:
+
+🔧 Frontend:
+ts
+Copy
+Edit
+const token = localStorage.getItem('authToken'); // Or from your auth store
+
+const wsUrl = `${wsProtocol}//${wsHost}/api/ws?token=${token}`;
+const ws = new WebSocket(wsUrl);
+🔧 Backend:
+Update your WebSocket server to extract and verify the token from req.url.
+
+Example with ws:
+
+ts
+Copy
+Edit
+wss.on('connection', (ws, req) => {
+  const url = new URL(req.url!, 'http://localhost'); // base is required
+  const token = url.searchParams.get('token');
+
+  if (!isValidToken(token)) {
+    ws.close(1008, 'Not authenticated');
+    return;
+  }
+
+  // continue...
+});
+🍪 Option 2: Ensure cookies are sent with WS
+If you're using session cookies (connect.sid), make sure:
+
+Cookies are set with SameSite=None and Secure if using HTTPS.
+
+WebSocket requests are initiated from the same origin or have proper CORS/session sharing.
+
+Your server reads cookies from the WebSocket handshake headers.
+
+You can debug cookie presence on the backend using:
+
+ts
+Copy
+Edit
+console.log(req.headers.cookie);
+But again, cookies over WS are flaky cross-domain unless all policies are aligned. So JWT in query string is safer.
