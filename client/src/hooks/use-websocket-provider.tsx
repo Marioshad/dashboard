@@ -1,6 +1,7 @@
 import { createContext, ReactNode, useContext, useState, useEffect, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { queryClient } from '@/lib/queryClient';
+import { useQuery } from "@tanstack/react-query";
 
 // Helper function to check if user is likely authenticated (exists outside component)
 function checkAuthenticated(): boolean {
@@ -27,6 +28,13 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   const [isConnected, setIsConnected] = useState(false);
   const { toast } = useToast();
   
+  // Get the current user data which includes the WebSocket token
+  const { data: userData } = useQuery({
+    queryKey: ['/api/user'],
+    retry: false,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+  
   // Track authentication failures to prevent excessive reconnect attempts
   const [authFailureCount, setAuthFailureCount] = useState(0);
   const [lastAuthAttempt, setLastAuthAttempt] = useState(0);
@@ -42,9 +50,17 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     return false;
   }, [socket]);
 
-  // Get WebSocket token from server
+  // Get WebSocket token from user data or server
   const getWebSocketToken = useCallback(async () => {
+    // First try to get token from user data (added in the /api/user endpoint)
+    if (userData && userData._websocketToken) {
+      console.log('Using WebSocket token from user data');
+      return userData._websocketToken;
+    }
+    
+    // Fallback to fetching the token directly
     try {
+      console.log('Fetching WebSocket token from server...');
       const response = await fetch('/api/ws-token', {
         method: 'GET',
         credentials: 'include', // Important: include credentials (cookies) with the request
@@ -65,7 +81,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       console.error('Error fetching WebSocket token:', error);
       return null;
     }
-  }, []);
+  }, [userData]);
 
   // Create a WebSocket connection
   const connect = useCallback(() => {

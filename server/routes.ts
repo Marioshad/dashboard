@@ -58,7 +58,7 @@ interface MulterRequest extends Request {
 }
 
 // Generate a simple WebSocket token for the current user
-function generateWebSocketToken(userId: number): string {
+export function generateWebSocketToken(userId: number): string {
   // A simple implementation - in production, use a proper JWT library
   const payload = {
     userId,
