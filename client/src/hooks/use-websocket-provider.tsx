@@ -45,9 +45,21 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   // Get WebSocket token from server
   const getWebSocketToken = useCallback(async () => {
     try {
-      const response = await fetch('/api/ws-token');
-      if (!response.ok) return null;
+      const response = await fetch('/api/ws-token', {
+        method: 'GET',
+        credentials: 'include', // Important: include credentials (cookies) with the request
+        headers: {
+          'Accept': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        console.error('WebSocket token request failed:', response.status, response.statusText);
+        return null;
+      }
+      
       const data = await response.json();
+      console.log('Successfully retrieved WebSocket token');
       return data.token;
     } catch (error) {
       console.error('Error fetching WebSocket token:', error);

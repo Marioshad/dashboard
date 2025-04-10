@@ -124,10 +124,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Generate a WebSocket authentication token for the current user
   app.get('/api/ws-token', (req, res) => {
     if (!req.isAuthenticated()) {
+      log('WebSocket token request - not authenticated', 'websocket');
       return res.status(401).json({ error: 'Not authenticated' });
     }
     
     const token = generateWebSocketToken(req.user.id);
+    log(`WebSocket token created for user ${req.user.id}`, 'websocket');
     res.json({ token });
   });
 
