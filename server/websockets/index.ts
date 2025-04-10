@@ -138,6 +138,8 @@ export function initializeWebSocketServer(
     try {
       // Decode the token (Base64)
       const decodedToken = Buffer.from(token, 'base64').toString();
+      log(`Decoded token: ${decodedToken}`, 'websocket');
+      
       const payload = JSON.parse(decodedToken);
       
       // Check if token has required fields
@@ -155,6 +157,7 @@ export function initializeWebSocketServer(
         return { valid: false };
       }
       
+      log(`Token validated successfully for user ID: ${payload.userId}`, 'websocket');
       return { valid: true, userId: payload.userId };
     } catch (error) {
       log(`Token validation error: ${error}`, 'websocket');
