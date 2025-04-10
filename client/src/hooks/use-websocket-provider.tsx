@@ -53,10 +53,10 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   // Get WebSocket token from user data or server
   const getWebSocketToken = useCallback(async () => {
     // First try to get token from user data (added in the /api/user endpoint)
-    // Access _websocketToken with a type assertion to avoid TypeScript errors
     if (userData && (userData as any)._websocketToken) {
-      console.log('Using WebSocket token from user data');
-      return (userData as any)._websocketToken;
+      const token = (userData as any)._websocketToken;
+      console.log('Using WebSocket token from user data:', token.substring(0, 10) + '...');
+      return token;
     }
     
     // Fallback to fetching the token directly
@@ -76,7 +76,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       }
       
       const data = await response.json();
-      console.log('Successfully retrieved WebSocket token');
+      console.log('Successfully retrieved WebSocket token:', data.token.substring(0, 10) + '...');
       return data.token;
     } catch (error) {
       console.error('Error fetching WebSocket token:', error);
@@ -89,7 +89,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     // Don't connect if already connecting or connected
     if (isConnecting || (socket && socket.readyState === WebSocket.OPEN)) return;
     
-    // Don't attempt connection if likely not authenticated
+    // Check if user is likely authenticated
     if (!checkAuthenticated()) {
       console.log('Not attempting WebSocket connection - user likely not authenticated');
       return;
@@ -110,118 +110,113 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsHost = window.location.host;
     
-    // Fetch token or create fallback URL
-    getWebSocketToken().then(token => {
-      let wsUrl: string;
+    // Check for user data with token
+    if (!userData || !(userData as any)._websocketToken) {
+      console.log('No user data or WebSocket token available, waiting before connecting');
+      setIsConnecting(false);
+      return;
+    }
+    
+    // Use the WebSocket token directly from user data
+    const token = (userData as any)._websocketToken;
+    
+    // Built WebSocket URL with token
+    const wsUrl = `${wsProtocol}//${wsHost}/api/ws?token=${encodeURIComponent(token)}`;
+    console.log('Connecting to WebSocket with token auth:', wsUrl.substring(0, wsUrl.indexOf('?') + 20) + '...');
       
-      if (token) {
-        // Use token-based authentication
-        console.log('Using token for WebSocket authentication:', token.substring(0, 20) + '...');
-        wsUrl = `${wsProtocol}//${wsHost}/api/ws?token=${encodeURIComponent(token)}`;
-      } else {
-        // Fallback to cookie-based authentication
-        let sessionId = '';
-        const cookieMatch = document.cookie.match(/connect\.sid=([^;]+)/);
-        if (cookieMatch && cookieMatch[1]) {
-          sessionId = cookieMatch[1];
-          console.log('Using session cookie for WebSocket authentication');
-        } else {
-          console.warn('No session cookie found for WebSocket authentication');
+    try {
+      const ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        console.log('WebSocket connection established');
+        setIsConnecting(false);
+        setIsConnected(true);
+        setSocket(ws);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data) as WebSocketMessage;
+          
+          // Handle new notification created
+          if (data.type === 'notification') {
+            // Check if it's an unread count update notification
+            if (data.data && data.data.type === 'unread_count_update') {
+              console.log('Received unread count update:', data.data.unreadCount);
+            }
+            
+            // Always invalidate notifications query for any notification update
+            queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+          }
+          
+          // Handle receipt scan usage updates
+          if (data.type === 'scan_usage_update') {
+            console.log('Received scan usage update:', data.data);
+            // Invalidate the user data to update the UI with new scan usage count
+            queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+            
+            // If we're on the receipts page, we could show a toast notification
+            const currentPath = window.location.pathname;
+            if (currentPath.includes('/receipts')) {
+              toast({
+                title: "Receipt Scan Used",
+                description: `You have ${data.data.scansRemaining} receipt scans remaining.`,
+                duration: 3000,
+              });
+            }
+          }
+        } catch (error) {
+          console.error('Failed to parse WebSocket message:', error);
         }
-        wsUrl = `${wsProtocol}//${wsHost}/api/ws?sid=${encodeURIComponent(sessionId)}`;
-      }
-      
-      console.log('Connecting to WebSocket at:', wsUrl);
-      
-      try {
-        const ws = new WebSocket(wsUrl);
+      };
 
-        ws.onopen = () => {
-          console.log('WebSocket connection established');
-          setIsConnecting(false);
-          setIsConnected(true);
-          setSocket(ws);
-        };
-
-        ws.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data) as WebSocketMessage;
-            
-            // Handle new notification created
-            if (data.type === 'notification') {
-              // Check if it's an unread count update notification
-              if (data.data && data.data.type === 'unread_count_update') {
-                console.log('Received unread count update:', data.data.unreadCount);
-              }
-              
-              // Always invalidate notifications query for any notification update
-              queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
-            }
-            
-            // Handle receipt scan usage updates
-            if (data.type === 'scan_usage_update') {
-              console.log('Received scan usage update:', data.data);
-              // Invalidate the user data to update the UI with new scan usage count
-              queryClient.invalidateQueries({ queryKey: ["/api/user"] });
-              
-              // If we're on the receipts page, we could show a toast notification
-              const currentPath = window.location.pathname;
-              if (currentPath.includes('/receipts')) {
-                toast({
-                  title: "Receipt Scan Used",
-                  description: `You have ${data.data.scansRemaining} receipt scans remaining.`,
-                  duration: 3000,
-                });
-              }
-            }
-          } catch (error) {
-            console.error('Failed to parse WebSocket message:', error);
-          }
-        };
-
-        ws.onclose = (event) => {
-          console.log('WebSocket connection closed', event);
-          setIsConnecting(false);
-          setIsConnected(false);
-          setSocket(null);
-          
-          // Special handling for auth failures to prevent excessive reconnection
-          if (event.code === 1008 && event.reason === 'Not authenticated') {
-            console.log('Authentication failure detected, not attempting immediate reconnect');
-            setAuthFailureCount(prev => prev + 1);
-            setLastAuthAttempt(Date.now());
-            return; // Don't reconnect - our auth failure handler will manage this
-          }
-          
-          // For other failures, auto-reconnect only if this wasn't a clean close
-          // and we don't have excessive auth failures
-          if (!event.wasClean && authFailureCount < MAX_AUTH_FAILURES) {
-            setTimeout(() => {
-              // Only attempt reconnect if document is visible and we're likely authenticated
-              if (document.visibilityState === 'visible' && checkAuthenticated()) {
-                connect();
-              }
-            }, 3000);
-          }
-        };
-
-        ws.onerror = (error) => {
-          console.error('WebSocket error:', error);
-          setIsConnecting(false);
-          setIsConnected(false);
-        };
-      } catch (error) {
-        console.error('Failed to create WebSocket connection:', error);
+      ws.onclose = (event) => {
+        console.log('WebSocket connection closed', event);
         setIsConnecting(false);
         setIsConnected(false);
-      }
-    }).catch(error => {
-      console.error('Token fetch failed:', error);
+        setSocket(null);
+        
+        // Special handling for auth failures to prevent excessive reconnection
+        if (event.code === 1008 && event.reason === 'Not authenticated') {
+          console.log('Authentication failure detected, not attempting immediate reconnect');
+          setAuthFailureCount(prev => prev + 1);
+          setLastAuthAttempt(Date.now());
+          return; // Don't reconnect - our auth failure handler will manage this
+        }
+        
+        // For other failures, auto-reconnect only if this wasn't a clean close
+        // and we don't have excessive auth failures
+        if (!event.wasClean && authFailureCount < MAX_AUTH_FAILURES) {
+          setTimeout(() => {
+            // Only attempt reconnect if document is visible and we're likely authenticated
+            if (document.visibilityState === 'visible' && checkAuthenticated()) {
+              connect();
+            }
+          }, 3000);
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        setIsConnecting(false);
+        setIsConnected(false);
+      };
+    } catch (error) {
+      console.error('Failed to create WebSocket connection:', error);
       setIsConnecting(false);
       setIsConnected(false);
-    });
-  }, [isConnecting, socket, toast, authFailureCount, getWebSocketToken]);
+    }
+  }, [isConnecting, socket, toast, authFailureCount, getWebSocketToken, userData]);
 
+  // Check if the userData has changed and attempt to reconnect
+  useEffect(() => {
+    // If the user data changes and we have a WebSocket token, reconnect
+    if (userData && (userData as any)._websocketToken && !isConnected) {
+      console.log('User data with WebSocket token available, attempting to connect');
+      connect();
+    }
+  }, [userData, isConnected, connect]);
+  
   // Connect on component mount and handle reconnection with backoff
   useEffect(() => {
     const attemptConnection = () => {
@@ -235,7 +230,9 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       if (userData) {
         const hasToken = !!(userData as any)._websocketToken;
         console.log('User data available with WebSocket token:', hasToken);
-        if (!hasToken) {
+        if (hasToken) {
+          console.log('WebSocket token found in user data:', ((userData as any)._websocketToken as string).substring(0, 10) + '...');
+        } else {
           console.warn('WebSocket token is missing from user data');
         }
       } else {
