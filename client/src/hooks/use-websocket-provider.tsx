@@ -24,7 +24,14 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   
   // Create a single websocket connection
   const connect = useCallback(() => {
+    // Don't connect if already connecting or connected
     if (isConnecting || (socket && socket.readyState === WebSocket.OPEN)) return;
+    
+    // Don't attempt connection if likely not authenticated
+    if (!isLikelyAuthenticated()) {
+      console.log('Not attempting WebSocket connection - user likely not authenticated');
+      return;
+    }
     
     // Close any existing socket before creating a new one
     if (socket) {
@@ -110,10 +117,18 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         setIsConnected(false);
         setSocket(null);
         
-        // Auto-reconnect after a delay, but only if this wasn't a clean close
-        if (!event.wasClean) {
+        // Special handling for auth failures to prevent excessive reconnection
+        if (event.code === 1008 && event.reason === 'Not authenticated') {
+          console.log('Authentication failure detected, not attempting immediate reconnect');
+          return; // Don't reconnect - our auth failure handler will manage this
+        }
+        
+        // For other failures, auto-reconnect only if this wasn't a clean close
+        // and we don't have excessive auth failures
+        if (!event.wasClean && authFailureCount < MAX_AUTH_FAILURES) {
           setTimeout(() => {
-            if (document.visibilityState === 'visible') {
+            // Only attempt reconnect if document is visible and we're likely authenticated
+            if (document.visibilityState === 'visible' && isLikelyAuthenticated()) {
               connect();
             }
           }, 3000);
@@ -133,7 +148,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       setIsConnected(false);
       console.error('Failed to create WebSocket connection:', error);
     }
-  }, [isConnecting, socket, toast]);
+  }, [isConnecting, socket, toast, isLikelyAuthenticated, authFailureCount]);
 
   // Function to send a message through the websocket
   const sendMessage = useCallback((message: WebSocketMessage): boolean => {
@@ -144,14 +159,63 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     return false;
   }, [socket]);
 
-  // Connect on component mount and handle reconnection
+  // Track authentication failures to prevent excessive reconnect attempts
+  const [authFailureCount, setAuthFailureCount] = useState(0);
+  const [lastAuthAttempt, setLastAuthAttempt] = useState(0);
+  const MAX_AUTH_FAILURES = 3;
+  const AUTH_FAILURE_BACKOFF_MS = 10000; // 10 seconds after 3 failures
+
+  // Check if the user is likely authenticated
+  const isLikelyAuthenticated = useCallback(() => {
+    return document.cookie.includes('connect.sid');
+  }, []);
+
+  // Handle authentication failure from WebSocket
   useEffect(() => {
-    connect();
+    // Update auth failure tracking when socket closes with auth error
+    if (socket) {
+      const handleAuthFailure = (event: CloseEvent) => {
+        if (event.code === 1008 && event.reason === 'Not authenticated') {
+          console.log('WebSocket authentication failure detected');
+          setAuthFailureCount(prev => prev + 1);
+          setLastAuthAttempt(Date.now());
+        }
+      };
+      
+      // Add custom close handler just for auth failure tracking
+      socket.addEventListener('close', handleAuthFailure);
+      
+      return () => {
+        socket.removeEventListener('close', handleAuthFailure);
+      };
+    }
+  }, [socket]);
+
+  // Connect on component mount and handle reconnection with backoff
+  useEffect(() => {
+    // Only attempt connection if we have no excessive failures
+    const currentTime = Date.now();
+    const shouldAttemptConnect = 
+      authFailureCount < MAX_AUTH_FAILURES || 
+      (currentTime - lastAuthAttempt) > AUTH_FAILURE_BACKOFF_MS * Math.min(authFailureCount, 5);
+    
+    if (isLikelyAuthenticated() && shouldAttemptConnect) {
+      connect();
+      setLastAuthAttempt(currentTime);
+    }
     
     // Add visibility change listener to reconnect when tab becomes visible
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible' && !isConnected) {
-        connect();
+        const now = Date.now();
+        const shouldTryConnect = 
+          authFailureCount < MAX_AUTH_FAILURES || 
+          (now - lastAuthAttempt) > AUTH_FAILURE_BACKOFF_MS * Math.min(authFailureCount, 5);
+        
+        if (isLikelyAuthenticated() && shouldTryConnect) {
+          connect();
+          setLastAuthAttempt(now);
+        }
       }
     };
     
@@ -170,7 +234,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         }
       }
     };
-  }, [connect, isConnected]);
+  }, [connect, isConnected, authFailureCount, lastAuthAttempt, isLikelyAuthenticated]);
 
   return (
     <WebSocketContext.Provider
