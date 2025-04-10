@@ -3,9 +3,9 @@ import { useToast } from '@/hooks/use-toast';
 import { queryClient } from '@/lib/queryClient';
 import { useQuery } from "@tanstack/react-query";
 
-// Helper function to check if user is likely authenticated (exists outside component)
-function checkAuthenticated(): boolean {
-  return document.cookie.includes('connect.sid');
+// Helper function to check if user has WebSocket token available
+function hasWebSocketToken(userData: any): boolean {
+  return !!(userData && userData._websocketToken);
 }
 
 interface WebSocketMessage {
@@ -89,9 +89,9 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     // Don't connect if already connecting or connected
     if (isConnecting || (socket && socket.readyState === WebSocket.OPEN)) return;
     
-    // Check if user is likely authenticated
-    if (!checkAuthenticated()) {
-      console.log('Not attempting WebSocket connection - user likely not authenticated');
+    // Check if user has WebSocket token
+    if (!hasWebSocketToken(userData)) {
+      console.log('Not attempting WebSocket connection - no WebSocket token available');
       return;
     }
     
@@ -188,8 +188,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         // and we don't have excessive auth failures
         if (!event.wasClean && authFailureCount < MAX_AUTH_FAILURES) {
           setTimeout(() => {
-            // Only attempt reconnect if document is visible and we're likely authenticated
-            if (document.visibilityState === 'visible' && checkAuthenticated()) {
+            // Only attempt reconnect if document is visible and we have a token
+            if (document.visibilityState === 'visible' && hasWebSocketToken(userData)) {
               connect();
             }
           }, 3000);
@@ -220,9 +220,9 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   // Connect on component mount and handle reconnection with backoff
   useEffect(() => {
     const attemptConnection = () => {
-      // Check if we're authenticated
-      if (!checkAuthenticated()) {
-        console.log('Not authenticated, skipping WebSocket connection attempt');
+      // Check if we have the token
+      if (!hasWebSocketToken(userData)) {
+        console.log('No WebSocket token available, skipping connection attempt');
         return;
       }
       
