@@ -136,21 +136,32 @@ export function initializeWebSocketServer(
   // Helper function to validate WebSocket tokens
   function validateWebSocketToken(token: string): { valid: boolean; userId?: number } {
     try {
+      log(`Validating token length: ${token.length}`, 'websocket');
+      
       // Decode the token (Base64)
       const decodedToken = Buffer.from(token, 'base64').toString();
       log(`Decoded token: ${decodedToken}`, 'websocket');
       
-      const payload = JSON.parse(decodedToken);
+      let payload;
+      try {
+        payload = JSON.parse(decodedToken);
+        log(`Token payload: ${JSON.stringify(payload)}`, 'websocket');
+      } catch (jsonError) {
+        log(`Failed to parse JSON from token: ${jsonError}`, 'websocket');
+        return { valid: false };
+      }
       
       // Check if token has required fields
       if (!payload.userId || !payload.timestamp) {
-        log('Invalid token format', 'websocket');
+        log(`Invalid token format - missing required fields. userId: ${payload.userId}, timestamp: ${payload.timestamp}`, 'websocket');
         return { valid: false };
       }
       
       // Check token expiration (24 hour validity)
       const tokenAge = Date.now() - payload.timestamp;
       const TOKEN_VALIDITY_MS = 24 * 60 * 60 * 1000; // 24 hours
+      
+      log(`Token age: ${tokenAge}ms of ${TOKEN_VALIDITY_MS}ms allowed`, 'websocket');
       
       if (tokenAge > TOKEN_VALIDITY_MS) {
         log('Token expired', 'websocket');
@@ -175,8 +186,12 @@ export function initializeWebSocketServer(
       const url = new URL(request.url, `http://${request.headers.host}`);
       const token = url.searchParams.get('token');
       
+      log(`WebSocket request URL: ${request.url}`, 'websocket');
+      log(`Token in URL parameters: ${token ? 'present' : 'missing'}`, 'websocket');
+      
       if (token) {
         // Validate token-based authentication
+        log(`Attempting to validate token: ${token.substring(0, 20)}...`, 'websocket');
         const validation = validateWebSocketToken(token);
         
         if (validation.valid && validation.userId) {
