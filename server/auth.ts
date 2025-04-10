@@ -8,6 +8,7 @@ import { storage } from "./storage";
 import { User as SelectUser } from "@shared/schema";
 import { sendVerificationEmail, verifyEmail, resendVerificationEmail } from "./services/email/verification-service";
 import { log } from "./vite";
+import { generateWebSocketToken } from "./routes";
 
 declare global {
   namespace Express {
@@ -274,7 +275,16 @@ export function setupAuth(app: Express) {
       console.log('Unauthorized access attempt to /api/user');
       return res.sendStatus(401);
     }
+    
     console.log(`Current user data retrieved: ${req.user?.username}`);
-    res.json(req.user);
+    
+    // Generate WebSocket token and include it in the response
+    // This way the frontend can get the token without an extra request
+    const wsToken = generateWebSocketToken(req.user.id);
+    
+    res.json({
+      ...req.user,
+      _websocketToken: wsToken // Prefixed with _ to indicate it's a temporary field, not stored in DB
+    });
   });
 }
