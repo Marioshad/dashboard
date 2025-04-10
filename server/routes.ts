@@ -57,6 +57,17 @@ interface MulterRequest extends Request {
   file?: Express.Multer.File;
 }
 
+// Generate a simple WebSocket token for the current user
+function generateWebSocketToken(userId: number): string {
+  // A simple implementation - in production, use a proper JWT library
+  const payload = {
+    userId,
+    timestamp: Date.now()
+  };
+  const token = Buffer.from(JSON.stringify(payload)).toString('base64');
+  return token;
+}
+
 const multerStorage = multer.diskStorage({
   destination: (_req: Express.Request, _file: Express.Multer.File, cb: (error: Error | null, destination: string) => void) => {
     cb(null, uploadsDir);

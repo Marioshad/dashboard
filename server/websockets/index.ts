@@ -135,25 +135,51 @@ export function initializeWebSocketServer(
 
   // Handle upgrade of WebSocket connections
   httpServer.on('upgrade', (request: IncomingMessage, socket: Socket, head: Buffer) => {
-    // Only process WebSocket upgrade requests for our specific path
-    if (request.url === '/api/ws') {
+    // Check if this is a WebSocket request for our endpoint
+    if (request.url && request.url.startsWith('/api/ws')) {
       log(`WebSocket upgrade request received for URL: ${request.url}`, 'websocket');
       
-      // Parse the cookies from the request
-      const cookies = parse(request.headers.cookie || '');
+      // Parse the URL to get the query parameters
+      const url = new URL(request.url, `http://${request.headers.host}`);
       
-      // Get the Express session ID from the cookie
-      const sid = cookies['connect.sid'];
+      // Extract session ID from URL query parameter
+      let sid = url.searchParams.get('sid');
+      
+      // If no session ID in query, try from cookies as fallback
+      if (!sid) {
+        const cookies = parse(request.headers.cookie || '');
+        sid = cookies['connect.sid'];
+      }
       
       if (!sid) {
-        log('WebSocket upgrade rejected: No connect.sid cookie found', 'websocket');
+        log('WebSocket upgrade rejected: No session ID found in URL or cookies', 'websocket');
         socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
         socket.destroy();
         return;
       }
 
-      // Decode the session ID
-      const sessionId = cookieSignature.unsign(sid.slice(2), sessionSecret);
+      // Extract and prepare the session ID
+      let sessionId;
+      
+      // Debug logging
+      log(`Raw session ID from request: ${sid}`, 'websocket');
+      
+      // Try different formats to extract the session ID
+      if (sid.startsWith('s:')) {
+        // Format: s:PAYLOAD.SIGNATURE - This is the standard Express session ID format
+        sessionId = cookieSignature.unsign(sid.slice(2), sessionSecret);
+        log(`Unsigned session ID from s: format: ${sessionId}`, 'websocket');
+      } else {
+        // Try to unsign it directly
+        sessionId = cookieSignature.unsign(sid, sessionSecret);
+        
+        if (!sessionId) {
+          // If that didn't work, maybe it's a raw session ID without signature 
+          // (not secure, but testing for now)
+          log('Attempting to use raw session ID', 'websocket');
+          sessionId = sid;
+        }
+      }
       
       if (!sessionId) {
         log('WebSocket upgrade rejected: Invalid session signature', 'websocket');

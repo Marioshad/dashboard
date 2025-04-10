@@ -2,6 +2,11 @@ import { createContext, ReactNode, useContext, useState, useEffect, useCallback 
 import { useToast } from '@/hooks/use-toast';
 import { queryClient } from '@/lib/queryClient';
 
+// Helper function to check if user is likely authenticated (exists outside component)
+function checkAuthenticated(): boolean {
+  return document.cookie.includes('connect.sid');
+}
+
 interface WebSocketMessage {
   type: string;
   data: any;
@@ -22,13 +27,28 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   const [isConnected, setIsConnected] = useState(false);
   const { toast } = useToast();
   
-  // Create a single websocket connection
+  // Track authentication failures to prevent excessive reconnect attempts
+  const [authFailureCount, setAuthFailureCount] = useState(0);
+  const [lastAuthAttempt, setLastAuthAttempt] = useState(0);
+  const MAX_AUTH_FAILURES = 3;
+  const AUTH_FAILURE_BACKOFF_MS = 10000; // 10 seconds after 3 failures
+
+  // Function to send a message through the websocket
+  const sendMessage = useCallback((message: WebSocketMessage): boolean => {
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify(message));
+      return true;
+    }
+    return false;
+  }, [socket]);
+
+  // Create a WebSocket connection
   const connect = useCallback(() => {
     // Don't connect if already connecting or connected
     if (isConnecting || (socket && socket.readyState === WebSocket.OPEN)) return;
     
     // Don't attempt connection if likely not authenticated
-    if (!isLikelyAuthenticated()) {
+    if (!checkAuthenticated()) {
       console.log('Not attempting WebSocket connection - user likely not authenticated');
       return;
     }
@@ -61,8 +81,23 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         console.log('Extracted host from URL:', wsHost);
       }
       
-      // Create a clean WebSocket URL with no query parameters
-      const wsUrl = `${wsProtocol}//${wsHost}/api/ws`;
+      // Create a WebSocket URL with session cookie value as a query parameter
+      // This approach is needed because WebSockets don't automatically send cookies
+      let sessionId = '';
+      const cookieString = document.cookie;
+      console.log('Current cookies:', cookieString);
+      
+      // Extract the connect.sid cookie value
+      const cookieMatch = cookieString.match(/connect\.sid=([^;]+)/);
+      if (cookieMatch && cookieMatch[1]) {
+        sessionId = cookieMatch[1];
+        console.log('Found session ID in cookies');
+      } else {
+        console.log('No session ID found in cookies');
+      }
+      
+      // Add the session cookie value as a query parameter 
+      const wsUrl = `${wsProtocol}//${wsHost}/api/ws?sid=${encodeURIComponent(sessionId)}`;
       console.log('Final WebSocket URL:', wsUrl);
 
       const ws = new WebSocket(wsUrl);
@@ -120,6 +155,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         // Special handling for auth failures to prevent excessive reconnection
         if (event.code === 1008 && event.reason === 'Not authenticated') {
           console.log('Authentication failure detected, not attempting immediate reconnect');
+          setAuthFailureCount(prev => prev + 1);
+          setLastAuthAttempt(Date.now());
           return; // Don't reconnect - our auth failure handler will manage this
         }
         
@@ -128,7 +165,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         if (!event.wasClean && authFailureCount < MAX_AUTH_FAILURES) {
           setTimeout(() => {
             // Only attempt reconnect if document is visible and we're likely authenticated
-            if (document.visibilityState === 'visible' && isLikelyAuthenticated()) {
+            if (document.visibilityState === 'visible' && checkAuthenticated()) {
               connect();
             }
           }, 3000);
@@ -148,74 +185,33 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       setIsConnected(false);
       console.error('Failed to create WebSocket connection:', error);
     }
-  }, [isConnecting, socket, toast, isLikelyAuthenticated, authFailureCount]);
-
-  // Function to send a message through the websocket
-  const sendMessage = useCallback((message: WebSocketMessage): boolean => {
-    if (socket && socket.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify(message));
-      return true;
-    }
-    return false;
-  }, [socket]);
-
-  // Track authentication failures to prevent excessive reconnect attempts
-  const [authFailureCount, setAuthFailureCount] = useState(0);
-  const [lastAuthAttempt, setLastAuthAttempt] = useState(0);
-  const MAX_AUTH_FAILURES = 3;
-  const AUTH_FAILURE_BACKOFF_MS = 10000; // 10 seconds after 3 failures
-
-  // Check if the user is likely authenticated
-  const isLikelyAuthenticated = useCallback(() => {
-    return document.cookie.includes('connect.sid');
-  }, []);
-
-  // Handle authentication failure from WebSocket
-  useEffect(() => {
-    // Update auth failure tracking when socket closes with auth error
-    if (socket) {
-      const handleAuthFailure = (event: CloseEvent) => {
-        if (event.code === 1008 && event.reason === 'Not authenticated') {
-          console.log('WebSocket authentication failure detected');
-          setAuthFailureCount(prev => prev + 1);
-          setLastAuthAttempt(Date.now());
-        }
-      };
-      
-      // Add custom close handler just for auth failure tracking
-      socket.addEventListener('close', handleAuthFailure);
-      
-      return () => {
-        socket.removeEventListener('close', handleAuthFailure);
-      };
-    }
-  }, [socket]);
+  }, [isConnecting, socket, toast, authFailureCount]);
 
   // Connect on component mount and handle reconnection with backoff
   useEffect(() => {
-    // Only attempt connection if we have no excessive failures
-    const currentTime = Date.now();
-    const shouldAttemptConnect = 
-      authFailureCount < MAX_AUTH_FAILURES || 
-      (currentTime - lastAuthAttempt) > AUTH_FAILURE_BACKOFF_MS * Math.min(authFailureCount, 5);
+    const attemptConnection = () => {
+      // Check if we're authenticated
+      if (!checkAuthenticated()) return;
     
-    if (isLikelyAuthenticated() && shouldAttemptConnect) {
-      connect();
-      setLastAuthAttempt(currentTime);
-    }
+      // Only attempt connection if we have no excessive failures  
+      const currentTime = Date.now();
+      const shouldAttemptConnect = 
+        authFailureCount < MAX_AUTH_FAILURES || 
+        (currentTime - lastAuthAttempt) > AUTH_FAILURE_BACKOFF_MS * Math.min(authFailureCount, 5);
     
-    // Add visibility change listener to reconnect when tab becomes visible
+      if (shouldAttemptConnect) {
+        connect();
+        setLastAuthAttempt(currentTime);
+      }
+    };
+    
+    // Try to connect on component mount
+    attemptConnection();
+    
+    // Set up reconnection on tab visibility change
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible' && !isConnected) {
-        const now = Date.now();
-        const shouldTryConnect = 
-          authFailureCount < MAX_AUTH_FAILURES || 
-          (now - lastAuthAttempt) > AUTH_FAILURE_BACKOFF_MS * Math.min(authFailureCount, 5);
-        
-        if (isLikelyAuthenticated() && shouldTryConnect) {
-          connect();
-          setLastAuthAttempt(now);
-        }
+        attemptConnection();
       }
     };
     
@@ -234,7 +230,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         }
       }
     };
-  }, [connect, isConnected, authFailureCount, lastAuthAttempt, isLikelyAuthenticated]);
+  }, [connect, isConnected, authFailureCount, lastAuthAttempt]);
 
   return (
     <WebSocketContext.Provider
