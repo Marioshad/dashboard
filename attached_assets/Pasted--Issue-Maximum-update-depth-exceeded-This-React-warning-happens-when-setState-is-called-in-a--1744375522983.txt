@@ -1,0 +1,95 @@
+⚠️ Issue: "Maximum update depth exceeded"
+This React warning happens when setState() is called in a way that triggers a rerender → which re-triggers the useEffect that contains setState() → leading to an infinite loop.
+
+🧠 Where This Likely Happens:
+Inside your useEffect() that tracks userData and calls connect():
+
+ts
+Copy
+Edit
+useEffect(() => {
+  if (userData && (userData as any)._websocketToken && !isConnected) {
+    console.log('User data with WebSocket token available, attempting to connect');
+    connect(); // <- causes socket state to change → triggers re-render → refires this effect
+  }
+}, [userData, isConnected, connect]);
+If connect() sets setSocket() or setIsConnected(), and that causes userData to be refetched or updated, this becomes a loop.
+
+✅ Fix: Add a Stable "hasAttemptedConnection" Ref
+Use a useRef() to ensure the connect() logic runs only once per token — even if userData updates:
+
+ts
+Copy
+Edit
+const hasConnectedRef = useRef(false);
+
+useEffect(() => {
+  if (
+    userData &&
+    (userData as any)._websocketToken &&
+    !isConnected &&
+    !hasConnectedRef.current
+  ) {
+    console.log('User data with WebSocket token available, attempting to connect');
+    hasConnectedRef.current = true;
+    connect();
+  }
+}, [userData, isConnected, connect]);
+💡 You can reset this flag in .onclose() if needed to allow reconnection after logout/relogin.
+
+✅ Double Check: Is WebSocket Reconnecting Too Often?
+To answer your question: Is the WebSocket still reconnecting multiple times?
+
+Here's how to check:
+
+Watch the browser console for repeated messages like:
+
+pgsql
+Copy
+Edit
+WebSocket connection established
+WebSocket connection closed
+WebSocket connection established
+Or this pattern:
+
+pgsql
+Copy
+Edit
+Attempting WebSocket connection
+Skipping connection due to excessive failures
+Add a connectCounter and log it:
+
+ts
+Copy
+Edit
+const connectAttemptCount = useRef(0);
+
+useEffect(() => {
+  if (shouldConnect) {
+    connectAttemptCount.current += 1;
+    console.log('WebSocket connect attempt #', connectAttemptCount.current);
+    connect();
+  }
+}, [shouldConnect]);
+If it's climbing fast — something is still triggering connect() repeatedly.
+
+✅ Recap: Final WebSocket Sanity Checklist
+✅ Item	Description
+✓ One connection at a time	You check isConnecting and readyState before calling connect()
+✓ Token check before connection	You confirm _websocketToken exists
+✓ No infinite re-renders	Avoid connect() in useEffect loops without guards
+✓ Backoff strategy for reconnection	You limit reconnect attempts after failures
+✓ Server accepts valid tokens	You verified the token logic server-side
+✅ Optional: Expose connect() to a custom hook
+You might also want to expose connect() in the context so you can trigger manual reconnects (e.g., after login):
+
+ts
+Copy
+Edit
+interface WebSocketContextType {
+  socket: WebSocket | null;
+  isConnecting: boolean;
+  isConnected: boolean;
+  sendMessage: (message: WebSocketMessage) => boolean;
+  reconnect: () => void;
+}

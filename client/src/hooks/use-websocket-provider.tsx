@@ -1,4 +1,4 @@
-import { createContext, ReactNode, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, ReactNode, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { queryClient } from '@/lib/queryClient';
 import { useQuery } from "@tanstack/react-query";
@@ -18,6 +18,7 @@ interface WebSocketContextType {
   isConnecting: boolean;
   isConnected: boolean;
   sendMessage: (message: WebSocketMessage) => boolean;
+  reconnect: () => void;
 }
 
 const WebSocketContext = createContext<WebSocketContextType | null>(null);
@@ -40,6 +41,10 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   const [lastAuthAttempt, setLastAuthAttempt] = useState(0);
   const MAX_AUTH_FAILURES = 3;
   const AUTH_FAILURE_BACKOFF_MS = 10000; // 10 seconds after 3 failures
+  
+  // Use refs to prevent infinite render loops
+  const hasAttemptedConnection = useRef<boolean>(false);
+  const connectAttemptCount = useRef<number>(0);
 
   // Function to send a message through the websocket
   const sendMessage = useCallback((message: WebSocketMessage): boolean => {
@@ -86,6 +91,10 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
   // Create a WebSocket connection
   const connect = useCallback(() => {
+    // Track connection attempts for debugging
+    connectAttemptCount.current += 1;
+    console.log('WebSocket connect attempt #', connectAttemptCount.current);
+    
     // Don't connect if already connecting or connected
     if (isConnecting) {
       console.log('Already connecting, skipping additional connection attempt');
@@ -224,11 +233,53 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   // But only if we're not already connecting or connected
   useEffect(() => {
     // If the user data changes and we have a WebSocket token, and we're not already connecting/connected
-    if (userData && (userData as any)._websocketToken && !isConnected && !isConnecting && !socket) {
+    if (userData && 
+        (userData as any)._websocketToken && 
+        !isConnected && 
+        !isConnecting && 
+        !socket && 
+        !hasAttemptedConnection.current) {
       console.log('User data with WebSocket token available, attempting to connect');
+      hasAttemptedConnection.current = true;
       connect();
     }
+    
+    // Reset flag when socket closed or connection failed
+    if (!isConnected && !isConnecting && !socket) {
+      // Allow connection to be attempted again if there are no active connections
+      hasAttemptedConnection.current = false;
+    }
   }, [userData, isConnected, isConnecting, socket, connect]);
+  
+  // Function to manually reconnect - useful after login
+  const reconnect = useCallback(() => {
+    // Reset the connection attempt flag
+    hasAttemptedConnection.current = false;
+    
+    // Close any existing socket
+    if (socket) {
+      try {
+        socket.close(1000, "Manual reconnection requested");
+      } catch (err) {
+        console.error('Error closing socket during reconnect:', err);
+      }
+    }
+    
+    // Reset states
+    setSocket(null);
+    setIsConnected(false);
+    setIsConnecting(false);
+    
+    // Attempt new connection
+    connect();
+    
+    // Provide feedback
+    toast({
+      title: "Reconnecting...",
+      description: "Attempting to reestablish WebSocket connection",
+      duration: 3000,
+    });
+  }, [socket, connect, toast]);
   
   // Connect on component mount and handle reconnection with backoff
   useEffect(() => {
@@ -236,6 +287,12 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       // Skip if we're already connected, connecting, or have a socket
       if (isConnected || isConnecting || socket) {
         console.log('Already connected or connecting, skipping connection attempt');
+        return;
+      }
+      
+      // Skip if we've already attempted a connection in this component lifecycle
+      if (hasAttemptedConnection.current) {
+        console.log('Already attempted a connection in this lifecycle, skipping');
         return;
       }
       
@@ -266,6 +323,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     
       if (shouldAttemptConnect) {
         console.log('Attempting WebSocket connection');
+        hasAttemptedConnection.current = true;
         connect();
         setLastAuthAttempt(currentTime);
       } else {
@@ -279,6 +337,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     // Set up reconnection on tab visibility change
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible' && !isConnected && !isConnecting && !socket) {
+        // Reset the connection attempt flag if visibility changes and there's no connection
+        hasAttemptedConnection.current = false;
         attemptConnection();
       }
     };
