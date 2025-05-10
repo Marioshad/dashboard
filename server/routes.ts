@@ -16,13 +16,31 @@ import {
 } from "@shared/schema";
 import { eq, and, isNull, sql, desc } from "drizzle-orm";
 import Stripe from "stripe";
-import { WebSocketServer, WebSocket as WsWebSocket } from 'ws';
+import { initializeWebSocketServer } from './websockets';
+import { WebSocketMessage } from './websockets/utils';
+import { Socket } from 'net';
+import { parse } from 'cookie';
+import cookieSignature from 'cookie-signature';
+import { log } from './vite';
+import { registerBillingRoutes } from './services/stripe/billing-routes';
+import { registerAdminRoutes } from './services/admin/admin-routes';
+import { sendTestEmail, isSendGridAvailable } from './services/email/email-service';
+import emailRouter from './services/email/routes';
+import { requireEmailVerification } from './services/auth/email-verification-middleware';
+import { sendNotificationToUser } from './websockets/notification-service';
+
+// Import the WebSocket handlers
+import { sendNotification as wsSendNotification } from './websockets/handlers/notificationHandler';
+import { updateReceiptScanUsage as wsUpdateReceiptScanUsage } from './websockets/handlers/usageUpdateHandler';
+import { getConnectedClients } from './websockets/index';
+
+const SESSION_SECRET = process.env.SESSION_SECRET || 'keyboard cat';
 
 // Make Stripe integration optional
 let stripe: Stripe | null = null;
 if (process.env.STRIPE_SECRET_KEY) {
   stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-    apiVersion: "2025-02-24.acacia",
+    apiVersion: "2025-03-31.basil",
     typescript: true,
   });
   console.log("Stripe payment processing initialized successfully");
@@ -62,38 +80,22 @@ const upload = multer({
   }
 });
 
-// Store WebSocket clients
-const clients = new Map<number, WsWebSocket>();
-
 async function sendNotification(userId: number, type: string, message: string, actorId?: number, metadata?: any) {
   try {
-    // Create a notification object with the metadata included in the message
-    const notificationData = {
+    log(`Sending notification to user ${userId}: ${type} - ${message}`);
+    
+    // Use the specialized notification handler from the websockets module 
+    // which handles both database and WebSocket operations
+    const notification = await wsSendNotification(
       userId,
       type,
       message,
-      actorId
-    };
+      actorId,
+      metadata,
+      getConnectedClients() // Get the current connected clients map
+    );
     
-    // If metadata is provided, convert it to JSON string and attach to message
-    if (metadata) {
-      notificationData.message = `${message}|${JSON.stringify(metadata)}`;
-    }
-    
-    const [notification] = await db
-      .insert(notifications)
-      .values(notificationData)
-      .returning();
-
-    const ws = clients.get(userId);
-    // WsWebSocket.OPEN is 1 (same constant as browser WebSocket.OPEN)
-    if (ws?.readyState === 1) {
-      ws.send(JSON.stringify({
-        type: 'notification',
-        data: notification
-      }));
-    }
-
+    log(`Notification sent and saved with ID ${notification.id}`);
     return notification;
   } catch (error) {
     console.error('Error sending notification:', error);
@@ -169,8 +171,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('Validation successful, parsed data:', result.data);
       console.log('Calling storage.updateProfile with data:', JSON.stringify(result.data));
 
+      const currentUser = req.user;
       const updatedUser = await storage.updateProfile(req.user.id, result.data);
       console.log('Profile updated successfully, returning user:', JSON.stringify(updatedUser));
+      
+      // Update Stripe customer email if email changed and user has Stripe customer ID
+      if (stripe && 
+          result.data.email && 
+          currentUser.email !== result.data.email && 
+          currentUser.stripeCustomerId) {
+        try {
+          console.log(`Updating Stripe customer email from ${currentUser.email} to ${result.data.email}`);
+          await stripe.customers.update(currentUser.stripeCustomerId, {
+            email: result.data.email
+          });
+          console.log('Stripe customer email updated successfully');
+        } catch (stripeError) {
+          console.error('Error updating Stripe customer email:', stripeError);
+          // We don't want to fail the profile update if Stripe update fails
+          // Just log the error and continue
+        }
+      }
       
       res.json(updatedUser);
     } catch (error) {
@@ -359,7 +380,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         where: eq(roles.id, req.user.roleId as number),
       });
 
-      if (!userRole || !['Superadmin', 'Admin'].includes(userRole.name)) {
+      if (!userRole || !['superadmin', 'admin'].includes(userRole.name)) {
         return res.sendStatus(403);
       }
 
@@ -386,7 +407,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         where: eq(roles.id, req.user.roleId as number),
       });
 
-      if (!userRole || !['Superadmin', 'Admin'].includes(userRole.name)) {
+      if (!userRole || !['superadmin', 'admin'].includes(userRole.name)) {
         return res.sendStatus(403);
       }
 
@@ -407,7 +428,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         where: eq(roles.id, req.user.roleId as number),
       });
 
-      if (!userRole || !['Superadmin', 'Admin'].includes(userRole.name)) {
+      if (!userRole || !['superadmin', 'admin'].includes(userRole.name)) {
         return res.sendStatus(403);
       }
 
@@ -451,7 +472,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       // Safely check if user role includes admin roles, handling the case where userRole might be undefined
-      const isAdmin = userRole && ['Superadmin', 'Admin'].includes(userRole.name);
+      const isAdmin = userRole && ['superadmin', 'admin'].includes(userRole.name);
       
       if (!req.body.enabled && settings?.require2FA && !isAdmin) {
         return res.status(403).json({ message: "2FA is required by administrator" });
@@ -479,16 +500,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.sendStatus(401);
       }
 
+      // Ensure we only get notifications for the currently logged-in user
+      const userId = req.user.id;
+      console.log(`Fetching notifications for user ID: ${userId}`);
+      
       const userNotifications = await db.query.notifications.findMany({
-        where: eq(notifications.userId, req.user.id),
+        where: eq(notifications.userId, userId),
         orderBy: desc(notifications.createdAt),
         with: {
           actor: true
         }
       });
 
+      console.log(`Found ${userNotifications.length} notifications for user ${userId}`);
       res.json(userNotifications);
     } catch (error) {
+      console.error('Error fetching notifications:', error);
       next(error);
     }
   });
@@ -499,16 +526,96 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.sendStatus(401);
       }
 
+      const userId = req.user.id;
+
+      // Get the count of unread notifications before update
+      const unreadCountBefore = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(notifications)
+        .where(
+          and(
+            eq(notifications.userId, userId),
+            eq(notifications.read, false)
+          )
+        )
+        .then(result => result[0]?.count || 0);
+
+      // Skip update if there are no unread notifications
+      if (unreadCountBefore === 0) {
+        return res.sendStatus(200);
+      }
+
       await db
         .update(notifications)
         .set({ read: true })
         .where(
           and(
-            eq(notifications.userId, req.user.id),
+            eq(notifications.userId, userId),
             eq(notifications.read, false)
           )
         );
 
+      // Send a WebSocket notification to update badge count in real-time
+      if (app.locals.sendWebSocketNotification) {
+        app.locals.sendWebSocketNotification(userId, 'notification', {
+          type: 'unread_count_update',
+          unreadCount: 0, // All notifications are now read
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      res.sendStatus(200);
+    } catch (error) {
+      next(error);
+    }
+  });
+  
+  // Route to mark a single notification as read
+  app.post('/api/notifications/:id/read', async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      const notificationId = parseInt(req.params.id);
+      const userId = req.user.id;
+      
+      if (isNaN(notificationId)) {
+        return res.status(400).json({ error: 'Invalid notification ID' });
+      }
+
+      // Mark single notification as read
+      await db
+        .update(notifications)
+        .set({ read: true })
+        .where(
+          and(
+            eq(notifications.id, notificationId),
+            eq(notifications.userId, userId)
+          )
+        );
+      
+      // Get the updated count of unread notifications
+      const unreadCount = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(notifications)
+        .where(
+          and(
+            eq(notifications.userId, userId),
+            eq(notifications.read, false)
+          )
+        )
+        .then(result => result[0]?.count || 0);
+      
+      // Send a WebSocket notification to update badge count in real-time
+      if (app.locals.sendWebSocketNotification) {
+        app.locals.sendWebSocketNotification(userId, 'notification', {
+          type: 'unread_count_update',
+          unreadCount: unreadCount,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
       res.sendStatus(200);
     } catch (error) {
       next(error);
@@ -517,30 +624,244 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/subscription/prices', async (req, res) => {
     try {
+      // Function to get database settings
+      async function getDbSettings() {
+        try {
+          const client = await pool.connect();
+          try {
+            // Get settings from the database
+            const result = await client.query(`
+              SELECT 
+                stripe_smart_product_id,
+                stripe_pro_product_id,
+                stripe_smart_monthly_price_id,
+                stripe_smart_yearly_price_id,
+                stripe_pro_monthly_price_id,
+                stripe_pro_yearly_price_id
+              FROM app_settings 
+              WHERE id = 1
+            `);
+            
+            return result.rows[0] || {};
+          } finally {
+            client.release();
+          }
+        } catch (dbError) {
+          console.error('Error fetching Stripe settings from database:', dbError);
+          return {};
+        }
+      }
+      
+      // Function to create a set of manual prices using DB settings if available
+      async function createManualPrices() {
+        const dbSettings = await getDbSettings();
+        
+        return [
+          {
+            id: dbSettings.stripe_smart_monthly_price_id || 'price_smart_monthly',
+            unit_amount: 999, // $9.99
+            recurring: {
+              interval: 'month'
+            },
+            product: {
+              id: dbSettings.stripe_smart_product_id || 'prod_smart',
+              name: 'Smart Pantry Monthly',
+              description: 'Smart Pantry subscription billed monthly',
+              metadata: {
+                tier: 'smart'
+              }
+            }
+          },
+          {
+            id: dbSettings.stripe_smart_yearly_price_id || 'price_smart_yearly',
+            unit_amount: 9999, // $99.99
+            recurring: {
+              interval: 'year'
+            },
+            product: {
+              id: dbSettings.stripe_smart_product_id || 'prod_smart',
+              name: 'Smart Pantry Yearly',
+              description: 'Smart Pantry subscription billed yearly',
+              metadata: {
+                tier: 'smart'
+              }
+            }
+          },
+          {
+            id: dbSettings.stripe_pro_monthly_price_id || 'price_pro_monthly',
+            unit_amount: 1999, // $19.99
+            recurring: {
+              interval: 'month'
+            },
+            product: {
+              id: dbSettings.stripe_pro_product_id || 'prod_pro',
+              name: 'Family Pantry Pro Monthly',
+              description: 'Family Pantry Pro subscription billed monthly',
+              metadata: {
+                tier: 'pro'
+              }
+            }
+          },
+          {
+            id: dbSettings.stripe_pro_yearly_price_id || 'price_pro_yearly',
+            unit_amount: 19999, // $199.99
+            recurring: {
+              interval: 'year'
+            },
+            product: {
+              id: dbSettings.stripe_pro_product_id || 'prod_pro',
+              name: 'Family Pantry Pro Yearly',
+              description: 'Family Pantry Pro subscription billed yearly',
+              metadata: {
+                tier: 'pro'
+              }
+            }
+          }
+        ];
+      }
+      
+      // Check if Stripe is configured
+      if (!stripe) {
+        console.log('Stripe service not available. Returning subscription tiers from database settings and schema.');
+        
+        // Return manually constructed prices with database settings if available
+        const manualPrices = await createManualPrices();
+        return res.json(manualPrices);
+      }
+
+      // If Stripe is configured, fetch real prices
+      try {
+        // Get settings from database
+        const dbSettings = await getDbSettings();
+        
+        // Get product IDs from database or fallback to environment variables
+        const smartProductId = dbSettings.stripe_smart_product_id || process.env.STRIPE_PRODUCT_SMART;
+        const proProductId = dbSettings.stripe_pro_product_id || process.env.STRIPE_PRODUCT_PRO;
+        
+        // Get all active prices
+        const { data: prices } = await stripe.prices.list({
+          active: true,
+          expand: ['data.product'],
+          limit: 100,
+        });
+        
+        // Filter prices for our subscription products based on product IDs or metadata
+        const subscriptionPrices = prices.filter(price => {
+          const product = price.product as Stripe.Product;
+          
+          // Check if product ID matches one of our product IDs from database/env
+          if (smartProductId && product.id === smartProductId) {
+            // Set metadata tier to 'smart' if not already set
+            if (!product.metadata?.tier) {
+              (product.metadata = product.metadata || {}).tier = 'smart';
+            }
+            return true;
+          }
+          
+          if (proProductId && product.id === proProductId) {
+            // Set metadata tier to 'pro' if not already set
+            if (!product.metadata?.tier) {
+              (product.metadata = product.metadata || {}).tier = 'pro';
+            }
+            return true;
+          }
+          
+          // Fallback to metadata tier check
+          return product.metadata?.tier === 'smart' || product.metadata?.tier === 'pro';
+        });
+        
+        if (subscriptionPrices.length > 0) {
+          return res.json(subscriptionPrices);
+        }
+        
+        // If no prices found, fall back to manually constructed prices
+        const manualPrices = await createManualPrices();
+        return res.json(manualPrices);
+      } catch (stripeError: any) {
+        console.error('Error fetching prices from Stripe:', stripeError);
+        
+        // If Stripe API call fails, return manually constructed prices with database settings
+        const manualPrices = await createManualPrices();
+        return res.json(manualPrices);
+      }
+    } catch (error: any) {
+      console.error('Unexpected error in subscription prices endpoint:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get subscription info from payment intent client secret
+  app.get('/api/subscription/info', async (req, res) => {
+    try {
       if (!stripe) {
         return res.status(503).json({ 
           message: 'Payment service unavailable. Please contact administrator.',
           stripeDisabled: true
         });
       }
-
-      if (!process.env.STRIPE_PRICE_ID) {
-        return res.status(503).json({ 
-          message: 'Payment service misconfigured. Missing price configuration.',
-          stripeDisabled: true 
-        });
+      
+      const { secret } = req.query;
+      
+      if (!secret || typeof secret !== 'string') {
+        return res.status(400).json({ error: 'Client secret is required' });
       }
-
-      const prices = await stripe!.prices.list({
-        product: process.env.STRIPE_PRICE_ID,
-        active: true,
-        expand: ['data.product'],
-      });
-
-      res.json(prices.data);
+      
+      // Extract the payment intent ID from the client secret
+      // Client secrets are in the format pi_XXX_secret_YYY
+      const parts = secret.split('_secret_');
+      if (parts.length !== 2) {
+        return res.status(400).json({ error: 'Invalid client secret format' });
+      }
+      
+      const paymentIntentId = parts[0];
+      console.log('Fetching payment intent for ID:', paymentIntentId);
+      
+      try {
+        // Retrieve the payment intent to get metadata including tier
+        const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+        
+        // Get the tier information from the metadata or from the description
+        let tierId = '';
+        
+        // Check if there's metadata with tier information
+        if (paymentIntent.metadata && paymentIntent.metadata.tier) {
+          tierId = paymentIntent.metadata.tier;
+          console.log('Found tier ID from payment intent metadata:', tierId);
+        } else if (paymentIntent.description) {
+          // Try to extract from description
+          const description = paymentIntent.description.toLowerCase();
+          if (description.includes('smart')) {
+            tierId = 'smart';
+          } else if (description.includes('family') || description.includes('pro')) {
+            tierId = 'pro';
+          }
+          console.log('Extracted tier ID from payment intent description:', tierId);
+        }
+        
+        // Log the payment details for debugging
+        console.log('Payment details:', {
+          id: paymentIntent.id,
+          amount: paymentIntent.amount,
+          currency: paymentIntent.currency,
+          metadata: paymentIntent.metadata,
+          description: paymentIntent.description
+        });
+        
+        // Return expanded information about the payment
+        res.json({
+          tierId,
+          amount: paymentIntent.amount,
+          currency: paymentIntent.currency,
+          description: paymentIntent.description || '',
+          status: paymentIntent.status
+        });
+      } catch (error: any) {
+        console.error('Error retrieving payment intent:', error);
+        res.status(500).json({ error: error.message });
+      }
     } catch (error: any) {
-      console.error('Error fetching prices:', error);
-      res.status(400).json({ message: error.message });
+      console.error('Unexpected error in subscription info endpoint:', error);
+      res.status(500).json({ message: error.message });
     }
   });
 
@@ -565,22 +886,267 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let user = req.user;
 
       if (user.stripeSubscriptionId) {
-        const subscription = await stripe!.subscriptions.retrieve(user.stripeSubscriptionId, {
-          expand: ['latest_invoice.payment_intent']
-        });
+        try {
+          // First, retrieve the subscription without any expansions
+          const subscription = await stripe!.subscriptions.retrieve(user.stripeSubscriptionId);
 
-        const invoice = subscription.latest_invoice as Stripe.Invoice;
-        const paymentIntent = invoice.payment_intent as Stripe.PaymentIntent;
-
-        if (!paymentIntent?.client_secret) {
-          throw new Error('Unable to retrieve payment information');
+          console.log('Retrieved existing subscription:', subscription.id);
+          console.log('Subscription status:', subscription.status);
+          
+          // Check if there's a pending invoice
+          const latestInvoiceId = subscription.latest_invoice; 
+          
+          if (!latestInvoiceId) {
+            console.log('No latest invoice for subscription, creating one...');
+            // Create a new invoice if none exists
+            const newInvoice = await stripe!.invoices.create({
+              customer: user.stripeCustomerId,
+              subscription: subscription.id,
+              collection_method: 'charge_automatically',
+            });
+            
+            console.log('Created new invoice:', newInvoice.id);
+            
+            // Finalize the invoice to generate payment intent
+            const finalizedInvoice = await stripe!.invoices.finalizeInvoice(newInvoice.id);
+            console.log('Finalized invoice:', finalizedInvoice.id, 'Payment intent:', finalizedInvoice.payment_intent);
+            
+            // Get the payment intent ID from the invoice
+            if (!finalizedInvoice.payment_intent) {
+              return res.status(400).json({ 
+                message: 'Unable to generate payment intent for this subscription',
+                details: 'The invoice could not be processed. Please try again later.'
+              });
+            }
+            
+            // Retrieve the payment intent separately to get the client secret
+            const paymentIntentId = typeof finalizedInvoice.payment_intent === 'string' 
+              ? finalizedInvoice.payment_intent
+              : finalizedInvoice.payment_intent.id;
+              
+            const paymentIntent = await stripe!.paymentIntents.retrieve(paymentIntentId);
+            
+            if (!paymentIntent?.client_secret) {
+              throw new Error('Unable to retrieve payment information');
+            }
+            
+            // Get and set tier information from subscription
+            let tierId = '';
+            try {
+              // First try to get tier from subscription items (product metadata)
+              if (subscription.items.data.length > 0) {
+                const item = subscription.items.data[0];
+                if (item.price && item.price.product) {
+                  const productId = typeof item.price.product === 'string' 
+                    ? item.price.product 
+                    : item.price.product.id;
+                    
+                  if (productId) {
+                    const product = await stripe!.products.retrieve(productId);
+                    
+                    // Check if the product has tier metadata
+                    if (product.metadata && product.metadata.tier) {
+                      tierId = product.metadata.tier;
+                      console.log('Found tier in product metadata:', tierId);
+                    } else if (product.name) {
+                      // Try to extract tier from product name
+                      const productNameLower = product.name.toLowerCase();
+                      if (productNameLower.includes('smart')) {
+                        tierId = 'smart';
+                        console.log('Determined tier from product name: smart');
+                      } else if (productNameLower.includes('family') || productNameLower.includes('pro')) {
+                        tierId = 'pro';
+                        console.log('Determined tier from product name: pro');
+                      }
+                    }
+                  }
+                }
+              }
+              
+              // If we found a tier, update the payment intent metadata
+              if (tierId) {
+                await stripe!.paymentIntents.update(paymentIntentId, {
+                  metadata: { 
+                    tierId,
+                    subscriptionId: subscription.id,
+                    invoiceId: finalizedInvoice.id
+                  }
+                });
+                console.log(`Updated payment intent ${paymentIntentId} with tier: ${tierId}`);
+              }
+            } catch (tierError) {
+              console.error('Error setting tier metadata on payment intent:', tierError);
+              // Don't throw, we can continue without this
+            }
+            
+            res.send({
+              subscriptionId: subscription.id,
+              clientSecret: paymentIntent.client_secret
+            });
+            return;
+          }
+          
+          // Get the invoice
+          console.log('Retrieving invoice:', latestInvoiceId);
+          const invoice = await stripe!.invoices.retrieve(
+            typeof latestInvoiceId === 'string' ? latestInvoiceId : latestInvoiceId.id
+          );
+          
+          console.log('Invoice status:', invoice.status, 'Payment intent:', invoice.payment_intent);
+          
+          // Check if we have a payment intent
+          if (!invoice.payment_intent) {
+            console.log('No payment intent for invoice, attempting to pay...');
+            try {
+              // Try to pay the invoice to generate a payment intent
+              const paidInvoice = await stripe!.invoices.pay(invoice.id, {
+                paid_out_of_band: false
+              });
+              
+              if (!paidInvoice.payment_intent) {
+                return res.status(400).json({ 
+                  message: 'Unable to process payment for this invoice',
+                  details: 'Payment processing failed. Please try again later.'
+                });
+              }
+              
+              // Get the payment intent separately
+              const paymentIntentId = typeof paidInvoice.payment_intent === 'string'
+                ? paidInvoice.payment_intent
+                : paidInvoice.payment_intent.id;
+                
+              const paymentIntent = await stripe!.paymentIntents.retrieve(paymentIntentId);
+              
+              if (!paymentIntent?.client_secret) {
+                throw new Error('Unable to retrieve payment information');
+              }
+              
+              res.send({
+                subscriptionId: subscription.id,
+                clientSecret: paymentIntent.client_secret
+              });
+              return;
+            } catch (payError) {
+              console.error('Error paying invoice:', payError);
+              
+              // If paying fails, create a new payment intent manually
+              // Get product details to extract tier information
+              let tierId = '';
+              try {
+                // Get the subscription items to find the product
+                const subItems = await stripe!.subscriptionItems.list({
+                  subscription: subscription.id
+                });
+                
+                if (subItems.data.length > 0) {
+                  const price = await stripe!.prices.retrieve(subItems.data[0].price.id);
+                  if (price.product) {
+                    const product = await stripe!.products.retrieve(price.product as string);
+                    tierId = product.metadata?.tier || '';
+                    console.log(`Found tier ID from product metadata: ${tierId}`);
+                  }
+                }
+              } catch (err) {
+                console.error('Error extracting tier ID:', err);
+              }
+              
+              const paymentIntent = await stripe!.paymentIntents.create({
+                amount: invoice.amount_due,
+                currency: invoice.currency || 'eur',
+                customer: user.stripeCustomerId,
+                description: `Payment for invoice ${invoice.id}`,
+                metadata: {
+                  invoiceId: invoice.id,
+                  subscriptionId: subscription.id,
+                  tierId: tierId
+                }
+              });
+              
+              if (!paymentIntent?.client_secret) {
+                throw new Error('Unable to create payment intent');
+              }
+              
+              res.send({
+                subscriptionId: subscription.id,
+                clientSecret: paymentIntent.client_secret
+              });
+              return;
+            }
+          }
+          
+          // Get the payment intent separately
+          const paymentIntentId = typeof invoice.payment_intent === 'string'
+            ? invoice.payment_intent
+            : invoice.payment_intent.id;
+            
+          console.log('Retrieving payment intent:', paymentIntentId);
+          const paymentIntent = await stripe!.paymentIntents.retrieve(paymentIntentId);
+          
+          if (!paymentIntent?.client_secret) {
+            throw new Error('Unable to retrieve payment information');
+          }
+          
+          // Get and set tier information from subscription
+          let tierId = '';
+          try {
+            // First try to get tier from subscription items (product metadata)
+            if (subscription.items.data.length > 0) {
+              const item = subscription.items.data[0];
+              if (item.price && item.price.product) {
+                const productId = typeof item.price.product === 'string' 
+                  ? item.price.product 
+                  : item.price.product.id;
+                  
+                if (productId) {
+                  const product = await stripe!.products.retrieve(productId);
+                  
+                  // Check if the product has tier metadata
+                  if (product.metadata && product.metadata.tier) {
+                    tierId = product.metadata.tier;
+                    console.log('Found tier in product metadata:', tierId);
+                  } else if (product.name) {
+                    // Try to extract tier from product name
+                    const productNameLower = product.name.toLowerCase();
+                    if (productNameLower.includes('smart')) {
+                      tierId = 'smart';
+                      console.log('Determined tier from product name: smart');
+                    } else if (productNameLower.includes('family') || productNameLower.includes('pro')) {
+                      tierId = 'pro';
+                      console.log('Determined tier from product name: pro');
+                    }
+                  }
+                }
+              }
+            }
+            
+            // If we found a tier, update the payment intent metadata
+            if (tierId) {
+              await stripe!.paymentIntents.update(paymentIntentId, {
+                metadata: { 
+                  tierId,
+                  subscriptionId: subscription.id,
+                  invoiceId: invoice.id
+                }
+              });
+              console.log(`Updated payment intent ${paymentIntentId} with tier: ${tierId}`);
+            }
+          } catch (tierError) {
+            console.error('Error setting tier metadata on payment intent:', tierError);
+            // Don't throw, we can continue without this
+          }
+          
+          res.send({
+            subscriptionId: subscription.id,
+            clientSecret: paymentIntent.client_secret
+          });
+          return;
+        } catch (error) {
+          console.error('Error retrieving existing subscription:', error);
+          return res.status(400).json({ 
+            message: 'Error retrieving subscription: ' + (error as Error).message,
+            details: 'Please try again or contact support'
+          });
         }
-
-        res.send({
-          subscriptionId: subscription.id,
-          clientSecret: paymentIntent.client_secret
-        });
-        return;
       }
 
       if (!user.email) {
@@ -592,17 +1158,124 @@ export async function registerRoutes(app: Express): Promise<Server> {
         name: user.username,
       });
 
+      // Try to determine the tier from the price ID
+      let tierId = '';
+      try {
+        // Get price information to extract tier data
+        const price = await stripe!.prices.retrieve(priceId, {
+          expand: ['product']
+        });
+        
+        // Extract tier from product metadata if it exists
+        if (price.product && typeof price.product !== 'string') {
+          if (price.product.metadata && price.product.metadata.tier) {
+            tierId = price.product.metadata.tier;
+            console.log(`Found tier ID ${tierId} from product metadata`);
+          } else if (price.product.name) {
+            // Try to extract tier from product name
+            const productName = price.product.name.toLowerCase();
+            if (productName.includes('smart')) {
+              tierId = 'smart';
+            } else if (productName.includes('family') || productName.includes('pro')) {
+              tierId = 'pro';
+            }
+            console.log(`Extracted tier ID ${tierId} from product name`);
+          }
+        }
+      } catch (priceError) {
+        console.error('Error getting price details:', priceError);
+      }
+
+      // Create the subscription without any expansions
       const subscription = await stripe!.subscriptions.create({
         customer: customer.id,
         items: [{
           price: priceId,
         }],
         payment_behavior: 'default_incomplete',
-        expand: ['latest_invoice.payment_intent']
+        metadata: {
+          tier: tierId, // Add the tier to the subscription metadata
+          tierId: tierId // Add tierId field to be consistent with other parts of the code
+        }
       });
-
-      const invoice = subscription.latest_invoice as Stripe.Invoice;
-      const paymentIntent = invoice.payment_intent as Stripe.PaymentIntent;
+      
+      // Log details to understand the subscription object
+      console.log('Created subscription with ID:', subscription.id);
+      
+      // Get the latest invoice ID from the subscription
+      const latestInvoiceId = subscription.latest_invoice;
+      if (!latestInvoiceId) {
+        throw new Error('No invoice created with this subscription');
+      }
+      
+      console.log('Latest invoice ID:', latestInvoiceId);
+      
+      // Retrieve the invoice without trying to expand the payment_intent
+      const invoice = await stripe!.invoices.retrieve(
+        typeof latestInvoiceId === 'string' ? latestInvoiceId : latestInvoiceId.id
+      );
+      
+      // If there's no payment intent yet, we need to create one
+      let paymentIntent;
+      
+      if (!invoice.payment_intent) {
+        console.log('No payment intent on invoice, creating one manually...');
+        
+        // Create a payment intent manually
+        paymentIntent = await stripe!.paymentIntents.create({
+          amount: invoice.amount_due,
+          currency: invoice.currency || 'eur',
+          customer: customer.id,
+          description: `Payment for subscription (${tierId || 'Unknown tier'})`,
+          metadata: {
+            subscriptionId: subscription.id,
+            invoiceId: invoice.id,
+            tier: tierId,
+            tierId: tierId
+          }
+        });
+        
+        // Update the invoice with the payment intent
+        try {
+          await stripe!.invoices.update(invoice.id, {
+            payment_intent: paymentIntent.id,
+          });
+          console.log('Updated invoice with payment intent:', paymentIntent.id);
+        } catch (updateError) {
+          console.error('Failed to update invoice with payment intent:', updateError);
+          // Continue anyway since we have a valid payment intent
+        }
+      } else {
+        // Get the payment intent ID and retrieve it separately
+        const paymentIntentId = typeof invoice.payment_intent === 'string' 
+          ? invoice.payment_intent 
+          : invoice.payment_intent.id;
+          
+        console.log('Payment intent found on invoice:', paymentIntentId);
+        
+        // Retrieve the payment intent to get the client secret
+        paymentIntent = await stripe!.paymentIntents.retrieve(paymentIntentId);
+      }
+      
+      // Always add tier info to the payment intent, using any available source
+      if (paymentIntent) {
+        // Get the tier ID from various potential sources
+        const effectiveTierId = tierId || 
+          (subscription?.metadata?.tier as string) || 
+          (priceId.includes('smart') ? 'smart' : priceId.includes('pro') ? 'pro' : '');
+          
+        console.log('Setting payment intent metadata with tier ID:', effectiveTierId);
+        
+        await stripe!.paymentIntents.update(paymentIntent.id, {
+          metadata: { 
+            tier: effectiveTierId,
+            tierId: effectiveTierId, // Adding tierId field to be consistent with other parts of the code
+            subscriptionId: subscription.id,
+            invoiceId: typeof latestInvoiceId === 'string' ? latestInvoiceId : latestInvoiceId.id
+          },
+          description: `Subscription to ${effectiveTierId === 'smart' ? 'Smart Pantry' : effectiveTierId === 'pro' ? 'Family Pantry Pro' : 'Premium tier'}`
+        });
+      }
 
       if (!paymentIntent?.client_secret) {
         throw new Error('Unable to create payment intent');
@@ -628,68 +1301,89 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+    console.log('=== STRIPE WEBHOOK RECEIVED ===');
+    console.log('Headers:', JSON.stringify(req.headers));
+    
     if (!stripe) {
+      console.error('Webhook error: Stripe not initialized');
       return res.status(503).json({ 
         message: 'Payment service unavailable. Please contact administrator.',
         stripeDisabled: true
       });
     }
     
-    if (!process.env.STRIPE_WEBHOOK_SECRET) {
-      console.error('Missing Stripe webhook secret');
+    // Get webhook secret from database settings if available
+    let webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    
+    try {
+      const client = await pool.connect();
+      try {
+        // Get settings from the database
+        const result = await client.query(`
+          SELECT stripe_webhook_secret
+          FROM app_settings 
+          WHERE id = 1
+        `);
+        
+        const dbSettings = result.rows[0] || {};
+        if (dbSettings.stripe_webhook_secret) {
+          webhookSecret = dbSettings.stripe_webhook_secret;
+          console.log('Using webhook secret from database settings');
+        } else {
+          console.log('Using webhook secret from environment variables');
+        }
+      } finally {
+        client.release();
+      }
+    } catch (dbError) {
+      console.error('Error fetching Stripe webhook secret from database:', dbError);
+    }
+    
+    if (!webhookSecret) {
+      console.error('Missing Stripe webhook secret - not found in environment or database');
       return res.status(500).json({ message: 'Payment webhook misconfigured' });
     }
 
     const sig = req.headers['stripe-signature'];
+    
+    if (!sig) {
+      console.error('Missing Stripe signature header');
+      return res.status(400).json({ error: 'Missing stripe-signature header' });
+    }
+    
     let event;
 
     try {
+      console.log('Constructing Stripe event from webhook payload');
       event = stripe!.webhooks.constructEvent(
         req.body,
         sig as string,
-        process.env.STRIPE_WEBHOOK_SECRET
+        webhookSecret
       );
+      console.log('Webhook event constructed successfully:', event.type);
+      console.log('Event ID:', event.id);
+      console.log('Event data object:', JSON.stringify(event.data.object, null, 2));
     } catch (err: any) {
-      console.error('Webhook error:', err.message);
+      console.error('Webhook signature verification failed:', err.message);
       return res.status(400).send(`Webhook Error: ${err.message}`);
     }
 
-    switch (event.type) {
-      case 'customer.subscription.created':
-      case 'customer.subscription.updated': {
-        const subscription = event.data.object as Stripe.Subscription;
-
-        await db.update(users)
-          .set({
-            subscriptionStatus: subscription.status,
-            updatedAt: sql`CURRENT_TIMESTAMP`,
-          })
-          .where(eq(users.stripeSubscriptionId, subscription.id));
-
-        if (subscription.status === 'active') {
-          const premiumRole = await db.query.roles.findFirst({
-            where: eq(roles.name, 'Premium'),
-          });
-
-          if (premiumRole) {
-            const [user] = await db.select()
-              .from(users)
-              .where(eq(users.stripeSubscriptionId, subscription.id));
-
-            if (user) {
-              await db.update(users)
-                .set({
-                  roleId: premiumRole.id,
-                  updatedAt: sql`CURRENT_TIMESTAMP`,
-                })
-                .where(eq(users.id, user.id));
-            }
-          }
-        }
-        break;
-      }
+    // Import the webhook handler dynamically
+    console.log('Importing webhook handler...');
+    const { handleStripeWebhookEvent } = await import('./services/stripe/webhook-handler');
+    
+    try {
+      // Call the webhook handler
+      console.log(`Processing webhook event: ${event.type}`);
+      await handleStripeWebhookEvent(event, sendNotification);
+      console.log(`Successfully processed webhook event: ${event.type}`);
+    } catch (error) {
+      console.error(`Error handling webhook event ${event.type}:`, error);
+      // Still return 200 to Stripe - we don't want them to retry since we've received the event
+      // Even though we had an error processing it, we'll handle it in our logs
     }
 
+    console.log('Webhook processing complete, returning success response');
     res.json({ received: true });
   });
 
@@ -709,7 +1403,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/locations', async (req, res, next) => {
+  app.post('/api/locations', requireEmailVerification, async (req, res, next) => {
     try {
       if (!req.isAuthenticated()) {
         return res.sendStatus(401);
@@ -758,7 +1452,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch('/api/locations/:id', async (req, res, next) => {
+  app.patch('/api/locations/:id', requireEmailVerification, async (req, res, next) => {
     try {
       if (!req.isAuthenticated()) {
         return res.sendStatus(401);
@@ -906,7 +1600,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/food-items', async (req, res, next) => {
+  app.post('/api/food-items', requireEmailVerification, async (req, res, next) => {
     try {
       if (!req.isAuthenticated()) {
         return res.sendStatus(401);
@@ -922,6 +1616,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const location = await storage.getLocation(result.data.locationId);
         if (!location || location.userId !== req.user.id) {
           return res.status(403).json({ message: "Invalid location or access denied" });
+        }
+      }
+      
+      // Check receipt item limits for free tier users
+      if (result.data.receiptId) {
+        // Get user's subscription tier
+        const user = await db.select().from(users).where(eq(users.id, req.user.id)).limit(1);
+        
+        if (user.length > 0 && user[0].subscriptionTier === 'free') {
+          // Count existing items for this receipt
+          const existingItemsCount = await db
+            .select({ count: sql`count(*)` })
+            .from(foodItems)
+            .where(and(
+              eq(foodItems.receiptId, result.data.receiptId),
+              eq(foodItems.userId, req.user.id)
+            ));
+            
+          const count = Number(existingItemsCount[0]?.count || 0);
+          
+          // If we've already hit the 50 item limit, don't add more
+          if (count >= 50) {
+            // Send a notification about the limit being reached
+            await sendNotification(
+              req.user.id,
+              'item_limit_reached',
+              `You've reached the 50-item limit for receipt items on your free plan. Upgrade to add more items.`,
+              undefined,
+              { 
+                receiptId: result.data.receiptId,
+                limit: 50,
+                count: count,
+                subscriptionTier: 'free'
+              }
+            );
+            
+            return res.status(403).json({ 
+              message: "Item limit reached",
+              error: 'FREE_TIER_ITEM_LIMIT',
+              details: 'Free tier accounts are limited to 50 items per receipt. Upgrade your plan to get unlimited items.',
+              limit: 50,
+              count: count
+            });
+          }
         }
       }
       
@@ -963,7 +1701,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch('/api/food-items/:id', async (req, res, next) => {
+  app.patch('/api/food-items/:id', requireEmailVerification, async (req, res, next) => {
     try {
       if (!req.isAuthenticated()) {
         return res.sendStatus(401);
@@ -1064,7 +1802,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/stores', async (req, res, next) => {
+  app.post('/api/stores', requireEmailVerification, async (req, res, next) => {
     try {
       if (!req.isAuthenticated()) {
         return res.sendStatus(401);
@@ -1097,7 +1835,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch('/api/stores/:id', async (req, res, next) => {
+  app.patch('/api/stores/:id', requireEmailVerification, async (req, res, next) => {
     try {
       if (!req.isAuthenticated()) {
         return res.sendStatus(401);
@@ -1141,7 +1879,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/receipts/upload', upload.single('receipt'), async (req: MulterRequest, res, next) => {
+// Helper function to update receipt scan usage via WebSocket
+const updateReceiptScanUsage = async (userId: number, scansUsed: number, scansLimit: number) => {
+  try {
+    // Send a notification about scan usage
+    await sendNotification(userId, 'receipt_scan_usage', `You have used ${scansUsed} out of ${scansLimit} receipt scans.`, undefined, {
+      scansUsed,
+      scansLimit
+    });
+    
+    // Use the specialized handler from the websockets module 
+    // but tell it to skip the database update since we already did that in routes.ts
+    await wsUpdateReceiptScanUsage(
+      userId,
+      scansUsed,
+      scansLimit,
+      getConnectedClients(), // Get the current connected clients map
+      true // Skip database update since we already did that
+    );
+    
+    log(`Updated and broadcast receipt scan usage for user ${userId}: ${scansUsed}/${scansLimit}`);
+  } catch (error) {
+    console.error('Error updating receipt scan usage:', error);
+  }
+};
+
+  app.post('/api/receipts/upload', requireEmailVerification, upload.single('receipt'), async (req: MulterRequest, res, next) => {
     try {
       if (!req.isAuthenticated()) {
         return res.sendStatus(401);
@@ -1149,6 +1912,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });
+      }
+      
+      // Check receipt scan limits based on subscription tier
+      const user = req.user;
+      
+      // If user has a limit (not unlimited) and has reached it, block the upload
+      if (user.receiptScansLimit !== null && 
+          user.receiptScansLimit !== undefined && 
+          user.receiptScansLimit >= 0 && 
+          user.receiptScansUsed !== null &&
+          user.receiptScansUsed !== undefined &&
+          user.receiptScansUsed >= user.receiptScansLimit) {
+        
+        // Get the next tier name for the upgrade message
+        const nextTier = user.subscriptionTier === 'free' ? 'Smart Pantry' : 'Family Pantry Pro';
+        
+        // Send a notification to the user about reaching their limit
+        await sendNotification(
+          user.id, 
+          'subscription_limit', 
+          `You've reached your receipt scan limit of ${user.receiptScansLimit}. Please upgrade your subscription to continue scanning receipts.`,
+          undefined,
+          {
+            limitType: 'receipt_scans',
+            currentTier: user.subscriptionTier,
+            nextTier: user.subscriptionTier === 'pro' ? null : nextTier,
+            scanLimit: user.receiptScansLimit,
+            scansUsed: user.receiptScansUsed
+          }
+        );
+        
+        return res.status(403).json({ 
+          message: `You've reached your receipt scan limit (${user.receiptScansLimit}) for this billing period.`,
+          error: 'RECEIPT_LIMIT_REACHED',
+          tierInfo: {
+            currentTier: user.subscriptionTier,
+            scanLimit: user.receiptScansLimit,
+            scansUsed: user.receiptScansUsed,
+            nextTier: user.subscriptionTier === 'pro' ? null : nextTier
+          }
+        });
       }
 
       const receiptUrl = `/uploads/${req.file.filename}`;
@@ -1173,7 +1977,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           } = await import('./services/openai');
           
           // Process the receipt image with OpenAI OCR to extract items
-          extractedItems = await processReceiptImage(fullFilePath);
+          // Pass the subscription tier to limit items for free tier users
+          const userTier = typeof user.subscriptionTier === 'string' ? user.subscriptionTier : 'free';
+          extractedItems = await processReceiptImage(fullFilePath, userTier);
           
           // Extract store information from the receipt
           extractedStore = await extractStoreFromReceipt(fullFilePath);
@@ -1265,6 +2071,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Create the receipt with defensive error handling
         const receipt = await storage.createReceipt(receiptData);
         
+        // Increment user's receipt scan count only if they have a limit (i.e., not unlimited)
+        if (user.receiptScansLimit !== null && 
+            user.receiptScansLimit !== undefined && 
+            user.receiptScansLimit >= 0) {
+          
+          // Update the receipt scans used count in the database
+          await db.update(users)
+            .set({
+              receiptScansUsed: sql`"receipt_scans_used" + 1`,
+              updatedAt: sql`CURRENT_TIMESTAMP`
+            })
+            .where(eq(users.id, user.id));
+            
+          const scansUsed = user.receiptScansUsed !== null && user.receiptScansUsed !== undefined ? user.receiptScansUsed + 1 : 1;
+          console.log(`Incremented receipt scans for user ${user.id} (now: ${scansUsed}/${user.receiptScansLimit})`);
+          
+          // Send WebSocket notification about usage (using our new function)
+          const scansLimit = user.receiptScansLimit || 0;
+          await updateReceiptScanUsage(user.id, scansUsed, scansLimit);
+        }
+        
         // Send notification about the new receipt
         const storeName = storeData ? storeData.name : "Unknown Store";
         await sendNotification(
@@ -1308,13 +2135,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Receipt API endpoints
   app.get('/api/receipts', async (req, res, next) => {
     try {
+      console.log('GET /api/receipts endpoint called');
+      
       if (!req.isAuthenticated()) {
+        console.log('User not authenticated');
         return res.sendStatus(401);
       }
       
-      const receipts = await storage.getReceipts(req.user.id);
-      res.json(receipts);
+      console.log(`Fetching receipts for user: ${req.user.id}`);
+      try {
+        const receipts = await storage.getReceipts(req.user.id);
+        console.log(`Successfully retrieved ${receipts.length} receipts`);
+        res.json(receipts);
+      } catch (storageError) {
+        console.error('Error in storage.getReceipts:', storageError);
+        // Send a more descriptive error response
+        res.status(500).json({
+          error: 'Failed to retrieve receipts',
+          details: storageError.message
+        });
+      }
     } catch (error) {
+      console.error('Unexpected error in GET /api/receipts:', error);
       next(error);
     }
   });
@@ -1805,7 +2647,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/food-items/:itemId/tags', async (req, res, next) => {
+  app.post('/api/food-items/:itemId/tags', requireEmailVerification, async (req, res, next) => {
     try {
       if (!req.isAuthenticated()) {
         return res.sendStatus(401);
@@ -1890,68 +2732,599 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  const httpServer = createServer(app);
-
-  const wss = new WebSocketServer({
-    server: httpServer,
-    path: '/api/ws'
-  });
-
-  wss.on('connection', (ws: WsWebSocket, request) => {
-    const userId = (request as any).userId;
-    console.log('WebSocket connected for user:', userId);
-
-    clients.set(userId, ws);
-
-    ws.on('close', () => {
-      console.log('WebSocket closed for user:', userId);
-      clients.delete(userId);
-    });
-
-    ws.on('error', (error) => {
-      console.error('WebSocket error for user:', userId, error);
-      clients.delete(userId);
-    });
-
-    ws.send(JSON.stringify({ type: 'connected' }));
-  });
-
-  wss.on('upgrade', (request, socket, head) => {
-    if (request.url?.startsWith('/api/ws')) {
-      const sessionParser = app._router.stack
-        .find((layer: any) => layer.name === 'session')?.handle;
-
-      if (!sessionParser) {
-        console.error('Session middleware not found');
-        socket.destroy();
-        return;
+  // Billing API endpoints
+  app.get('/api/billing/subscription', async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
       }
 
-      // Parse session before WebSocket upgrade
-      sessionParser(request, {} as any, async () => {
-        const session = (request as any).session;
-        console.log('WebSocket upgrade request session:', session);
+      if (!stripe) {
+        return res.status(503).json({ 
+          message: 'Payment service unavailable. Please contact administrator.',
+          stripeDisabled: true
+        });
+      }
 
-        if (!session?.passport?.user) {
-          console.error('WebSocket: User not authenticated');
-          socket.destroy();
-          return;
+      const user = req.user;
+
+      if (!user.stripeCustomerId || !user.stripeSubscriptionId) {
+        return res.json({ 
+          subscription: null,
+          tier: 'free'
+        });
+      }
+
+      try {
+        // Retrieve basic subscription info to avoid expansion errors
+        const subscription = await stripe.subscriptions.retrieve(user.stripeSubscriptionId);
+        
+        // Get the payment method separately if it exists
+        let paymentMethod = null;
+        if (subscription.default_payment_method) {
+          try {
+            const pmId = typeof subscription.default_payment_method === 'string' 
+              ? subscription.default_payment_method 
+              : subscription.default_payment_method.id;
+              
+            paymentMethod = await stripe.paymentMethods.retrieve(pmId);
+          } catch (pmError) {
+            console.error('Error retrieving payment method:', pmError);
+          }
+        }
+        
+        // Extract tier info from subscription metadata, product metadata, or user record
+        let tierId = user.subscriptionTier;
+        
+        // Check subscription metadata
+        if (subscription.metadata && subscription.metadata.tier) {
+          tierId = subscription.metadata.tier;
+        }
+        
+        // If no tier found yet, try to extract from product info
+        if (!tierId || tierId === 'free') {
+          try {
+            // Get first subscription item
+            const subItems = await stripe.subscriptionItems.list({
+              subscription: subscription.id
+            });
+            
+            if (subItems.data.length > 0) {
+              // Get the price
+              const price = await stripe.prices.retrieve(subItems.data[0].price.id);
+              
+              // Get the product
+              if (price.product && typeof price.product === 'string') {
+                const product = await stripe.products.retrieve(price.product);
+                
+                if (product.metadata && product.metadata.tier) {
+                  tierId = product.metadata.tier;
+                  console.log(`Found tier ID ${tierId} from product metadata`);
+                  
+                  // Also update user record if tier info found in product metadata
+                  if (tierId !== user.subscriptionTier) {
+                    console.log(`Updating user ${user.id} with newly detected tier ${tierId}`);
+                    await storage.updateUserSubscription(user.id, {
+                      subscriptionTier: tierId
+                    });
+                  }
+                }
+              }
+            }
+          } catch (productError) {
+            console.error('Error extracting product tier info:', productError);
+          }
         }
 
-        try {
-          (request as any).userId = session.passport.user;
-          console.log('WebSocket upgrade authenticated for user:', session.passport.user);
+        // Get prices and product details separately to avoid type errors
+        const subItems = await stripe.subscriptionItems.list({
+          subscription: subscription.id
+        });
+        
+        // Build items array with product details
+        const itemsWithProductDetails = await Promise.all(
+          subItems.data.map(async (item) => {
+            try {
+              const price = await stripe.prices.retrieve(item.price.id);
+              let productDetails = { name: "Unknown product", description: null };
+              
+              if (price.product && typeof price.product === 'string') {
+                try {
+                  const product = await stripe.products.retrieve(price.product);
+                  productDetails = {
+                    name: product.name || "Unknown product",
+                    description: product.description || null
+                  };
+                } catch (productError) {
+                  console.error('Error retrieving product details:', productError);
+                }
+              }
+              
+              return {
+                id: item.id,
+                price: {
+                  id: price.id,
+                  unitAmount: price.unit_amount,
+                  currency: price.currency,
+                  interval: price.recurring?.interval,
+                  product: productDetails
+                }
+              };
+            } catch (priceError) {
+              console.error('Error retrieving price details:', priceError);
+              return {
+                id: item.id,
+                price: {
+                  id: item.price.id,
+                  unitAmount: item.price.unit_amount,
+                  currency: item.price.currency,
+                  interval: item.price.recurring?.interval,
+                  product: { name: "Unknown product", description: null }
+                }
+              };
+            }
+          })
+        );
+        
+        const subscriptionData = {
+          id: subscription.id,
+          status: subscription.status,
+          currentPeriodStart: new Date((subscription as any).current_period_start * 1000),
+          currentPeriodEnd: new Date((subscription as any).current_period_end * 1000),
+          cancelAtPeriodEnd: subscription.cancel_at_period_end,
+          tier: tierId || user.subscriptionTier,
+          paymentMethod: paymentMethod,
+          items: itemsWithProductDetails
+        };
 
-          wss.handleUpgrade(request, socket, head, (ws: WsWebSocket) => {
-            wss.emit('connection', ws, request);
-          });
-        } catch (error) {
-          console.error('Error during WebSocket upgrade:', error);
-          socket.destroy();
+        res.json({ subscription: subscriptionData });
+      } catch (err) {
+        console.error('Error retrieving subscription:', err);
+        return res.json({ 
+          subscription: null,
+          tier: user.subscriptionTier || 'free',
+          error: 'Could not retrieve subscription details'
+        });
+      }
+    } catch (error: any) {
+      console.error('Subscription retrieval error:', error);
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.get('/api/billing/invoices', async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      if (!stripe) {
+        return res.status(503).json({ 
+          message: 'Payment service unavailable. Please contact administrator.',
+          stripeDisabled: true
+        });
+      }
+
+      const user = req.user;
+
+      if (!user.stripeCustomerId) {
+        return res.json({ invoices: [] });
+      }
+
+      // Get invoices without expanding subscription to avoid API errors
+      const invoices = await stripe.invoices.list({
+        customer: user.stripeCustomerId,
+        limit: 10
+      });
+
+      const formattedInvoices = invoices.data.map(invoice => ({
+        id: invoice.id,
+        number: invoice.number,
+        amount: invoice.amount_paid,
+        currency: invoice.currency,
+        status: invoice.status,
+        created: new Date(invoice.created * 1000),
+        periodStart: invoice.period_start ? new Date(invoice.period_start * 1000) : null,
+        periodEnd: invoice.period_end ? new Date(invoice.period_end * 1000) : null,
+        pdfUrl: invoice.invoice_pdf,
+        hostedUrl: invoice.hosted_invoice_url,
+        subscriptionId: (invoice as any).subscription
+      }));
+
+      res.json({ invoices: formattedInvoices });
+    } catch (error: any) {
+      console.error('Invoices retrieval error:', error);
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.get('/api/billing/payment-methods', async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      if (!stripe) {
+        return res.status(503).json({ 
+          message: 'Payment service unavailable. Please contact administrator.',
+          stripeDisabled: true
+        });
+      }
+
+      const user = req.user;
+
+      if (!user.stripeCustomerId) {
+        return res.json({ paymentMethods: [] });
+      }
+
+      const paymentMethods = await stripe.paymentMethods.list({
+        customer: user.stripeCustomerId,
+        type: 'card'
+      });
+
+      const formattedPaymentMethods = paymentMethods.data.map(method => ({
+        id: method.id,
+        type: method.type,
+        billingDetails: method.billing_details,
+        card: method.card ? {
+          brand: method.card.brand,
+          last4: method.card.last4,
+          expMonth: method.card.exp_month,
+          expYear: method.card.exp_year
+        } : null
+      }));
+
+      res.json({ paymentMethods: formattedPaymentMethods });
+    } catch (error: any) {
+      console.error('Payment methods retrieval error:', error);
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/billing/cancel-subscription', async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      if (!stripe) {
+        return res.status(503).json({ 
+          message: 'Payment service unavailable. Please contact administrator.',
+          stripeDisabled: true
+        });
+      }
+
+      const user = req.user;
+
+      if (!user.stripeSubscriptionId) {
+        return res.status(400).json({ message: 'No active subscription found' });
+      }
+
+      // Cancel at period end instead of immediately
+      const subscription = await stripe.subscriptions.update(user.stripeSubscriptionId, {
+        cancel_at_period_end: true
+      });
+
+      // Send notification about cancellation
+      await sendNotification(
+        user.id,
+        'subscription_update',
+        'Your subscription has been scheduled to cancel at the end of the billing period.',
+        undefined,
+        { 
+          action: 'cancel_scheduled',
+          periodEnd: new Date((subscription as any).current_period_end * 1000)
         }
+      );
+
+      res.json({ 
+        success: true, 
+        cancelAtPeriodEnd: subscription.cancel_at_period_end,
+        currentPeriodEnd: new Date((subscription as any).current_period_end * 1000)
+      });
+    } catch (error: any) {
+      console.error('Subscription cancellation error:', error);
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/billing/resume-subscription', async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      if (!stripe) {
+        return res.status(503).json({ 
+          message: 'Payment service unavailable. Please contact administrator.',
+          stripeDisabled: true
+        });
+      }
+
+      const user = req.user;
+
+      if (!user.stripeSubscriptionId) {
+        return res.status(400).json({ message: 'No active subscription found' });
+      }
+
+      // Resume subscription by setting cancel_at_period_end to false
+      const subscription = await stripe.subscriptions.update(user.stripeSubscriptionId, {
+        cancel_at_period_end: false
+      });
+
+      // Send notification about resumed subscription
+      await sendNotification(
+        user.id,
+        'subscription_update',
+        'Your subscription has been resumed and will renew automatically.',
+        undefined,
+        { action: 'resume' }
+      );
+
+      res.json({ 
+        success: true, 
+        cancelAtPeriodEnd: subscription.cancel_at_period_end
+      });
+    } catch (error: any) {
+      console.error('Subscription resume error:', error);
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/billing/update-payment-method', async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+
+      if (!stripe) {
+        return res.status(503).json({ 
+          message: 'Payment service unavailable. Please contact administrator.',
+          stripeDisabled: true
+        });
+      }
+
+      const { paymentMethodId } = req.body;
+      if (!paymentMethodId) {
+        return res.status(400).json({ message: 'Payment method ID is required' });
+      }
+
+      const user = req.user;
+
+      if (!user.stripeCustomerId) {
+        return res.status(400).json({ message: 'No customer profile found' });
+      }
+
+      // Attach the payment method to the customer
+      await stripe.paymentMethods.attach(paymentMethodId, {
+        customer: user.stripeCustomerId,
+      });
+
+      // Set as default payment method
+      await stripe.customers.update(user.stripeCustomerId, {
+        invoice_settings: {
+          default_payment_method: paymentMethodId,
+        },
+      });
+
+      // If there's an active subscription, update that too
+      if (user.stripeSubscriptionId) {
+        await stripe.subscriptions.update(user.stripeSubscriptionId, {
+          default_payment_method: paymentMethodId,
+        });
+      }
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('Payment method update error:', error);
+      res.status(400).json({ message: error.message });
+    }
+  });
+  
+  // Reset user's Stripe subscription data (for recovery from issues)
+  app.post('/api/billing/reset-subscription', async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.sendStatus(401);
+      }
+      
+      // Get the user
+      const user = req.user;
+      
+      // Reset Stripe-related fields in the user record
+      const updatedUser = await storage.updateUserSubscription(user.id, {
+        stripeSubscriptionId: undefined, // Use undefined instead of null
+        subscriptionStatus: 'inactive',
+        subscriptionTier: 'free',
+        currentBillingPeriodStart: null,
+        currentBillingPeriodEnd: null
+      });
+      
+      // Also clear the customer ID if requested
+      if (req.body.resetCustomerId) {
+        await storage.updateStripeCustomerId(user.id, ''); // Use empty string instead of null
+      }
+      
+      // Log the action
+      console.log(`Reset Stripe subscription data for user ${user.id}`);
+      
+      // Send notification about the reset
+      await sendNotification(
+        user.id,
+        'subscription_updated',
+        'Your subscription data has been reset. You can now resubscribe.',
+        undefined,
+        { status: 'reset' }
+      );
+      
+      res.json({ 
+        success: true, 
+        message: 'Stripe subscription data reset successfully',
+        user: updatedUser 
+      });
+    } catch (error: any) {
+      console.error('Error resetting Stripe subscription data:', error);
+      res.status(500).json({ 
+        message: 'Failed to reset subscription data', 
+        error: error.message 
       });
     }
   });
+
+  // Email test endpoint
+  app.post('/api/email/test', async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      // Check if SendGrid is available
+      if (!isSendGridAvailable()) {
+        return res.status(503).json({ 
+          success: false, 
+          message: 'Email service is not available. Please check that SENDGRID_API_KEY is set.'
+        });
+      }
+
+      const { adminEmail } = req.body;
+      const user = req.user;
+      
+      if (!user.email) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Your profile email is not set. Please update your profile with a valid email.'
+        });
+      }
+
+      // Send test email
+      const success = await sendTestEmail(
+        user.email,
+        adminEmail || null,
+        user.fullName || user.username
+      );
+
+      if (success) {
+        await sendNotification(
+          user.id,
+          'email_test',
+          `Test email sent successfully to ${user.email}${adminEmail ? ' and admin' : ''}.`,
+          undefined,
+          { email: user.email }
+        );
+
+        return res.json({ 
+          success: true, 
+          message: `Test email sent to ${user.email}${adminEmail ? ' and admin' : ''}.`
+        });
+      } else {
+        return res.status(500).json({ 
+          success: false, 
+          message: 'Failed to send test email. Please check the logs for more details.'
+        });
+      }
+    } catch (error: any) {
+      console.error('Error sending test email:', error);
+      return res.status(500).json({ 
+        success: false, 
+        message: `Error sending test email: ${error.message}`
+      });
+    }
+  });
+
+  registerBillingRoutes(app, sendNotification);
+  registerAdminRoutes(app);
+  
+  // Test webhook endpoint for debugging
+  app.post('/api/test-webhook', async (req: Request, res: Response) => {
+    try {
+      const { tier, status, userId } = req.body;
+      log(`TEST WEBHOOK - Received webhook test with tier: ${tier}, status: ${status}, userId: ${userId || 'not provided'}`, 'stripe-webhook');
+      
+      // Get user (current user or specified user)
+      const user = userId ? await storage.getUser(userId) : (req.user as any);
+      
+      if (!user) {
+        return res.status(400).json({ error: 'User not found' });
+      }
+      
+      log(`TEST WEBHOOK - User before update: ${JSON.stringify({
+        id: user.id,
+        username: user.username,
+        subscriptionStatus: user.subscriptionStatus,
+        subscriptionTier: user.subscriptionTier,
+        stripeSubscriptionId: user.stripeSubscriptionId
+      })}`, 'stripe-webhook');
+      
+      // Update user's subscription
+      const updatedUser = await storage.updateUserSubscription(user.id, {
+        subscriptionStatus: status || 'active',
+        subscriptionTier: tier || 'free',
+      });
+      
+      log(`TEST WEBHOOK - User after update: ${JSON.stringify({
+        id: updatedUser.id,
+        username: updatedUser.username,
+        subscriptionStatus: updatedUser.subscriptionStatus,
+        subscriptionTier: updatedUser.subscriptionTier,
+        stripeSubscriptionId: updatedUser.stripeSubscriptionId
+      })}`, 'stripe-webhook');
+      
+      // Update user's limits based on tier
+      const TIER_LIMITS = {
+        free: { scans: 3, items: 50, sharedUsers: 1 },
+        smart_pantry: { scans: 20, items: 200, sharedUsers: 2 },
+        family_pantry_pro: { scans: 100, items: 1000, sharedUsers: 10 }
+      };
+      
+      const limits = TIER_LIMITS[tier as keyof typeof TIER_LIMITS] || TIER_LIMITS.free;
+      await storage.updateUserLimits(user.id, {
+        receiptScansLimit: limits.scans,
+        maxItems: limits.items,
+        maxSharedUsers: limits.sharedUsers
+      });
+      
+      // Send notification if requested
+      if (req.body.notify) {
+        await sendNotification(
+          user.id,
+          'subscription_updated',
+          `Your subscription has been updated to ${tier}. This is a test notification.`,
+          undefined,
+          { tier, status }
+        );
+      }
+      
+      return res.json({ 
+        success: true, 
+        message: 'Test webhook processed successfully',
+        user: {
+          id: updatedUser.id,
+          username: updatedUser.username,
+          subscriptionStatus: updatedUser.subscriptionStatus,
+          subscriptionTier: updatedUser.subscriptionTier,
+          stripeSubscriptionId: updatedUser.stripeSubscriptionId,
+          receiptScansLimit: limits.scans,
+          maxItems: limits.items,
+          maxSharedUsers: limits.sharedUsers
+        }
+      });
+    } catch (error: any) {
+      log(`TEST WEBHOOK ERROR: ${error.message}`, 'stripe-webhook');
+      return res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Register email routes
+  app.use('/api/email', emailRouter);
+
+  // Create HTTP server for the express app
+  const httpServer = createServer(app);
+  
+  // WebSocket server is now fully implemented in websockets/index.ts
+  // Instead of creating and managing WebSockets here, all the functionality has been 
+  // modularized and moved to specialized handlers in the websockets directory.
+  // The implementation in websockets/index.ts contains improved error handling,
+  // connection tracking, and support for multiple device connections per user.
 
   app.locals.sendNotification = sendNotification;
 

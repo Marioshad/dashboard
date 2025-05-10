@@ -16,9 +16,12 @@ export async function apiRequest(
     headers?: Record<string, string>;
   }
 ): Promise<any> {
-  console.log(`Making API request to ${options?.method || 'GET'}`, url);
-  console.log("Request headers:", JSON.stringify(options?.headers || {}));
-  console.log("Request body:", options?.body || "none");
+  // API requests logs completely disabled, even in development mode
+  // if (process.env.NODE_ENV === 'development') {
+  //   console.log(`Making API request to ${options?.method || 'GET'}`, url);
+  //   console.log("Request headers:", JSON.stringify(options?.headers || {}));
+  //   console.log("Request body:", options?.body || "none");
+  // }
   
   const res = await fetch(url, {
     method: options?.method || 'GET',
@@ -27,18 +30,62 @@ export async function apiRequest(
     credentials: "include",
   });
 
-  console.log(`Response status: ${res.status}`);
-  // Log some important response headers
-  console.log(`Response headers: content-type=${res.headers.get('content-type')}, cache-control=${res.headers.get('cache-control')}`);
+  // Response logs completely disabled, even in development mode
+  // if (process.env.NODE_ENV === 'development') {
+  //   console.log(`Response status: ${res.status}`);
+  //   console.log(`Response headers: content-type=${res.headers.get('content-type')}, cache-control=${res.headers.get('cache-control')}`);
+  // }
   
   if (!res.ok) {
-    const errorText = await res.text();
+    let errorData;
+    let errorText;
+    
+    try {
+      // Try to parse as JSON first
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        errorData = await res.json();
+        errorText = JSON.stringify(errorData);
+        
+        // Handle email verification errors in a special way
+        if (res.status === 403 && errorData.error === 'EMAIL_VERIFICATION_REQUIRED') {
+          const error = new Error('Email verification required');
+          error.name = 'EmailVerificationError';
+          // @ts-ignore - Adding properties to Error
+          error.status = res.status;
+          // @ts-ignore
+          error.errorData = errorData;
+          throw error;
+        }
+      } else {
+        errorText = await res.text();
+      }
+    } catch (e) {
+      if (e.name === 'EmailVerificationError') {
+        throw e; // Rethrow the special error
+      }
+      // If we fail to parse JSON, just use text
+      try {
+        errorText = await res.text();
+      } catch (textError) {
+        errorText = res.statusText;
+      }
+    }
+    
     console.error(`API error: ${res.status}`, errorText);
-    throw new Error(`${res.status}: ${errorText || res.statusText}`);
+    const error = new Error(`${res.status}: ${errorText || res.statusText}`);
+    // @ts-ignore - Adding properties to Error
+    error.status = res.status;
+    // @ts-ignore
+    error.errorData = errorData;
+    throw error;
   }
   
   const data = await res.json();
-  console.log(`API response data:`, data);
+  // API response data is only logged to server-side logs, not console
+  if (process.env.NODE_ENV === 'development' && false) { // Set to false to disable even in development
+    console.log(`API response data:`, data);
+  }
   return data;
 }
 
@@ -48,26 +95,77 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    console.log(`Query fetch: ${queryKey[0]}`);
+    // Completely disabled console logs for query fetches
+    // if (process.env.NODE_ENV === 'development') {
+    //   console.log(`Query fetch: ${queryKey[0]}`);
+    // }
     const res = await fetch(queryKey[0] as string, {
       credentials: "include",
     });
     
-    console.log(`Query response status: ${res.status}`);
+    // Completely disabled console logs for response status
+    // if (process.env.NODE_ENV === 'development') {
+    //   console.log(`Query response status: ${res.status}`);
+    // }
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
-      console.log("Returning null for unauthorized request (401)");
+      // Completely disabled console logs for unauthorized requests
+      // if (process.env.NODE_ENV === 'development') {
+      //   console.log("Returning null for unauthorized request (401)");
+      // }
       return null;
     }
 
     if (!res.ok) {
-      const errorText = await res.text();
+      let errorData;
+      let errorText;
+      
+      try {
+        // Try to parse as JSON first
+        const contentType = res.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          errorData = await res.json();
+          errorText = JSON.stringify(errorData);
+          
+          // Handle email verification errors in a special way
+          if (res.status === 403 && errorData.error === 'EMAIL_VERIFICATION_REQUIRED') {
+            const error = new Error('Email verification required');
+            error.name = 'EmailVerificationError';
+            // @ts-ignore - Adding properties to Error
+            error.status = res.status;
+            // @ts-ignore
+            error.errorData = errorData;
+            throw error;
+          }
+        } else {
+          errorText = await res.text();
+        }
+      } catch (e) {
+        if (e.name === 'EmailVerificationError') {
+          throw e; // Rethrow the special error
+        }
+        // If we fail to parse JSON, just use text
+        try {
+          errorText = await res.text();
+        } catch (textError) {
+          errorText = res.statusText;
+        }
+      }
+      
       console.error(`Query error: ${res.status}`, errorText);
-      throw new Error(`${res.status}: ${errorText || res.statusText}`);
+      const error = new Error(`${res.status}: ${errorText || res.statusText}`);
+      // @ts-ignore - Adding properties to Error
+      error.status = res.status;
+      // @ts-ignore
+      error.errorData = errorData;
+      throw error;
     }
     
     const data = await res.json();
-    console.log(`Query response data:`, data);
+    // Data is only logged to server-side logs, not console
+    if (process.env.NODE_ENV === 'development' && false) { // Set to false to disable even in development
+      console.log(`Query response data:`, data);
+    }
     return data;
   };
 

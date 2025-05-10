@@ -6,9 +6,15 @@ import { runMigrations } from "./migration-runner";
 import { tags } from "@shared/schema";
 import { sql, eq } from "drizzle-orm";
 import dotenv from 'dotenv';
+import { createServer } from "http";
+import { initializeWebSocketServer } from './websockets';
+import { storage } from './storage';
 
 // Load environment variables from .env file
 dotenv.config();
+
+// Session secret for cookie validation
+const SESSION_SECRET = process.env.SESSION_SECRET || 'keyboard cat';
 
 // System tags configuration
 const SYSTEM_TAGS = [
@@ -159,12 +165,12 @@ async function ensureSystemTags() {
         // Insert using raw SQL to handle column name differences
         if (systemColumnName === 'is_system') {
           await db.execute(sql`
-            INSERT INTO tags (name, color, is_system, userid, createdat, updatedat)
+            INSERT INTO tags (name, color, is_system, user_id, created_at, updated_at)
             VALUES (${tag.name}, ${tag.color}, TRUE, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
           `);
         } else {
           await db.execute(sql`
-            INSERT INTO tags (name, color, issystem, userid, createdat, updatedat)
+            INSERT INTO tags (name, color, issystem, user_id, created_at, updated_at)
             VALUES (${tag.name}, ${tag.color}, TRUE, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
           `);
         }
@@ -250,8 +256,21 @@ app.use((req, res, next) => {
     // Ensure system tags are created
     await ensureSystemTags();
 
+    // Setting up routes (does not initialize http server)
     log("Setting up routes...");
-    const server = await registerRoutes(app);
+    await registerRoutes(app);
+    
+    // Create HTTP server using createServer within routes.ts
+    log("Creating HTTP server...");
+    const httpServer = createServer(app);
+    
+    // Initialize WebSocket server with modular implementation
+    log("Initializing WebSocket server with modular implementation...");
+    // Use the SESSION_SECRET from app.locals which is set in setupAuth
+    const appSessionSecret = app.locals.SESSION_SECRET || "development_secret";
+    log(`WebSocket initialization with session secret: ${appSessionSecret ? 'configured' : 'missing'}`);
+    initializeWebSocketServer(httpServer, app, storage, appSessionSecret);
+    log("WebSocket server initialized with enhanced stability options");
     log("Routes registered successfully");
 
     app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
@@ -266,7 +285,7 @@ app.use((req, res, next) => {
 
     if (app.get("env") === "development") {
       log("Starting in development mode...");
-      await setupVite(app, server);
+      await setupVite(app, httpServer);
     } else {
       log("Starting in production mode...");
       try {
@@ -281,7 +300,7 @@ app.use((req, res, next) => {
     log(`Attempting to start server on port ${port}...`);
     log(`Using host: 0.0.0.0`);
 
-    server.listen({
+    httpServer.listen({
       port,
       host: "0.0.0.0",
     }, () => {

@@ -1,0 +1,426 @@
+import React, { useState, useEffect } from 'react';
+import { useStripe, useElements, PaymentElement } from '@stripe/react-stripe-js';
+import { useToast } from '@/hooks/use-toast';
+import { Button } from '@/components/ui/button';
+import { Icons } from '@/components/ui/icons';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { useLocation } from 'wouter';
+import { getSubscriptionTier } from '@/lib/subscription';
+import { formatCurrency } from '@/lib/utils';
+import { useQuery } from '@tanstack/react-query';
+
+interface CheckoutFormProps {
+  clientSecret: string;
+  tierId?: string;
+  returnUrl?: string;
+}
+
+export function CheckoutForm({ clientSecret, tierId, returnUrl = '/billing' }: CheckoutFormProps) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [debugData, setDebugData] = useState<any>(null);
+  const { toast } = useToast();
+  const [, setLocation] = useLocation();
+  
+  // Get payment information directly from Stripe
+  const { data: paymentInfo, isLoading: isPaymentInfoLoading } = useQuery({
+    queryKey: ['/api/subscription/info', clientSecret],
+    queryFn: async () => {
+      if (!clientSecret) return null;
+      
+      try {
+        // Record that we're attempting to fetch payment info
+        setDebugData((prev: any) => ({
+          ...prev,
+          paymentInfoRequest: {
+            url: `/api/subscription/info?secret=${clientSecret.substring(0, 10)}...`,
+            timestamp: new Date().toISOString()
+          }
+        }));
+        
+        const response = await fetch(`/api/subscription/info?secret=${encodeURIComponent(clientSecret)}`);
+        
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => 'Failed to read error response');
+          
+          // Record error in debug data
+          setDebugData((prev: any) => ({
+            ...prev,
+            paymentInfoRequestError: {
+              status: response.status,
+              statusText: response.statusText,
+              errorText,
+              timestamp: new Date().toISOString()
+            }
+          }));
+          
+          throw new Error(`Failed to load payment information: ${response.status} ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        // Record successful response in debug data
+        setDebugData((prev: any) => ({
+          ...prev,
+          paymentInfoResponse: data,
+          paymentInfoSuccess: true,
+          timestamp: new Date().toISOString()
+        }));
+        
+        return data;
+      } catch (error: any) {
+        console.error('Error loading payment data:', error);
+        
+        // Record error in debug data
+        setDebugData((prev: any) => ({
+          ...prev,
+          paymentInfoError: {
+            message: error.message,
+            stack: error.stack,
+            timestamp: new Date().toISOString()
+          }
+        }));
+        
+        throw error;
+      }
+    },
+    enabled: !!clientSecret,
+  });
+  
+  // Use tier ID from payment intent metadata if available
+  const effectiveTierId = paymentInfo?.tierId || tierId;
+  
+  // Get tier information for display if available
+  const tier = effectiveTierId ? getSubscriptionTier(effectiveTierId) : null;
+
+  // State to track when elements are ready
+  const [elementsReady, setElementsReady] = useState(false);
+  
+  // Listen for element ready event and fetch payment intent data for debugging
+  useEffect(() => {
+    if (elements) {
+      setElementsReady(true);
+      
+      // Update debug info when elements are ready
+      setDebugData((prev: any) => ({
+        ...prev,
+        elementsReady: true,
+        elementsReadyTimestamp: new Date().toISOString(),
+        stripeReady: !!stripe,
+        stripeJsVersion: (stripe as any)?._apiVersion || 'unknown',
+      }));
+      
+      // Fetch payment intent debug data
+      if (clientSecret) {
+        // Capture that we're attempting a debug fetch
+        setDebugData((prev: any) => ({
+          ...prev,
+          debugFetchAttempt: {
+            url: `/api/subscription/info?secret=${clientSecret.substring(0, 8)}...`,
+            timestamp: new Date().toISOString(),
+          }
+        }));
+        
+        fetch(`/api/subscription/info?secret=${encodeURIComponent(clientSecret)}`)
+          .then(res => {
+            if (!res.ok) {
+              throw new Error(`Debug fetch failed: ${res.status} ${res.statusText}`);
+            }
+            return res.json();
+          })
+          .then(data => {
+            // Merge debug data rather than replacing it
+            setDebugData((prev: any) => ({
+              ...prev,
+              ...data,
+              debugFetchSuccess: true,
+              debugFetchTimestamp: new Date().toISOString(),
+            }));
+            console.log('Debug payment data:', data);
+          })
+          .catch(err => {
+            console.error('Error fetching debug data:', err);
+            // Record the error in debug data
+            setDebugData((prev: any) => ({
+              ...prev,
+              debugFetchError: {
+                message: err.message,
+                timestamp: new Date().toISOString(),
+              }
+            }));
+          });
+      }
+    }
+  }, [elements, clientSecret, stripe]);
+  
+  // Reset loading state when elements are reset or changed
+  // This helps when a user fixes validation errors and tries again
+  useEffect(() => {
+    // If elements exist and loading state is stuck, reset it
+    if (elements && isLoading) {
+      setIsLoading(false);
+    }
+  }, [elements, isLoading]);
+  
+  // Handle form submission
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    if (!stripe || !elements || !elementsReady) {
+      // Stripe.js or Elements have not loaded yet
+      toast({
+        title: "Payment System Loading",
+        description: "Please wait while the payment system initializes...",
+      });
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMessage(null);
+
+    try {
+      // Capture data before sending to Stripe for debugging purposes
+      const confirmParams = {
+        return_url: `${window.location.origin}${returnUrl}?success=true`,
+      };
+      
+      // Update debug data with what we're about to send to Stripe
+      setDebugData((prev: any) => ({
+        ...prev,
+        confirmParams,
+        clientSecret,
+        tierId: effectiveTierId,
+        timestamp: new Date().toISOString(),
+        elementsReady,
+      }));
+      
+      // Use confirmPayment or confirmSetup based on whether this is a new subscription
+      // or updating a payment method
+      const { error } = await stripe.confirmPayment({
+        elements,
+        confirmParams,
+        redirect: 'if_required',
+      });
+
+      if (error) {
+        // Show error to user
+        setErrorMessage(error.message || 'An unexpected error occurred.');
+        toast({
+          title: 'Payment Failed',
+          description: error.message || 'An unexpected error occurred. Please try again.',
+          variant: 'destructive',
+        });
+        
+        // Add error information to the debug data
+        setDebugData((prev: any) => ({
+          ...prev,
+          error: {
+            type: error.type,
+            code: error.code,
+            message: error.message,
+            declined_code: error.decline_code,
+            param: error.param,
+            timestamp: new Date().toISOString()
+          }
+        }));
+        
+        // Make sure to reset loading state on error
+        setIsLoading(false);
+      } else {
+        // Redirect to billing page with success message
+        toast({
+          title: 'Payment Successful',
+          description: tier ? `Your subscription to ${tier.name} has been activated!` : 'Your subscription has been activated!',
+        });
+        setLocation(returnUrl);
+      }
+    } catch (err: any) {
+      console.error('Payment error:', err);
+      setErrorMessage(err.message || 'An unexpected error occurred.');
+      toast({
+        title: 'Payment Error',
+        description: err.message || 'An unexpected error occurred. Please try again.',
+        variant: 'destructive',
+      });
+      
+      // Add general error information to debug data
+      setDebugData((prev: any) => ({
+        ...prev,
+        generalError: {
+          message: err.message,
+          stack: err.stack,
+          name: err.name,
+          timestamp: new Date().toISOString()
+        }
+      }));
+      
+      // Make sure to reset loading state on any error
+      setIsLoading(false);
+    }
+    // Only use finally for cleanup that must happen in ALL cases
+    // Since we're conditionally redirecting on success, we need explicit setIsLoading(false) in error cases
+  };
+
+  // Format amount from Stripe (in cents) to display currency
+  const formatStripeAmount = (amount?: number, currency = 'eur') => {
+    if (!amount) return '';
+    // Divide by 100 to convert from cents to whole currency unit
+    return formatCurrency(amount / 100, currency);
+  };
+
+  return (
+    <Card className="max-w-2xl mx-auto">
+      <CardHeader>
+        <CardTitle>Complete Your Subscription</CardTitle>
+        <CardDescription>
+          {isPaymentInfoLoading ? (
+            'Loading payment details...'
+          ) : paymentInfo ? (
+            `Subscribe to the ${tier?.name || 'Premium'} plan for ${formatStripeAmount(paymentInfo.amount, paymentInfo.currency)} per month`
+          ) : tier ? (
+            `Subscribe to the ${tier.name} plan for ${formatCurrency(tier.price.monthly)} per month`
+          ) : (
+            'Complete payment to activate your subscription'
+          )}
+        </CardDescription>
+      </CardHeader>
+      <form onSubmit={handleSubmit}>
+        <CardContent className="space-y-6">
+          {tier ? (
+            <div className="rounded-md border p-4">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="font-semibold text-lg">{tier.name}</h3>
+                  <p className="text-sm text-muted-foreground">{tier.description}</p>
+                </div>
+                <div className="text-lg font-bold">
+                  {paymentInfo?.amount ? (
+                    <>{formatStripeAmount(paymentInfo.amount, paymentInfo.currency)}<span className="text-sm font-normal text-muted-foreground">/month</span></>
+                  ) : (
+                    <>{formatCurrency(tier.price.monthly)}<span className="text-sm font-normal text-muted-foreground">/month</span></>
+                  )}
+                </div>
+              </div>
+              <ul className="space-y-2">
+                {tier.features.map((feature, i) => (
+                  <li key={i} className="flex items-start gap-2 text-sm">
+                    <Icons.check className="h-4 w-4 mt-1 text-green-500" />
+                    <span>{feature}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <div className="rounded-md border p-4 space-y-4">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="font-semibold text-lg">Subscription Plan</h3>
+                  <p className="text-sm text-muted-foreground">Upgrade to get premium features</p>
+                </div>
+                {paymentInfo?.amount && (
+                  <div className="text-lg font-bold">
+                    {formatStripeAmount(paymentInfo.amount, paymentInfo.currency)}<span className="text-sm font-normal text-muted-foreground">/month</span>
+                  </div>
+                )}
+              </div>
+              
+              {/* If we don't have the tier ID, show features from both premium tiers */}
+              <div className="space-y-4">
+                <div>
+                  <h4 className="text-sm font-medium mb-2">Smart Pantry Features:</h4>
+                  <ul className="space-y-1">
+                    <li className="flex items-start text-sm gap-2">
+                      <Icons.check className="h-4 w-4 mt-1 text-green-500" />
+                      <span>Up to 20 receipts per month</span>
+                    </li>
+                    <li className="flex items-start text-sm gap-2">
+                      <Icons.check className="h-4 w-4 mt-1 text-green-500" />
+                      <span>Unlimited items per receipt</span>
+                    </li>
+                    <li className="flex items-start text-sm gap-2">
+                      <Icons.check className="h-4 w-4 mt-1 text-green-500" />
+                      <span>AI-powered receipt scanning</span>
+                    </li>
+                  </ul>
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium mb-2">Family Pantry Pro Features:</h4>
+                  <ul className="space-y-1">
+                    <li className="flex items-start text-sm gap-2">
+                      <Icons.check className="h-4 w-4 mt-1 text-green-500" />
+                      <span>Unlimited receipts</span>
+                    </li>
+                    <li className="flex items-start text-sm gap-2">
+                      <Icons.check className="h-4 w-4 mt-1 text-green-500" />
+                      <span>Up to 5 shared users</span>
+                    </li>
+                    <li className="flex items-start text-sm gap-2">
+                      <Icons.check className="h-4 w-4 mt-1 text-green-500" />
+                      <span>Early access to new features</span>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          <div className="space-y-3">
+            <h3 className="font-medium text-md">Payment Information</h3>
+            <PaymentElement 
+              onChange={(e) => {
+                // Reset any error state when the user changes payment information
+                if (errorMessage) {
+                  setErrorMessage(null);
+                }
+                // Ensure loading state is reset when user makes changes
+                if (isLoading) {
+                  setIsLoading(false);
+                }
+              }}
+            />
+          </div>
+          
+          {errorMessage && (
+            <div className="rounded-md bg-red-50 p-3 text-sm text-red-500">
+              {errorMessage}
+            </div>
+          )}
+          
+          {/* Debug info box */}
+          <div className="mt-6 border border-gray-200 rounded-md bg-gray-50 p-3">
+            <h4 className="text-sm font-medium mb-2 text-gray-700">Debug Info (Stripe Data)</h4>
+            {debugData ? (
+              <pre className="whitespace-pre-wrap overflow-auto text-xs max-h-40 text-gray-600">
+                {JSON.stringify(debugData, null, 2)}
+              </pre>
+            ) : (
+              <p className="text-xs text-gray-500 italic">Loading debug information...</p>
+            )}
+          </div>
+        </CardContent>
+        
+        <CardFooter className="flex flex-col sm:flex-row gap-4">
+          <Button 
+            type="button"
+            variant="ghost"
+            onClick={() => setLocation('/subscribe')}
+            disabled={isLoading}
+          >
+            Back to Plans
+          </Button>
+          
+          <Button 
+            type="submit"
+            className="w-full sm:w-auto bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-600 hover:to-violet-600"
+            disabled={!stripe || isLoading}
+          >
+            {isLoading && <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />}
+            Subscribe Now
+          </Button>
+        </CardFooter>
+      </form>
+    </Card>
+  );
+}

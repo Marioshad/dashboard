@@ -1,5 +1,6 @@
+import * as schema from "@shared/schema";
 import { 
-  users, locations, foodItems, stores, receipts,
+  users, locations, foodItems, stores, receipts, roles,
   type User, type InsertUser, type UpdateProfile,
   type Location, type InsertLocation, type UpdateLocation,
   type Store, type InsertStore, type UpdateStore,
@@ -18,8 +19,29 @@ export interface IStorage {
   // User methods
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  getUserByStripeCustomerId(stripeCustomerId: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateProfile(userId: number, profile: UpdateProfile): Promise<User>;
+  updateUserSubscription(userId: number, subscription: {
+    stripeSubscriptionId?: string;
+    subscriptionStatus?: string;
+    subscriptionTier?: string;
+    currentBillingPeriodStart?: Date | null;
+    currentBillingPeriodEnd?: Date | null;
+  }): Promise<User>;
+  updateUserLimits(userId: number, limits: {
+    receiptScansLimit?: number;
+    maxItems?: number;
+    maxSharedUsers?: number;
+  }): Promise<User>;
+  updateStripeCustomerId(userId: number, stripeCustomerId: string): Promise<User>;
+  updateUserVerification(userId: number, verificationData: {
+    emailVerified?: boolean;
+    verificationToken?: string | null;
+    verificationTokenExpiresAt?: Date | null;
+  }): Promise<User>;
+  getRoleByName(roleName: string): Promise<{ id: number; name: string } | undefined>;
+  updateUserRole(userId: number, roleId: number): Promise<User>;
   
   // Location methods
   createLocation(location: InsertLocation & { userId: number }): Promise<Location>;
@@ -103,27 +125,431 @@ export class DatabaseStorage implements IStorage {
 
   async getUser(id: number): Promise<User | undefined> {
     try {
-      const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
-      return result[0];
+      console.log(`Looking up user by ID: ${id}`);
+      
+      if (!id) {
+        console.error('getUser called with invalid ID');
+        return undefined;
+      }
+      
+      // First, check if the user exists at all
+      const userCheck = await db.select({
+        id: users.id
+      })
+      .from(users)
+      .where(eq(users.id, id))
+      .limit(1);
+      
+      if (!userCheck.length) {
+        console.log(`No user found with ID: ${id}`);
+        return undefined;
+      }
+      
+      console.log(`Found user with ID ${userCheck[0].id}, retrieving full details`);
+      
+      // Explicitly select columns to avoid issues with schema mismatches
+      // Use a try-catch for each potentially problematic column to avoid schema errors
+      const userResponse: Partial<User> = {
+        id: userCheck[0].id
+      };
+      
+      try {
+        // Build user data safely, field by field
+        const basicResult = await db.select({
+          username: users.username,
+          password: users.password,
+          fullName: users.fullName,
+          email: users.email,
+          bio: users.bio,
+          avatarUrl: users.avatarUrl,
+          roleId: users.roleId,
+          currency: users.currency,
+        })
+        .from(users)
+        .where(eq(users.id, userCheck[0].id))
+        .limit(1);
+        
+        if (basicResult.length) {
+          Object.assign(userResponse, basicResult[0]);
+        }
+        
+        // Now add any optional fields that might not exist
+        try {
+          const advancedResult = await db.select({
+            twoFactorEnabled: users.twoFactorEnabled,
+            twoFactorSecret: users.twoFactorSecret,
+            emailNotifications: users.emailNotifications,
+            webNotifications: users.webNotifications,
+            mentionNotifications: users.mentionNotifications,
+            followNotifications: users.followNotifications,
+            verificationToken: users.verificationToken,
+            verificationTokenExpiresAt: users.verificationTokenExpiresAt,
+          })
+          .from(users)
+          .where(eq(users.id, userCheck[0].id))
+          .limit(1);
+          
+          if (advancedResult.length) {
+            Object.assign(userResponse, advancedResult[0]);
+          }
+        } catch (err) {
+          console.warn('Some optional user fields not available:', err);
+        }
+        
+        // Add stripe-related fields separately
+        try {
+          const stripeResult = await db.select({
+            stripeCustomerId: users.stripeCustomerId,
+            stripeSubscriptionId: users.stripeSubscriptionId,
+            subscriptionStatus: users.subscriptionStatus,
+            subscriptionTier: users.subscriptionTier,
+            currentBillingPeriodStart: users.currentBillingPeriodStart,
+            currentBillingPeriodEnd: users.currentBillingPeriodEnd,
+          })
+          .from(users)
+          .where(eq(users.id, userCheck[0].id))
+          .limit(1);
+          
+          if (stripeResult.length) {
+            Object.assign(userResponse, stripeResult[0]);
+          }
+        } catch (err) {
+          console.warn('Stripe-related fields not available:', err);
+        }
+        
+        // Add limits-related fields - need to check each field individually
+        try {
+          // Build the selection object with the fields that exist
+          const selectObj: Record<string, any> = {};
+          
+          // Check if each field exists on the users table
+          if ('receiptScansUsed' in users) {
+            selectObj.receiptScansUsed = users.receiptScansUsed;
+          }
+          if ('receiptScansLimit' in users) {
+            selectObj.receiptScansLimit = users.receiptScansLimit;
+          }
+          if ('maxItems' in users) {
+            selectObj.maxItems = users.maxItems;
+          }
+          
+          // Only attempt the query if we have at least one field to select
+          if (Object.keys(selectObj).length > 0) {
+            const limitsResult = await db.select(selectObj)
+              .from(users)
+              .where(eq(users.id, userCheck[0].id))
+              .limit(1);
+            
+            if (limitsResult.length) {
+              Object.assign(userResponse, limitsResult[0]);
+            }
+          }
+          
+          // Set default values for any missing fields
+          if (!('receiptScansUsed' in userResponse)) {
+            userResponse.receiptScansUsed = 0;
+          }
+          if (!('receiptScansLimit' in userResponse)) {
+            userResponse.receiptScansLimit = 10;
+          }
+          if (!('maxItems' in userResponse)) {
+            userResponse.maxItems = 100;
+          }
+          
+          // The problematic field that causes errors on refresh
+          userResponse.maxSharedUsers = 1;
+          
+        } catch (err) {
+          console.warn('Limits-related fields not available:', err);
+          // Set default values
+          userResponse.receiptScansUsed = 0;
+          userResponse.receiptScansLimit = 10;
+          userResponse.maxItems = 100;
+          userResponse.maxSharedUsers = 1;
+        }
+        
+        // Add timestamps separately
+        try {
+          const timestampResult = await db.select({
+            createdAt: users.createdAt,
+            updatedAt: users.updatedAt,
+            deletedAt: users.deletedAt,
+          })
+          .from(users)
+          .where(eq(users.id, userCheck[0].id))
+          .limit(1);
+          
+          if (timestampResult.length) {
+            Object.assign(userResponse, timestampResult[0]);
+          }
+        } catch (err) {
+          console.warn('Timestamp fields not available:', err);
+        }
+        
+        // If email_verified column exists, get it separately to avoid errors
+        try {
+          const emailVerifiedResult = await db.execute(
+            sql`SELECT email_verified FROM users WHERE id = ${userCheck[0].id}`
+          );
+          if (emailVerifiedResult.rows && emailVerifiedResult.rows.length > 0) {
+            (userResponse as any).emailVerified = emailVerifiedResult.rows[0].email_verified;
+          } else {
+            (userResponse as any).emailVerified = false;
+          }
+        } catch (err) {
+          console.warn('email_verified column not available:', err);
+          (userResponse as any).emailVerified = false;
+        }
+        
+        // Make sure we have the minimum required fields
+        if (!userResponse.id || !userResponse.username || !userResponse.password) {
+          console.error(`Missing critical user fields for ID ${id}:`, 
+                      { id: !!userResponse.id, username: !!userResponse.username, password: !!userResponse.password });
+          return undefined;
+        }
+        
+        return userResponse as User;
+        
+      } catch (fieldError) {
+        console.error('Error selecting user fields:', fieldError);
+        return undefined;
+      }
     } catch (error) {
-      console.error('Error getting user by ID:', error);
-      throw error;
+      console.error('Error getting user:', error);
+      return undefined; // Don't throw error, return undefined to avoid crashing the app
     }
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
     try {
-      const result = await db.select().from(users).where(eq(users.username, username)).limit(1);
-      return result[0];
+      console.log(`Looking up user by username: ${username}`);
+      
+      if (!username) {
+        console.error('getUserByUsername called with empty username');
+        return undefined;
+      }
+      
+      // First, check if the user exists at all
+      const userCheck = await db.select({
+        id: users.id
+      })
+      .from(users)
+      .where(eq(users.username, username))
+      .limit(1);
+      
+      if (!userCheck.length) {
+        console.log(`No user found with username: ${username}`);
+        return undefined;
+      }
+      
+      console.log(`Found user with ID ${userCheck[0].id}, retrieving full details`);
+      
+      // Explicitly select columns to avoid issues with schema mismatches
+      // Use a try-catch for each potentially problematic column to avoid schema errors
+      const userResponse: Partial<User> = {
+        id: userCheck[0].id
+      };
+      
+      try {
+        // Build user data safely, field by field
+        const basicResult = await db.select({
+          username: users.username,
+          password: users.password,
+          fullName: users.fullName,
+          email: users.email,
+          bio: users.bio,
+          avatarUrl: users.avatarUrl,
+          roleId: users.roleId,
+          currency: users.currency,
+        })
+        .from(users)
+        .where(eq(users.id, userCheck[0].id))
+        .limit(1);
+        
+        if (basicResult.length) {
+          Object.assign(userResponse, basicResult[0]);
+        }
+        
+        // Now add any optional fields that might not exist
+        try {
+          const advancedResult = await db.select({
+            twoFactorEnabled: users.twoFactorEnabled,
+            twoFactorSecret: users.twoFactorSecret,
+            emailNotifications: users.emailNotifications,
+            webNotifications: users.webNotifications,
+            mentionNotifications: users.mentionNotifications,
+            followNotifications: users.followNotifications,
+            verificationToken: users.verificationToken,
+            verificationTokenExpiresAt: users.verificationTokenExpiresAt,
+          })
+          .from(users)
+          .where(eq(users.id, userCheck[0].id))
+          .limit(1);
+          
+          if (advancedResult.length) {
+            Object.assign(userResponse, advancedResult[0]);
+          }
+        } catch (err) {
+          console.warn('Some optional user fields not available:', err);
+        }
+        
+        // Add stripe-related fields separately
+        try {
+          const stripeResult = await db.select({
+            stripeCustomerId: users.stripeCustomerId,
+            stripeSubscriptionId: users.stripeSubscriptionId,
+            subscriptionStatus: users.subscriptionStatus,
+            subscriptionTier: users.subscriptionTier,
+            currentBillingPeriodStart: users.currentBillingPeriodStart,
+            currentBillingPeriodEnd: users.currentBillingPeriodEnd,
+          })
+          .from(users)
+          .where(eq(users.id, userCheck[0].id))
+          .limit(1);
+          
+          if (stripeResult.length) {
+            Object.assign(userResponse, stripeResult[0]);
+          }
+        } catch (err) {
+          console.warn('Stripe-related fields not available:', err);
+        }
+        
+        // Add limits-related fields - need to check each field individually
+        // because of the "Cannot convert undefined or null to object" error
+        try {
+          // Build the selection object with the fields that exist
+          const selectObj: Record<string, any> = {};
+          
+          // Check if each field exists on the users table
+          if ('receiptScansUsed' in users) {
+            selectObj.receiptScansUsed = users.receiptScansUsed;
+          }
+          if ('receiptScansLimit' in users) {
+            selectObj.receiptScansLimit = users.receiptScansLimit;
+          }
+          if ('maxItems' in users) {
+            selectObj.maxItems = users.maxItems;
+          }
+          
+          // Only attempt the query if we have at least one field to select
+          if (Object.keys(selectObj).length > 0) {
+            const limitsResult = await db.select(selectObj)
+              .from(users)
+              .where(eq(users.id, userCheck[0].id))
+              .limit(1);
+            
+            if (limitsResult.length) {
+              Object.assign(userResponse, limitsResult[0]);
+            }
+          }
+          
+          // Set default values for any missing fields
+          if (!('receiptScansUsed' in userResponse)) {
+            userResponse.receiptScansUsed = 0;
+          }
+          if (!('receiptScansLimit' in userResponse)) {
+            userResponse.receiptScansLimit = 10;
+          }
+          if (!('maxItems' in userResponse)) {
+            userResponse.maxItems = 100;
+          }
+          if (!('maxSharedUsers' in userResponse)) {
+            userResponse.maxSharedUsers = 1;
+          }
+        } catch (err) {
+          console.warn('Limits-related fields not available:', err);
+          // Set default values
+          userResponse.receiptScansUsed = 0;
+          userResponse.receiptScansLimit = 10;
+          userResponse.maxItems = 100;
+          userResponse.maxSharedUsers = 1;
+        }
+        
+        // Add timestamps separately
+        try {
+          const timestampResult = await db.select({
+            createdAt: users.createdAt,
+            updatedAt: users.updatedAt,
+            deletedAt: users.deletedAt,
+          })
+          .from(users)
+          .where(eq(users.id, userCheck[0].id))
+          .limit(1);
+          
+          if (timestampResult.length) {
+            Object.assign(userResponse, timestampResult[0]);
+          }
+        } catch (err) {
+          console.warn('Timestamp fields not available:', err);
+        }
+        
+        // If email_verified column exists, get it separately to avoid errors
+        try {
+          const emailVerifiedResult = await db.execute(
+            sql`SELECT email_verified FROM users WHERE id = ${userCheck[0].id}`
+          );
+          if (emailVerifiedResult.rows && emailVerifiedResult.rows.length > 0) {
+            (userResponse as any).emailVerified = emailVerifiedResult.rows[0].email_verified;
+          } else {
+            (userResponse as any).emailVerified = false;
+          }
+        } catch (err) {
+          console.warn('email_verified column not available:', err);
+          (userResponse as any).emailVerified = false;
+        }
+        
+        // Make sure we have the minimum required fields
+        if (!userResponse.id || !userResponse.username || !userResponse.password) {
+          console.error(`Missing critical user fields for ${username}:`, 
+                      { id: !!userResponse.id, username: !!userResponse.username, password: !!userResponse.password });
+          return undefined;
+        }
+        
+        return userResponse as User;
+        
+      } catch (fieldError) {
+        console.error('Error selecting user fields:', fieldError);
+        return undefined;
+      }
     } catch (error) {
       console.error('Error getting user by username:', error);
-      throw error;
+      return undefined; // Don't throw error, return undefined to handle gracefully
     }
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
     try {
+      // First, ensure we don't try to insert email_verified if it doesn't exist
+      const columnsResult = await db.execute(sql`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'users'
+      `);
+      
+      const existingColumns = columnsResult.rows.map((row: any) => row.column_name);
+      const insertValues = { ...insertUser };
+      
+      // Check if the column exists and set default emailVerified
+      const hasEmailVerifiedColumn = existingColumns.includes('email_verified');
+      
+      // Insert the user with the filtered values
       const [user] = await db.insert(users).values([insertUser]).returning();
+      
+      // If email_verified column exists, set it to false for new users
+      if (hasEmailVerifiedColumn) {
+        try {
+          await db.execute(sql`
+            UPDATE users SET email_verified = FALSE 
+            WHERE id = ${user.id} AND email_verified IS NULL
+          `);
+        } catch (err) {
+          console.warn('Unable to set email_verified for new user:', err);
+        }
+      }
+      
+      // Add emailVerified property to returned user
+      (user as any).emailVerified = false;
+      
       return user;
     } catch (error) {
       console.error('Error creating user:', error);
@@ -154,6 +580,81 @@ export class DatabaseStorage implements IStorage {
         console.error('STORAGE: Error message:', error.message);
         console.error('STORAGE: Error stack:', error.stack);
       }
+      throw error;
+    }
+  }
+  
+  async getUserByStripeCustomerId(stripeCustomerId: string): Promise<User | undefined> {
+    try {
+      const result = await db
+        .select()
+        .from(users)
+        .where(eq(users.stripeCustomerId, stripeCustomerId))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error('Error getting user by Stripe customer ID:', error);
+      throw error;
+    }
+  }
+  
+  async updateUserSubscription(userId: number, subscription: {
+    stripeSubscriptionId?: string;
+    subscriptionStatus?: string;
+    subscriptionTier?: string;
+    currentBillingPeriodStart?: Date | null;
+    currentBillingPeriodEnd?: Date | null;
+  }): Promise<User> {
+    try {
+      const [user] = await db
+        .update(users)
+        .set({
+          ...subscription,
+          updatedAt: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(users.id, userId))
+        .returning();
+      return user;
+    } catch (error) {
+      console.error('Error updating user subscription:', error);
+      throw error;
+    }
+  }
+  
+  async updateUserLimits(userId: number, limits: {
+    receiptScansLimit?: number;
+    maxItems?: number;
+    maxSharedUsers?: number;
+  }): Promise<User> {
+    try {
+      const [user] = await db
+        .update(users)
+        .set({
+          ...limits,
+          updatedAt: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(users.id, userId))
+        .returning();
+      return user;
+    } catch (error) {
+      console.error('Error updating user limits:', error);
+      throw error;
+    }
+  }
+  
+  async updateStripeCustomerId(userId: number, stripeCustomerId: string): Promise<User> {
+    try {
+      const [user] = await db
+        .update(users)
+        .set({
+          stripeCustomerId,
+          updatedAt: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(users.id, userId))
+        .returning();
+      return user;
+    } catch (error) {
+      console.error('Error updating Stripe customer ID:', error);
       throw error;
     }
   }
@@ -588,32 +1089,59 @@ export class DatabaseStorage implements IStorage {
 
   async getReceipts(userId: number): Promise<Receipt[]> {
     try {
-      // First get the receipts
+      console.log(`Getting receipts for user ${userId}`);
+      
+      // First get the receipts - use snake_case column names directly in SQL
       const receiptList = await db
         .select()
         .from(receipts)
         .where(eq(receipts.userId, userId))
-        .orderBy(sql`receipts."uploadDate" DESC`);
+        .orderBy(sql`receipts."upload_date" DESC`);
+      
+      console.log(`Found ${receiptList.length} receipts`);
       
       // For each receipt with a storeId, fetch the associated store
       const receiptsWithStores = await Promise.all(
         receiptList.map(async (receipt) => {
-          if (receipt.storeId) {
-            const [storeData] = await db
-              .select()
-              .from(stores)
-              .where(eq(stores.id, receipt.storeId));
+          try {
+            if (receipt.storeId) {
+              console.log(`Fetching store data for receipt ${receipt.id}, storeId ${receipt.storeId}`);
               
-            // Return receipt with store information
-            return {
-              ...receipt,
-              store: storeData
-            };
+              try {
+                const storeResults = await db
+                  .select()
+                  .from(stores)
+                  .where(eq(stores.id, receipt.storeId));
+                
+                const storeData = storeResults[0];
+                
+                if (storeData) {
+                  console.log(`Found store: ${storeData.name}`);
+                  // Return receipt with store information
+                  return {
+                    ...receipt,
+                    store: storeData
+                  };
+                } else {
+                  console.log(`Store not found for ID ${receipt.storeId}, returning receipt without store data`);
+                  return receipt;
+                }
+              } catch (storeError) {
+                console.error(`Error fetching store for receipt ${receipt.id}:`, storeError);
+                // If there's an error getting the store, just return the receipt without store info
+                return receipt;
+              }
+            }
+            return receipt;
+          } catch (receiptError) {
+            console.error(`Error processing receipt ${receipt?.id || 'unknown'}:`, receiptError);
+            // If there's an error processing this receipt, return it as is rather than failing the whole operation
+            return receipt;
           }
-          return receipt;
         })
       );
       
+      console.log(`Processed ${receiptsWithStores.length} receipts with their store data`);
       return receiptsWithStores;
     } catch (error) {
       console.error('Error getting receipts:', error);
@@ -756,15 +1284,185 @@ export class DatabaseStorage implements IStorage {
 
   async getFoodItemsByReceiptId(receiptId: number): Promise<FoodItem[]> {
     try {
-      const result = await db
-        .select()
-        .from(foodItems)
-        .where(eq(foodItems.receiptId, receiptId))
-        .orderBy(foodItems.name);
+      console.log(`Getting food items for receipt ID: ${receiptId}`);
       
-      return result;
+      // Use SQL directly to ensure we use the correct column name in database
+      const result = await db.execute(sql`
+        SELECT *
+        FROM food_items
+        WHERE receipt_id = ${receiptId}
+        ORDER BY name
+      `);
+      
+      const formattedResults = result.rows.map(row => {
+        // Convert PostgreSQL snake_case to camelCase for the frontend
+        return {
+          id: row.id,
+          name: row.name,
+          normalizedName: row.normalized_name,
+          originalName: row.original_name,
+          category: row.category,
+          quantity: row.quantity,
+          unit: row.unit,
+          locationId: row.location_id,
+          storeId: row.store_id,
+          receiptId: row.receipt_id,
+          expiryDate: row.expiry_date,
+          price: row.price,
+          pricePerUnit: row.price_per_unit,
+          isWeightBased: row.is_weight_based,
+          normalizationConfidence: row.normalization_confidence,
+          lineNumbers: row.line_numbers,
+          purchased: row.purchased,
+          userId: row.user_id,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at
+        };
+      });
+      
+      console.log(`Found ${formattedResults.length} food items for receipt ${receiptId}`);
+      return formattedResults;
     } catch (error) {
       console.error('Error getting food items by receipt ID:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update user email verification status and token
+   */
+  async updateUserVerification(userId: number, verificationData: {
+    emailVerified?: boolean;
+    verificationToken?: string | null;
+    verificationTokenExpiresAt?: Date | null;
+  }): Promise<User> {
+    try {
+      // Fix the field names to match the database schema
+      const dataToUpdate: any = {
+        updatedAt: sql`CURRENT_TIMESTAMP`,
+      };
+      
+      // Map the fields to the actual database column names
+      if (verificationData.emailVerified !== undefined) {
+        dataToUpdate.email_verified = verificationData.emailVerified;
+      }
+      
+      if (verificationData.verificationToken !== undefined) {
+        dataToUpdate.verification_token = verificationData.verificationToken;
+      }
+      
+      // Update both expiration columns in the database to maintain compatibility
+      if (verificationData.verificationTokenExpiresAt !== undefined) {
+        dataToUpdate.verification_token_expires_at = verificationData.verificationTokenExpiresAt;
+        // Also update the old column to maintain compatibility
+        dataToUpdate.verification_token_expiry = verificationData.verificationTokenExpiresAt;
+      }
+      
+      console.log('Updating user verification with data:', dataToUpdate);
+      
+      // Use a SQL query that doesn't fail if a column is missing
+      try {
+        const [user] = await db
+          .update(users)
+          .set(dataToUpdate)
+          .where(eq(users.id, userId))
+          .returning();
+        
+        return user;
+      } catch (dbError) {
+        console.error('Error in updateUserVerification with Drizzle:', dbError);
+        
+        // Fallback to raw SQL query
+        // Get all existing columns first
+        const columnsResult = await db.execute(sql`
+          SELECT column_name 
+          FROM information_schema.columns 
+          WHERE table_name = 'users'
+        `);
+        
+        const columnNames = columnsResult.rows.map((row: any) => row.column_name);
+        
+        // Build SQL sets that only include fields that exist in the database
+        const setParts = [];
+        Object.entries(dataToUpdate).forEach(([key, value]) => {
+          if (columnNames.includes(key)) {
+            if (value === null) {
+              setParts.push(`${key} = NULL`);
+            } else if (value instanceof Date) {
+              setParts.push(`${key} = '${value.toISOString()}'`);
+            } else if (typeof value === 'string') {
+              setParts.push(`${key} = '${value}'`);
+            } else if (typeof value === 'boolean') {
+              setParts.push(`${key} = ${value}`);
+            } else if (typeof value === 'number') {
+              setParts.push(`${key} = ${value}`);
+            } else if (value.constructor && value.constructor.name === 'PgSql') {
+              // SQL expression, include as is
+              setParts.push(`${key} = CURRENT_TIMESTAMP`);
+            }
+          }
+        });
+        
+        if (setParts.length === 0) {
+          throw new Error('No valid fields to update');
+        }
+        
+        // Execute the raw SQL query
+        const result = await db.execute(sql`
+          UPDATE users 
+          SET ${sql.raw(setParts.join(', '))} 
+          WHERE id = ${userId} 
+          RETURNING *
+        `);
+        
+        if (result.rows && result.rows.length > 0) {
+          return result.rows[0] as User;
+        } else {
+          throw new Error('User update failed, no rows returned');
+        }
+      }
+    } catch (error) {
+      console.error('Error updating user verification:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get a role by name
+   */
+  async getRoleByName(roleName: string): Promise<{ id: number; name: string } | undefined> {
+    try {
+      // Use the directly imported roles reference
+      const [role] = await db
+        .select({
+          id: roles.id,
+          name: roles.name
+        })
+        .from(roles)
+        .where(eq(roles.name, roleName));
+      return role;
+    } catch (error) {
+      console.error('Error getting role by name:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update user role
+   */
+  async updateUserRole(userId: number, roleId: number): Promise<User> {
+    try {
+      const [user] = await db
+        .update(users)
+        .set({
+          roleId,
+          updatedAt: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(users.id, userId))
+        .returning();
+      return user;
+    } catch (error) {
+      console.error('Error updating user role:', error);
       throw error;
     }
   }
